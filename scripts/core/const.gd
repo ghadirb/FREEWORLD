@@ -1,0 +1,57 @@
+extends RefCounted
+## ثابت‌های مشترک بین سرور و کلاینت.
+
+const PROTOCOL_VERSION := 1
+const DEFAULT_PORT := 7777
+const MAX_PLAYERS := 10
+
+const CHUNK_SIZE := 32.0
+const CELL_SIZE := 2.0
+const CITY_CELLS := 64
+const CITY_SIZE := CELL_SIZE * CITY_CELLS
+const SEA_LEVEL := 0.0
+
+const PLAYER_SPEED := 6.0
+const START_MONEY := 1000
+const REFUND_RATIO := 0.5
+const AUDIT_MAX := 500
+
+# ناحیه‌ی میدان مرکزی (سلول‌ها) که فقط مدیران حق ساخت در آن را دارند.
+const PLAZA_MIN := 30
+const PLAZA_MAX := 33
+
+const ROLE_PLAYER := "player"
+const ROLE_CITY_ADMIN := "city_admin"
+const ROLE_WORLD_ADMIN := "world_admin"
+const ROLES := ["player", "city_admin", "world_admin"]
+
+# size = [عرض, طول] بر حسب سلول
+const BUILDING_TYPES := {
+	"house": {"cost": 300, "size": [2, 2]},
+	"shop": {"cost": 500, "size": [2, 2]},
+	"farm": {"cost": 200, "size": [3, 3]},
+	"road": {"cost": 20, "size": [1, 1]},
+	"well": {"cost": 100, "size": [1, 1]},
+}
+
+const FARM_SECONDS_PER_WHEAT := 10.0
+const FARM_MAX_STOCK := 10.0
+const WHEAT_BASE_PRICE := 8.0
+const WHEAT_MIN_PRICE := 2.0
+const WHEAT_SELL_DROP := 0.1
+const WHEAT_RECOVER_PER_SEC := 0.02
+
+# هر ثانیهٔ واقعی = یک دقیقهٔ بازی
+const TIME_SCALE := 60.0
+
+
+static func role_rank(role: String) -> int:
+	return ROLES.find(role)
+
+
+static func is_admin(role: String) -> bool:
+	return role_rank(role) >= 1
+
+
+static func building_size(type: String) -> Array:
+	return BUILDING_TYPES[type]["size"]
