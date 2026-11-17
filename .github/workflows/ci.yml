@@ -1,0 +1,131 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  GODOT_VERSION: "4.3"
+
+permissions:
+  contents: write
+
+jobs:
+  tests:
+    name: Unit and multiplayer tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Godot
+        run: |
+          curl -sSL -o godot.zip "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+          unzip -q godot.zip
+          sudo mv "Godot_v${GODOT_VERSION}-stable_linux.x86_64" /usr/local/bin/godot
+          godot --headless --version
+      - name: Import project
+        run: godot --headless --path . --import || true
+      - name: Unit tests
+        run: |
+          set -o pipefail
+          godot --headless --path . --script res://tests/unit_tests.gd 2>&1 | tee unit.log
+      - name: Multiplayer integration tests
+        run: |
+          set -o pipefail
+          tests/integration.sh godot 2>&1 | tee integration.log
+      - name: Publish failure details
+        if: failure()
+        run: |
+          for f in unit.log integration.log; do
+            [ -f "$f" ] || continue
+            msg=$(grep -E "FAIL|Error|ERROR|Parse|INTEGRATION" "$f" | tail -n 30 | sed ':a;N;$!ba;s/\n/%0A/g')
+            echo "::error title=$f::$msg"
+          done
+
+  export:
+    name: Export ${{ matrix.preset }}
+    needs: tests
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - preset: Linux
+            output: build/linux/freeworld.x86_64
+            artifact: freeworld-linux
+          - preset: Windows
+            output: build/windows/freeworld.exe
+            artifact: freeworld-windows
+          - preset: Android
+            output: build/android/freeworld-debug.apk
+            artifact: freeworld-android-debug
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Godot and export templates
+        run: |
+          curl -sSL -o godot.zip "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+          unzip -q godot.zip
+          sudo mv "Godot_v${GODOT_VERSION}-stable_linux.x86_64" /usr/local/bin/godot
+          curl -sSL -o templates.tpz "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_export_templates.tpz"
+          unzip -q templates.tpz
+          mkdir -p ~/.local/share/godot/export_templates
+          mv templates ~/.local/share/godot/export_templates/${GODOT_VERSION}.stable
+      - uses: actions/setup-java@v4
+        if: matrix.preset == 'Android'
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Prepare Android SDK and debug keystore
+        if: matrix.preset == 'Android'
+        run: |
+          SDK="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          yes | "$SDK/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null 2>&1 || true
+          "$SDK/cmdline-tools/latest/bin/sdkmanager" "platform-tools" "build-tools;34.0.0" "platforms;android-34" "cmdline-tools;latest" >/dev/null
+          keytool -keyalg RSA -genkeypair -alias androiddebugkey -keypass android -keystore "$HOME/debug.keystore" -storepass android -dname "CN=Android Debug,O=Android,C=US" -validity 9999 -deststoretype pkcs12
+          mkdir -p ~/.config/godot
+          cat > ~/.config/godot/editor_settings-4.3.tres <<EOT
+          [gd_resource type="EditorSettings" format=3]
+
+          [resource]
+          export/android/android_sdk_path = "$SDK"
+          export/android/java_sdk_path = "$JAVA_HOME"
+          export/android/debug_keystore = "$HOME/debug.keystore"
+          export/android/debug_keystore_user = "androiddebugkey"
+          export/android/debug_keystore_pass = "android"
+          EOT
+      - name: Import project
+        run: godot --headless --path . --import || true
+      - name: Export
+        run: |
+          set -o pipefail
+          mkdir -p "$(dirname '${{ matrix.output }}')"
+          godot --headless --path . --export-debug "${{ matrix.preset }}" "${{ matrix.output }}" 2>&1 | tee export.log
+          test -s "${{ matrix.output }}"
+          ls -la "$(dirname '${{ matrix.output }}')"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: build/
+      - name: Publish failure details
+        if: failure()
+        run: |
+          msg=$(tail -n 40 export.log 2>/dev/null | sed ':a;N;$!ba;s/\n/%0A/g')
+          echo "::error title=export ${{ matrix.preset }} failed::$msg"
+
+  release:
+    name: Publish release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: export
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/**/*.apk
+            dist/**/*.exe
+            dist/**/*.x86_64
