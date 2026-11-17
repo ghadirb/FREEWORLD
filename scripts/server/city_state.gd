@@ -19,6 +19,7 @@ var next_building_id: int = 1
 var audit: Array = []
 var world_time: float = 8.0 * 3600.0
 var wheat_price: float = FWConst.WHEAT_BASE_PRICE
+var npcs: Array = []
 var _audit_counter: int = 0
 
 
@@ -82,6 +83,54 @@ func provision_admin(player_name: String, secret: String, role: String = FWConst
 	}
 
 
+func count_owned(player_name: String) -> int:
+	var n := 0
+	for id in buildings:
+		if buildings[id]["owner"] == player_name:
+			n += 1
+	return n
+
+
+## قابل‌عبور بودن نقطه برای بازیکن و NPC: جاده و چاه آزادند، بقیه ساختمان‌ها مانع‌اند.
+func is_walkable(x: float, z: float) -> bool:
+	var cx := int(floor(x / FWConst.CELL_SIZE))
+	var cz := int(floor(z / FWConst.CELL_SIZE))
+	var key := Placement.cell_key(cx, cz)
+	if occupied.has(key):
+		var t: String = buildings[occupied[key]]["type"]
+		if t != "road" and t != "well":
+			return false
+	return world.height_at(x, z) >= -0.3
+
+
+## نقطهٔ جلوی در ساختمان (برای فاصلهٔ تعامل و مقصد NPC).
+func door_point(b: Dictionary) -> Vector2:
+	var size: Array = FWConst.building_size(b["type"])
+	return Vector2(
+		(float(b["cx"]) + float(size[0]) * 0.5) * FWConst.CELL_SIZE,
+		(float(b["cz"]) + float(size[1])) * FWConst.CELL_SIZE + 1.0)
+
+
+## اعمال تغییر دریافتی از سرور روی نسخهٔ محلی کلاینت (بدون اعتبارسنجی).
+func apply_add(b: Dictionary) -> void:
+	var nb := {
+		"id": int(b["id"]), "type": str(b["type"]), "owner": str(b["owner"]),
+		"cx": int(b["cx"]), "cz": int(b["cz"]), "stock": float(b.get("stock", 0)),
+	}
+	buildings[nb["id"]] = nb
+	for c in Placement.footprint(nb["type"], nb["cx"], nb["cz"]):
+		occupied[Placement.cell_key(c.x, c.y)] = nb["id"]
+
+
+func apply_remove(id: int) -> void:
+	if not buildings.has(id):
+		return
+	var b: Dictionary = buildings[id]
+	for c in Placement.footprint(b["type"], b["cx"], b["cz"]):
+		occupied.erase(Placement.cell_key(c.x, c.y))
+	buildings.erase(id)
+
+
 func role_of(player_name: String) -> String:
 	if accounts.has(player_name):
 		return accounts[player_name]["role"]
@@ -119,6 +168,8 @@ func place_building(player_name: String, req_id: int, type: String, cx: int, cz:
 	var err := Placement.check(world, occupied, type, cx, cz, acc["role"])
 	if err != "":
 		return {"ok": false, "error": err}
+	if not FWConst.is_admin(acc["role"]) and count_owned(player_name) >= FWConst.MAX_BUILDINGS_PER_PLAYER:
+		return {"ok": false, "error": "limit"}
 	var cost := int(FWConst.BUILDING_TYPES[type]["cost"])
 	if int(acc["money"]) < cost:
 		return {"ok": false, "error": "no_money"}
@@ -230,6 +281,7 @@ func to_dict() -> Dictionary:
 		"accounts": accounts,
 		"buildings": bl,
 		"audit": audit,
+		"npcs": npcs,
 	}
 
 
@@ -271,6 +323,15 @@ static func from_dict(d: Dictionary):
 		cs.buildings[nb["id"]] = nb
 		for c in Placement.footprint(nb["type"], nb["cx"], nb["cz"]):
 			cs.occupied[Placement.cell_key(c.x, c.y)] = nb["id"]
+	for n in d.get("npcs", []):
+		if n is Dictionary and n.has("id") and n.has("x") and n.has("z"):
+			cs.npcs.append({
+				"id": int(n["id"]), "name": str(n.get("name", "NPC")),
+				"x": float(n["x"]), "z": float(n["z"]),
+				"state": str(n.get("state", "idle")), "money": int(n.get("money", 100)),
+				"paid_day": int(n.get("paid_day", -1)),
+				"income_day": int(n.get("income_day", -1)),
+			})
 	for e in d.get("audit", []):
 		cs.audit.append(e)
 	cs._audit_counter = cs.audit.size()

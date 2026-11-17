@@ -1,0 +1,404 @@
+extends Node
+## سرور معتبر (Authoritative). همهٔ تصمیم‌ها اینجا و در CityState گرفته می‌شود؛
+## کلاینت فقط درخواست می‌فرستد و نتیجه را می‌گیرد.
+
+const FWConst = preload("res://scripts/core/const.gd")
+const CityState = preload("res://scripts/server/city_state.gd")
+const Persistence = preload("res://scripts/server/persistence.gd")
+const NpcSim = preload("res://scripts/server/npc_sim.gd")
+
+const NAME_PATTERN := "^[\\p{L}\\p{N}_]{3,16}$"
+const AUTH_TIMEOUT_MSEC := 10000
+const MAX_LOGIN_FAILURES := 5
+const TICK_INTERVAL := 0.1
+const STOCK_INTERVAL := 2.0
+const AUTOSAVE_INTERVAL := 10.0  # SIGTERM بدون ذخیره می‌میرد؛ ضرر احتمالی ≤ ۱۰ ثانیه
+const SAVE_DEBOUNCE_MSEC := 1000
+
+var net: Node
+var cs
+var save_path: String = ""
+var peers: Dictionary = {}
+var by_name: Dictionary = {}
+var running: bool = false
+
+var _name_re := RegEx.new()
+var _dirty: bool = false
+var _last_save_msec: int = 0
+var _tick_acc: float = 0.0
+var _stock_acc: float = 0.0
+var _autosave_acc: float = 0.0
+var _last_stocks: Dictionary = {}
+
+
+## مقدار برگشتی: OK یا کد خطا.
+func start(port: int, seed_value: int, data_dir: String, admins: Array) -> int:
+	_name_re.compile(NAME_PATTERN)
+	save_path = data_dir.path_join("city_1.json")
+	var loaded: Dictionary = Persistence.load_json(save_path)
+	if loaded.is_empty() and (FileAccess.file_exists(save_path) or FileAccess.file_exists(save_path + ".bak")):
+		push_error("[server] save file exists but cannot be read; refusing to start to protect data")
+		return ERR_FILE_CORRUPT
+	if loaded.is_empty():
+		cs = CityState.new(seed_value)
+		print("[server] new city, seed=%d" % seed_value)
+	else:
+		cs = CityState.from_dict(loaded)
+		if cs == null:
+			push_error("[server] save file is invalid; refusing to start to protect data")
+			return ERR_FILE_CORRUPT
+		print("[server] loaded city: %d accounts, %d buildings" % [cs.accounts.size(), cs.buildings.size()])
+	for a in admins:
+		cs.provision_admin(str(a[0]), str(a[1]))
+	NpcSim.ensure_npcs(cs)
+	var peer := ENetMultiplayerPeer.new()
+	var err: int = peer.create_server(port, FWConst.MAX_PLAYERS + 6)
+	if err != OK:
+		return err
+	multiplayer.multiplayer_peer = peer
+	multiplayer.server_relay = false
+	multiplayer.peer_connected.connect(_on_peer_connected)
+	multiplayer.peer_disconnected.connect(_on_peer_disconnected)
+	_save()
+	running = true
+	print("[server] listening on port %d" % port)
+	return OK
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_WM_CLOSE_REQUEST and running:
+		shutdown()
+
+
+func shutdown() -> void:
+	if not running:
+		return
+	running = false
+	_sync_positions()
+	_save()
+	print("[server] saved and stopped")
+
+
+func _save() -> void:
+	_dirty = false
+	_last_save_msec = Time.get_ticks_msec()
+	_sync_positions()
+	if not Persistence.save_json(save_path, cs.to_dict()):
+		push_error("[server] SAVE FAILED")
+
+
+func _sync_positions() -> void:
+	for pid in peers:
+		var p: Dictionary = peers[pid]
+		if p["auth"] and cs.accounts.has(p["name"]):
+			var pos: Vector3 = p["pos"]
+			cs.accounts[p["name"]]["pos"] = [pos.x, pos.y, pos.z]
+
+
+func _process(delta: float) -> void:
+	if not running:
+		return
+	var dt: float = minf(delta, 0.25)
+	cs.tick(dt)
+	NpcSim.step(cs, dt)
+	var now := Time.get_ticks_msec()
+	for pid in peers.keys():
+		var p: Dictionary = peers[pid]
+		if not p["auth"] and now - int(p["connected_at"]) > AUTH_TIMEOUT_MSEC:
+			multiplayer.multiplayer_peer.disconnect_peer(pid)
+	_tick_acc += dt
+	if _tick_acc >= TICK_INTERVAL:
+		_tick_acc = 0.0
+		_broadcast_tick()
+	_stock_acc += dt
+	if _stock_acc >= STOCK_INTERVAL:
+		_stock_acc = 0.0
+		_broadcast_stocks()
+	_autosave_acc += dt
+	if _autosave_acc >= AUTOSAVE_INTERVAL:
+		_autosave_acc = 0.0
+		_dirty = true
+	if _dirty and now - _last_save_msec >= SAVE_DEBOUNCE_MSEC:
+		_save()
+
+
+# ---------------- ابزارها ----------------
+
+func _auth_peers() -> Array:
+	var out: Array = []
+	for pid in peers:
+		if peers[pid]["auth"]:
+			out.append(pid)
+	return out
+
+
+func _send(pid: int, method: String, a: Variant = null, b: Variant = null, c: Variant = null, d: Variant = null) -> void:
+	match method:
+		"s2c_login_result":
+			net.rpc_id(pid, method, a, b, c)
+		"s2c_snapshot":
+			net.rpc_id(pid, method, a, b, c)
+		"s2c_tick":
+			net.rpc_id(pid, method, a, b, c, d)
+		"s2c_notice", "s2c_player_joined", "s2c_chat", "s2c_teleport":
+			net.rpc_id(pid, method, a, b)
+		_:
+			net.rpc_id(pid, method, a)
+
+
+func _broadcast(method: String, a: Variant = null, b: Variant = null, except: int = -1) -> void:
+	for pid in _auth_peers():
+		if pid != except:
+			_send(pid, method, a, b)
+
+
+func _notice(pid: int, code: String, args: Dictionary = {}) -> void:
+	_send(pid, "s2c_notice", code, args)
+
+
+func _player_of(pid: int) -> Dictionary:
+	if peers.has(pid) and peers[pid]["auth"]:
+		return peers[pid]
+	return {}
+
+
+func _allow_action(p: Dictionary) -> bool:
+	var now := Time.get_ticks_msec()
+	var elapsed: float = float(now - int(p["bucket_t"])) / 1000.0
+	p["bucket_t"] = now
+	p["bucket"] = minf(10.0, float(p["bucket"]) + elapsed * 5.0)
+	if float(p["bucket"]) < 1.0:
+		return false
+	p["bucket"] = float(p["bucket"]) - 1.0
+	return true
+
+
+func _players_public() -> Dictionary:
+	var out: Dictionary = {}
+	for pid in _auth_peers():
+		var p: Dictionary = peers[pid]
+		var pos: Vector3 = p["pos"]
+		out[p["name"]] = [snappedf(pos.x, 0.01), snappedf(pos.y, 0.01), snappedf(pos.z, 0.01),
+			snappedf(float(p["yaw"]), 0.01), cs.role_of(p["name"])]
+	return out
+
+
+func _broadcast_tick() -> void:
+	var pl := _players_public()
+	var np := NpcSim.public_list(cs)
+	for pid in _auth_peers():
+		_send(pid, "s2c_tick", cs.world_time, snappedf(cs.wheat_price, 0.01), pl, np)
+
+
+func _broadcast_stocks() -> void:
+	var stocks: Dictionary = {}
+	for id in cs.buildings:
+		var b: Dictionary = cs.buildings[id]
+		if b["type"] == "farm":
+			stocks[id] = int(floor(float(b["stock"])))
+	if stocks != _last_stocks:
+		_last_stocks = stocks
+		_broadcast("s2c_stocks", stocks)
+
+
+# ---------------- اتصال ----------------
+
+func _on_peer_connected(pid: int) -> void:
+	peers[pid] = {
+		"name": "", "auth": false, "connected_at": Time.get_ticks_msec(),
+		"bucket": 10.0, "bucket_t": Time.get_ticks_msec(),
+		"allow": 6.0, "last_move": Time.get_ticks_msec(), "last_tp": 0,
+		"pos": Vector3.ZERO, "yaw": 0.0, "failures": 0,
+	}
+
+
+func _on_peer_disconnected(pid: int) -> void:
+	if not peers.has(pid):
+		return
+	var p: Dictionary = peers[pid]
+	peers.erase(pid)
+	if p["auth"] and by_name.get(p["name"], -1) == pid:
+		by_name.erase(p["name"])
+		var pos: Vector3 = p["pos"]
+		cs.accounts[p["name"]]["pos"] = [pos.x, pos.y, pos.z]
+		_broadcast("s2c_player_left", p["name"])
+		_dirty = true
+		print("[server] %s left" % p["name"])
+
+
+func on_login(pid: int, player_name: String, token: String, proto: int) -> void:
+	if not peers.has(pid) or peers[pid]["auth"]:
+		return
+	var p: Dictionary = peers[pid]
+	if proto != FWConst.PROTOCOL_VERSION:
+		_send(pid, "s2c_login_result", false, "version", {})
+		return
+	if not _name_re.search(player_name) or token.length() > 128:
+		_send(pid, "s2c_login_result", false, "bad_name", {})
+		return
+	var exists: bool = cs.accounts.has(player_name)
+	if not exists and cs.accounts.size() >= FWConst.MAX_ACCOUNTS:
+		_send(pid, "s2c_login_result", false, "server_busy", {})
+		return
+	if not by_name.has(player_name) and _auth_peers().size() >= FWConst.MAX_PLAYERS:
+		_send(pid, "s2c_login_result", false, "server_full", {})
+		return
+	var res: Dictionary = cs.authenticate(player_name, token)
+	if not res["ok"]:
+		p["failures"] = int(p["failures"]) + 1
+		_send(pid, "s2c_login_result", false, str(res["error"]), {})
+		if int(p["failures"]) >= MAX_LOGIN_FAILURES:
+			multiplayer.multiplayer_peer.disconnect_peer(pid)
+		return
+	if by_name.has(player_name):
+		var old: int = by_name[player_name]
+		by_name.erase(player_name)
+		peers.erase(old)
+		multiplayer.multiplayer_peer.disconnect_peer(old)
+	var acc: Dictionary = cs.accounts[player_name]
+	var sp: Array = acc["pos"]
+	var pos := Vector3(sp[0], sp[1], sp[2])
+	if not cs.is_walkable(pos.x, pos.z):
+		pos = cs.spawn_position()
+	p["name"] = player_name
+	p["auth"] = true
+	p["pos"] = pos
+	by_name[player_name] = pid
+	var info := {
+		"name": player_name, "token": res["token"], "seed": cs.seed_value, "city_id": cs.city_id,
+		"role": acc["role"], "money": acc["money"], "pos": [pos.x, pos.z],
+		"time": cs.world_time, "price": cs.wheat_price,
+	}
+	_send(pid, "s2c_login_result", true, "", info)
+	_send(pid, "s2c_snapshot", cs.all_buildings_public(), NpcSim.public_list(cs), _players_public())
+	_broadcast("s2c_player_joined", player_name, acc["role"], pid)
+	_dirty = true
+	print("[server] %s joined (%s)" % [player_name, acc["role"]])
+
+
+# ---------------- اقدامات بازیکن ----------------
+
+func on_move(pid: int, x: float, z: float, yaw: float) -> void:
+	var p := _player_of(pid)
+	if p.is_empty():
+		return
+	if not (is_finite(x) and is_finite(z) and is_finite(yaw)):
+		return
+	var now := Time.get_ticks_msec()
+	var dt: float = clampf(float(now - int(p["last_move"])) / 1000.0, 0.0, 0.5)
+	p["last_move"] = now
+	p["allow"] = minf(float(p["allow"]) + FWConst.PLAYER_SPEED * 1.3 * dt, 6.0)
+	var cur: Vector3 = p["pos"]
+	var d: float = Vector2(x, z).distance_to(Vector2(cur.x, cur.z))
+	var lo: float = -FWConst.WORLD_LIMIT
+	var hi: float = FWConst.CITY_SIZE + FWConst.WORLD_LIMIT
+	var valid: bool = d <= float(p["allow"]) + 0.05 and x >= lo and x <= hi and z >= lo and z <= hi and cs.is_walkable(x, z)
+	if valid:
+		p["allow"] = float(p["allow"]) - d
+		p["pos"] = Vector3(x, cs.world.height_at(x, z), z)
+		p["yaw"] = yaw
+	elif d > 0.001 and now - int(p["last_tp"]) > 500:
+		p["last_tp"] = now
+		_send(pid, "s2c_teleport", cur.x, cur.z)
+
+
+func on_place(pid: int, req_id: int, type: String, cx: int, cz: int) -> void:
+	var p := _player_of(pid)
+	if p.is_empty():
+		return
+	if not _allow_action(p):
+		_notice(pid, "rate_limited")
+		return
+	var res: Dictionary = cs.place_building(p["name"], req_id, type, cx, cz)
+	if not res["ok"]:
+		if not res.get("silent", false):
+			_notice(pid, str(res["error"]))
+		return
+	_broadcast("s2c_building_added", cs.building_public(res["building"]))
+	_send(pid, "s2c_money", int(res["money"]))
+	_dirty = true
+
+
+func on_remove(pid: int, id: int) -> void:
+	var p := _player_of(pid)
+	if p.is_empty():
+		return
+	if not _allow_action(p):
+		_notice(pid, "rate_limited")
+		return
+	var res: Dictionary = cs.remove_building(p["name"], id)
+	if not res["ok"]:
+		_notice(pid, str(res["error"]))
+		return
+	_broadcast("s2c_building_removed", id)
+	var owner_name: String = res["owner"]
+	if by_name.has(owner_name):
+		_send(by_name[owner_name], "s2c_money", cs.money_of(owner_name))
+		if owner_name != p["name"]:
+			_notice(by_name[owner_name], "your_building_removed", {"by": p["name"]})
+	_dirty = true
+
+
+func on_collect(pid: int, id: int) -> void:
+	var p := _player_of(pid)
+	if p.is_empty():
+		return
+	if not _allow_action(p):
+		_notice(pid, "rate_limited")
+		return
+	if not cs.buildings.has(id):
+		_notice(pid, "no_building")
+		return
+	var door: Vector2 = cs.door_point(cs.buildings[id])
+	var pos: Vector3 = p["pos"]
+	if Vector2(pos.x, pos.z).distance_to(door) > FWConst.INTERACT_RANGE:
+		_notice(pid, "too_far")
+		return
+	var res: Dictionary = cs.collect(p["name"], id)
+	if not res["ok"]:
+		_notice(pid, str(res["error"]))
+		return
+	_send(pid, "s2c_money", int(res["money"]))
+	_notice(pid, "collected", {"count": res["count"], "earned": res["earned"]})
+	_dirty = true
+
+
+func on_chat(pid: int, text: String) -> void:
+	var p := _player_of(pid)
+	if p.is_empty():
+		return
+	var clean := ""
+	for ch in text.substr(0, FWConst.CHAT_MAX):
+		if ch.unicode_at(0) >= 32:
+			clean += ch
+	clean = clean.strip_edges()
+	if clean == "":
+		return
+	if not _allow_action(p):
+		_notice(pid, "rate_limited")
+		return
+	_broadcast("s2c_chat", p["name"], clean)
+
+
+func on_set_role(pid: int, target: String, role: String) -> void:
+	var p := _player_of(pid)
+	if p.is_empty():
+		return
+	var res: Dictionary = cs.set_role(p["name"], target, role)
+	if not res["ok"]:
+		_notice(pid, str(res["error"]))
+		return
+	if by_name.has(target):
+		_send(by_name[target], "s2c_role", role)
+	_notice(pid, "role_set", {"target": target, "role": role})
+	_dirty = true
+
+
+func on_get_audit(pid: int) -> void:
+	var p := _player_of(pid)
+	if p.is_empty():
+		return
+	if not FWConst.is_admin(cs.role_of(p["name"])):
+		_notice(pid, "forbidden")
+		return
+	_send(pid, "s2c_audit", cs.audit.slice(maxi(0, cs.audit.size() - 50)))

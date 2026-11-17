@@ -44,6 +44,17 @@ const WHEAT_RECOVER_PER_SEC := 0.02
 # هر ثانیهٔ واقعی = یک دقیقهٔ بازی
 const TIME_SCALE := 60.0
 
+const MAX_BUILDINGS_PER_PLAYER := 40
+const MAX_ACCOUNTS := 500
+const INTERACT_RANGE := 15.0
+const CHAT_MAX := 200
+const WORLD_LIMIT := 400.0
+const NPC_COUNT := 4
+const NPC_SPEED := 3.0
+const NPC_SHOP_PAYMENT := 5
+const NPC_WORK_BONUS := 0.5
+const NPC_NAMES := ["علی", "مریم", "رضا", "زهرا", "حسین", "سارا"]
+
 
 static func role_rank(role: String) -> int:
 	return ROLES.find(role)

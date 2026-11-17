@@ -25,6 +25,7 @@ func _init() -> void:
 	test_placement_and_economy()
 	test_permissions()
 	test_persistence()
+	test_npc()
 	print("\nRESULT: %d passed, %d failed" % [_pass, _fail])
 	quit(1 if _fail > 0 else 0)
 
@@ -143,3 +144,67 @@ func test_persistence() -> void:
 	var rec := Persistence.load_json(path)
 	check(rec.has("accounts"), "corrupted save recovered from backup")
 	check(CityState.from_dict({"foo": 1}) == null, "invalid data rejected")
+
+
+func _run_hours(cs, from_hour: float, to_hour: float) -> void:
+	cs.world_time = from_hour * 3600.0
+	var NpcSim = load("res://scripts/server/npc_sim.gd")
+	var guard := 0
+	while cs.world_time < to_hour * 3600.0 and guard < 200000:
+		NpcSim.step(cs, 0.5)
+		cs.world_time += 0.5 * FWConst.TIME_SCALE
+		guard += 1
+
+
+func test_npc() -> void:
+	print("[npc]")
+	var NpcSim = load("res://scripts/server/npc_sim.gd")
+	check(NpcSim.activity_for_hour(3.0) == "sleep", "schedule: 3am sleep")
+	check(NpcSim.activity_for_hour(10.0) == "work", "schedule: 10am work")
+	check(NpcSim.activity_for_hour(19.0) == "leisure", "schedule: 7pm leisure")
+	var cs = CityState.new(12345)
+	_login(cs, "owner")
+	cs.accounts["owner"]["money"] = 5000
+	for i in range(4):
+		check(cs.place_building("owner", 100 + i, "house", 4 + i * 3, 4)["ok"], "house %d placed" % i)
+	check(cs.place_building("owner", 200, "farm", 4, 14)["ok"], "farm placed")
+	check(cs.place_building("owner", 201, "shop", 20, 14)["ok"], "shop placed")
+	NpcSim.ensure_npcs(cs, 4)
+	check(cs.npcs.size() == 4, "four npcs created")
+	var money_before := cs.money_of("owner")
+	_run_hours(cs, 6.0, 12.0)
+	var farm = _first_of(cs, "farm")
+	var at_work := 0
+	for n in cs.npcs:
+		var d: Vector2 = cs.door_point(farm)
+		if Vector2(n["x"], n["z"]).distance_to(d) < 2.0:
+			at_work += 1
+	check(at_work >= 1, "an npc is at the farm during work hours")
+	check(float(farm["stock"]) > 0.0, "npc work produces wheat without any player")
+	_run_hours(cs, 12.0, 21.0)
+	check(cs.money_of("owner") > money_before, "npcs pay the shop owner in the evening")
+	_run_hours(cs, 21.0, 24.0)
+	var asleep := 0
+	for n in cs.npcs:
+		if n["state"] == "sleep":
+			asleep += 1
+	check(asleep >= 1, "npcs sleep at night")
+	var cs2 = CityState.from_dict(cs.to_dict())
+	check(cs2 != null and cs2.npcs.size() == 4, "npcs survive save/load")
+	var walk_ok: bool = cs.is_walkable(9.0, 9.0) == false
+	check(walk_ok, "building cells block walking")
+	check(cs.is_walkable(100.0, 100.0), "open ground is walkable")
+	_login(cs, "spammer")
+	cs.accounts["spammer"]["money"] = 100000
+	var ok_count := 0
+	for i in range(60):
+		if cs.place_building("spammer", 1000 + i, "road", 40 + (i % 20), 40 + int(i / 20.0))["ok"]:
+			ok_count += 1
+	check(ok_count == FWConst.MAX_BUILDINGS_PER_PLAYER, "per-player building limit enforced")
+
+
+func _first_of(cs, type: String) -> Dictionary:
+	for id in cs.buildings:
+		if cs.buildings[id]["type"] == type:
+			return cs.buildings[id]
+	return {}
