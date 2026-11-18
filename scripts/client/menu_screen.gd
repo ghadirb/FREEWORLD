@@ -34,18 +34,16 @@ func _ready() -> void:
 	glow.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
 	glow.custom_minimum_size = Vector2(0, 260)
 	add_child(glow)
-	var center := CenterContainer.new()
-	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	add_child(center)
 	var scroll := ScrollContainer.new()
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	scroll.custom_minimum_size = Vector2(580, 0)
-	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	center.add_child(scroll)
-	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	scroll.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	add_child(scroll)
+	var center := CenterContainer.new()
+	center.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	center.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.add_child(center)
 	var panel := PanelContainer.new()
-	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	scroll.add_child(panel)
+	center.add_child(panel)
 	var v := VBoxContainer.new()
 	v.custom_minimum_size = Vector2(560, 0)
 	v.add_theme_constant_override("separation", 8)

@@ -76,6 +76,8 @@ jobs:
           xvfb-run -a -s "-screen 0 1280x720x24" godot --path . --rendering-driver opengl3 -- --connect 127.0.0.1:17888 --name viewer1 --shot shots/build.png --shot-delay 7 --shot-mode world --build shop 2>&1 | tee -a render.log
           xvfb-run -a -s "-screen 0 1280x720x24" godot --path . --rendering-driver opengl3 -- --shot shots/menu.png --shot-delay 2 2>&1 | tee -a render.log
           test -s shots/life.png && test -s shots/world.png && test -s shots/build.png && test -s shots/menu.png
+          # منوی خالی (تک‌رنگ) حجم بسیار کم دارد؛ این بررسی جلوی صفحهٔ سفید/خالی را می‌گیرد
+          test "$(stat -c%s shots/menu.png)" -gt 20000
           ! grep -E "SCRIPT ERROR" render.log
       - uses: actions/upload-artifact@v4
         if: always()
@@ -127,7 +129,8 @@ jobs:
           SDK="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
           yes | "$SDK/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null 2>&1 || true
           "$SDK/cmdline-tools/latest/bin/sdkmanager" "platform-tools" "build-tools;34.0.0" "platforms;android-34" "cmdline-tools;latest" >/dev/null
-          keytool -keyalg RSA -genkeypair -alias androiddebugkey -keypass android -keystore "$HOME/debug.keystore" -storepass android -dname "CN=Android Debug,O=Android,C=US" -validity 9999 -deststoretype pkcs12
+          # کلید دیباگ ثابت (build_config/debug.keystore): هر بیلد با همان امضا ساخته می‌شود تا نصب روی نسخهٔ قبلی خطای ناهمخوانی امضا ندهد.
+          cp build_config/debug.keystore "$HOME/debug.keystore"
           mkdir -p ~/.config/godot
           cat > ~/.config/godot/editor_settings-4.3.tres <<EOT
           [gd_resource type="EditorSettings" format=3]
