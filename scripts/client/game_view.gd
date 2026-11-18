@@ -285,7 +285,32 @@ func set_build_type(t: String) -> void:
 	_ghost.visible = false
 	if t != "":
 		_ghost.mesh = BuildingMesh.get_mesh(t)
+		_auto_place_ghost()
 	ghost_changed.emit("")
+
+
+## بعد از انتخاب نوع ساختمان، نزدیک‌ترین جای معتبر جلوی بازیکن را خودکار پیشنهاد می‌دهد
+## تا دکمهٔ تأیید بلافاصله قابل استفاده باشد. لمس زمین همچنان جای ساختمان را عوض می‌کند.
+func _auto_place_ghost() -> void:
+	var size: Array = FWConst.building_size(build_type)
+	# جهت نگاه دوربین روی زمین (نه جهت بدن بازیکن) تا پیشنهاد همیشه جلوی چشم باشد
+	var look: Vector3 = -cam.camera.global_transform.basis.z
+	var fwd := Vector2(look.x, look.z)
+	fwd = fwd.normalized() if fwd.length() > 0.01 else Vector2(sin(my_yaw), cos(my_yaw))
+	var base := Vector2(my_pos.x, my_pos.z) + fwd * 6.0
+	var best := Vector2i(-1, -1)
+	var best_d := 1.0e9
+	var c0 := Vector2i(int(floor(base.x / FWConst.CELL_SIZE)), int(floor(base.y / FWConst.CELL_SIZE)))
+	for dz in range(-8, 9):
+		for dx in range(-8, 9):
+			var cx := c0.x + dx - ((int(size[0]) - 1) >> 1)
+			var cz := c0.y + dz - ((int(size[1]) - 1) >> 1)
+			var d := float(dx * dx + dz * dz)
+			if d < best_d and client.preview_error(build_type, cx, cz) == "":
+				best_d = d
+				best = Vector2i(cx, cz)
+	if best.x >= 0:
+		_set_ghost(best)
 
 
 func _set_ghost(cell: Vector2i) -> void:

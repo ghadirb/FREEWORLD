@@ -445,7 +445,7 @@ func _on_ghost_changed(err: String) -> void:
 		_hint.text = Loc.t("tap_to_place")
 		_hint.add_theme_color_override("font_color", Color("d6e4ff"))
 	elif err == "":
-		_hint.text = "✓ " + Loc.t("confirm")
+		_hint.text = "✓ " + Loc.t("ghost_ok")
 		_hint.add_theme_color_override("font_color", Color("a8f0a0"))
 	else:
 		_hint.text = Loc.err(err)

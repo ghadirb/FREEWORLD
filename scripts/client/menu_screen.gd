@@ -10,6 +10,7 @@ signal connect_requested(host: String, port: int, player_name: String, secret: S
 signal language_toggled
 signal solo_requested(player_name: String)
 signal host_requested(player_name: String)
+signal reset_requested
 
 var _name: LineEdit
 var _host: LineEdit
@@ -19,6 +20,7 @@ var _status: Label
 var _connect: Button
 var _games_box: VBoxContainer
 var _discovery: Node
+var _reset_armed: bool = false
 
 
 func _ready() -> void:
@@ -34,6 +36,7 @@ func _ready() -> void:
 	glow.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
 	glow.custom_minimum_size = Vector2(0, 260)
 	add_child(glow)
+	# صفحهٔ افقی موبایل: دو ستون تا همه‌چیز بدون اسکرول دیده شود؛ اسکرول لمسی فقط پشتیبان است.
 	var scroll := ScrollContainer.new()
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	scroll.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -44,65 +47,85 @@ func _ready() -> void:
 	scroll.add_child(center)
 	var panel := PanelContainer.new()
 	center.add_child(panel)
-	var v := VBoxContainer.new()
-	v.custom_minimum_size = Vector2(560, 0)
-	v.add_theme_constant_override("separation", 8)
-	panel.add_child(v)
+	var cols := HBoxContainer.new()
+	cols.add_theme_constant_override("separation", 28)
+	panel.add_child(cols)
+	var left := VBoxContainer.new()
+	left.custom_minimum_size = Vector2(500, 0)
+	left.add_theme_constant_override("separation", 8)
+	cols.add_child(left)
+	var right := VBoxContainer.new()
+	right.custom_minimum_size = Vector2(500, 0)
+	right.add_theme_constant_override("separation", 8)
+	cols.add_child(right)
+
+	# ---- ستون اول: عنوان، نام، تک‌نفره، میزبان ----
 	var icon := TextureRect.new()
 	icon.texture = load("res://icon.svg")
-	icon.custom_minimum_size = Vector2(72, 72)
+	icon.custom_minimum_size = Vector2(64, 64)
 	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	v.add_child(icon)
+	left.add_child(icon)
 	var title := Label.new()
 	title.text = Loc.t("app_title")
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.add_theme_font_size_override("font_size", 44)
+	title.add_theme_font_size_override("font_size", 40)
 	title.add_theme_color_override("font_color", UiTheme.ACCENT)
-	v.add_child(title)
+	left.add_child(title)
 	var sub := Label.new()
 	sub.text = "FREEWORLD"
 	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	sub.modulate = Color(1, 1, 1, 0.6)
-	v.add_child(sub)
-	_name = _field(v, Loc.t("player_name"), str(Settings.get_value("name", "")))
+	left.add_child(sub)
+	_name = _field(left, Loc.t("player_name"), str(Settings.get_value("name", "")))
 	var solo := UiTheme.button(Loc.t("solo"), Vector2(0, 66))
 	solo.add_theme_font_size_override("font_size", 28)
 	solo.pressed.connect(func(): _emit_local(solo_requested))
-	v.add_child(solo)
+	left.add_child(solo)
 	var host_btn := UiTheme.button(Loc.t("host"), Vector2(0, 66))
 	host_btn.add_theme_font_size_override("font_size", 26)
 	host_btn.pressed.connect(func(): _emit_local(host_requested))
-	v.add_child(host_btn)
+	left.add_child(host_btn)
+	_status = Label.new()
+	_status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_status.custom_minimum_size = Vector2(0, 52)
+	left.add_child(_status)
+	var reset := UiTheme.button(Loc.t("new_world"), Vector2(0, 50))
+	reset.pressed.connect(func():
+		if _reset_armed:
+			_reset_armed = false
+			reset_requested.emit()
+		else:
+			_reset_armed = true
+			set_status(Loc.t("new_world_confirm"), true))
+	left.add_child(reset)
+
+	# ---- ستون دوم: بازی‌های شبکهٔ محلی، اتصال دستی، زبان ----
 	var gt := Label.new()
 	gt.text = Loc.t("join_title")
 	gt.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	gt.modulate = Color(1, 1, 1, 0.8)
-	v.add_child(gt)
+	right.add_child(gt)
 	_games_box = VBoxContainer.new()
 	_games_box.add_theme_constant_override("separation", 6)
-	v.add_child(_games_box)
+	right.add_child(_games_box)
 	var mt := Label.new()
 	mt.text = Loc.t("join_manual")
 	mt.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	mt.modulate = Color(1, 1, 1, 0.8)
-	v.add_child(mt)
-	_host = _field(v, Loc.t("server"), str(Settings.get_value("host", "192.168.")))
-	_port = _field(v, Loc.t("port"), str(Settings.get_value("port", 7777)))
-	_secret = _field(v, Loc.t("secret"), "")
+	right.add_child(mt)
+	_host = _field(right, Loc.t("server"), str(Settings.get_value("host", "192.168.")))
+	_port = _field(right, Loc.t("port"), str(Settings.get_value("port", 7777)))
+	_secret = _field(right, Loc.t("secret"), "")
 	_secret.secret = true
-	_status = Label.new()
-	_status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_status.custom_minimum_size = Vector2(0, 28)
-	v.add_child(_status)
-	_connect = UiTheme.button(Loc.t("connect"), Vector2(0, 62))
-	_connect.add_theme_font_size_override("font_size", 28)
+	_connect = UiTheme.button(Loc.t("connect"), Vector2(0, 58))
+	_connect.add_theme_font_size_override("font_size", 26)
 	_connect.pressed.connect(_on_connect)
-	v.add_child(_connect)
+	right.add_child(_connect)
 	var lang := UiTheme.button(Loc.t("language"), Vector2(0, 50))
 	lang.pressed.connect(func(): language_toggled.emit())
-	v.add_child(lang)
+	right.add_child(lang)
 	_discovery = LanDiscovery.new()
 	add_child(_discovery)
 	_discovery.games_changed.connect(_refresh_games)
@@ -163,7 +186,7 @@ func _field(parent: Control, hint: String, text: String) -> LineEdit:
 	var le := LineEdit.new()
 	le.placeholder_text = hint
 	le.text = text
-	le.custom_minimum_size = Vector2(0, 54)
+	le.custom_minimum_size = Vector2(0, 50)
 	le.alignment = HORIZONTAL_ALIGNMENT_CENTER
 	parent.add_child(le)
 	return le

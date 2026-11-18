@@ -45,9 +45,11 @@ func _ready() -> void:
 		net.name = "Net"
 		get_tree().root.add_child(net)
 	_show_menu()
-	if _shot_path != "" and not _args.has("connect"):
+	if _shot_path != "" and not _args.has("connect") and not _args.has("solo"):
 		_take_shot_later()
-	if _args.has("connect"):
+	if _args.has("solo"):
+		_start_local(str(_args["solo"]), false)
+	elif _args.has("connect"):
 		var parts: PackedStringArray = str(_args["connect"]).split(":")
 		_start_connect(parts[0], int(parts[1]) if parts.size() > 1 else FWConst.DEFAULT_PORT, str(_args.get("name", "tester")), str(_args.get("secret", "")))
 
@@ -73,6 +75,7 @@ func _show_menu(message: String = "", is_error: bool = false) -> void:
 	menu.connect_requested.connect(_start_connect)
 	menu.solo_requested.connect(func(n): _start_local(n, false))
 	menu.host_requested.connect(func(n): _start_local(n, true))
+	menu.reset_requested.connect(_reset_offline_world)
 	menu.language_toggled.connect(func():
 		Loc.lang = "en" if Loc.lang == "fa" else "fa"
 		Settings.set_value("lang", Loc.lang)
@@ -166,6 +169,16 @@ func _start_local(player_name: String, hosted: bool) -> void:
 	_make_client()
 	client.connect_local(_hosted_server, player_name, admin_secret)
 	DisplayServer.screen_set_keep_on(true)
+
+
+func _reset_offline_world() -> void:
+	_stop_hosted()
+	var dir := DirAccess.open(OFFLINE_DATA_DIR)
+	if dir != null:
+		for f in dir.get_files():
+			dir.remove(f)
+	Settings.set_value("local_seed", 0)
+	_show_menu(Loc.t("world_reset"))
 
 
 func _beacon_info() -> Dictionary:

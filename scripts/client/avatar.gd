@@ -37,25 +37,37 @@ func setup(display_name: String, shirt: Color, is_npc: bool) -> void:
 	label = Label3D.new()
 	label.text = display_name
 	label.font = font()
-	label.font_size = 40
-	label.pixel_size = 0.008
-	label.outline_size = 10
+	label.font_size = 64
+	label.pixel_size = 0.005
+	label.outline_size = 8
+	label.language = "fa" if _has_arabic(display_name) else ""
+	label.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	label.position = Vector3(0, 2.25, 0)
+	label.position = Vector3(0, 2.55 if is_npc else 2.3, 0)
 	label.no_depth_test = true
 	label.modulate = Color("ffffff") if not is_npc else Color("bfe3ff")
 	add_child(label)
 	if is_npc:
 		sub_label = Label3D.new()
 		sub_label.font = font()
-		sub_label.font_size = 30
-		sub_label.pixel_size = 0.007
-		sub_label.outline_size = 8
+		sub_label.font_size = 44
+		sub_label.pixel_size = 0.004
+		sub_label.outline_size = 6
+		sub_label.language = "fa"
+		sub_label.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 		sub_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-		sub_label.position = Vector3(0, 2.0, 0)
+		sub_label.position = Vector3(0, 2.2, 0)
 		sub_label.no_depth_test = true
 		sub_label.modulate = Color("e8e8e8")
 		add_child(sub_label)
+
+
+static func _has_arabic(t: String) -> bool:
+	for ch in t:
+		var c: int = ch.unicode_at(0)
+		if c >= 0x0600 and c <= 0x06FF:
+			return true
+	return false
 
 
 static func color_for(player_name: String) -> Color:
