@@ -634,6 +634,12 @@ func _sync_remote(_dt: float) -> void:
 		nv.sub_label.text = Loc.t("state_" + str(n[3]))
 
 
+## شفافیت نام NPC بر حسب فاصله: ۱ تا ۶۰٪ فاصلهٔ مجاز، سپس خطی تا ۰ در فاصلهٔ مجاز.
+static func npc_label_alpha(dist: float, limit: float) -> float:
+	var start := limit * 0.6
+	return clampf((limit - dist) / maxf(limit - start, 0.001), 0.0, 1.0)
+
+
 func _update_label_visibility() -> void:
 	var f: Vector3 = cam.focus
 	var limit: float = 38.0 if mode == "life" else cam.world_distance * 0.9
@@ -645,6 +651,14 @@ func _update_label_visibility() -> void:
 				c.visible = show
 	for av in avatars.values():
 		av.label.visible = av.position.distance_to(f) < 70.0 or mode == "world"
+	# نام NPCهای دور به‌تدریج محو می‌شود (از ۶۰٪ تا ۱۰۰٪ فاصلهٔ مجاز)، نه ناگهانی.
+	var npc_end: float = 45.0 if mode == "life" else cam.world_distance * 0.9
+	for nv in npc_avatars.values():
+		var a := npc_label_alpha(nv.position.distance_to(f), npc_end)
+		for l in [nv.label, nv.sub_label]:
+			if l != null:
+				l.visible = a > 0.01
+				l.modulate.a = a
 
 
 func _update_sky(h: float) -> void:

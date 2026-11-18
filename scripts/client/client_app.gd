@@ -13,8 +13,7 @@ const GameView = preload("res://scripts/client/game_view.gd")
 const Hud = preload("res://scripts/client/hud.gd")
 const ServerMain = preload("res://scripts/server/server_main.gd")
 const LanDiscovery = preload("res://scripts/networking/lan_discovery.gd")
-
-const OFFLINE_DATA_DIR := "user://offline_world"
+const WorldSlots = preload("res://scripts/client/world_slots.gd")
 
 var net: Node
 var client: Node
@@ -75,7 +74,6 @@ func _show_menu(message: String = "", is_error: bool = false) -> void:
 	menu.connect_requested.connect(_start_connect)
 	menu.solo_requested.connect(func(n): _start_local(n, false))
 	menu.host_requested.connect(func(n): _start_local(n, true))
-	menu.reset_requested.connect(_reset_offline_world)
 	menu.language_toggled.connect(func():
 		Loc.lang = "en" if Loc.lang == "fa" else "fa"
 		Settings.set_value("lang", Loc.lang)
@@ -148,13 +146,19 @@ func _start_local(player_name: String, hosted: bool) -> void:
 		admin_secret = crypto.generate_random_bytes(16).hex_encode()
 		Settings.set_value("local_secret", admin_secret)
 	_secret = admin_secret
-	var seed_value := int(Settings.get_value("local_seed", 0))
-	if seed_value == 0:
-		seed_value = randi_range(1, 2147483000)
-		Settings.set_value("local_seed", seed_value)
+	# جهان انتخاب‌شده در منو؛ اگر هیچ جهانی نیست یکی ساخته می‌شود.
+	var worlds := WorldSlots.load_worlds()
+	if worlds.is_empty():
+		WorldSlots.add_world(worlds, Loc.t("default_world_name"), randi_range(1, 2147483000))
+		WorldSlots.save_worlds(worlds)
+	var world: Dictionary = WorldSlots.find(worlds, WorldSlots.current_id(worlds))
+	if world.is_empty():
+		world = worlds[0]
+	WorldSlots.set_current(str(world["id"]))
+	var seed_value := int(world["seed"])
 	var cfg := {
 		"port": FWConst.DEFAULT_PORT if hosted else 0, "seed": seed_value,
-		"data_dir": OFFLINE_DATA_DIR, "admins": [[player_name, admin_secret]], "max_seconds": 0.0,
+		"data_dir": WorldSlots.data_dir(world), "tls_dir": "user://tls", "admins": [[player_name, admin_secret]], "max_seconds": 0.0,
 	}
 	_hosted_server = ServerMain.launch(self, cfg)
 	if _hosted_server == null:
@@ -169,16 +173,6 @@ func _start_local(player_name: String, hosted: bool) -> void:
 	_make_client()
 	client.connect_local(_hosted_server, player_name, admin_secret)
 	DisplayServer.screen_set_keep_on(true)
-
-
-func _reset_offline_world() -> void:
-	_stop_hosted()
-	var dir := DirAccess.open(OFFLINE_DATA_DIR)
-	if dir != null:
-		for f in dir.get_files():
-			dir.remove(f)
-	Settings.set_value("local_seed", 0)
-	_show_menu(Loc.t("world_reset"))
 
 
 func _beacon_info() -> Dictionary:
