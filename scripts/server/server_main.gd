@@ -67,7 +67,7 @@ static func launch(parent: Node, cfg: Dictionary) -> Node:
 	parent.get_tree().root.add_child(server)
 	server.net = net
 	net.server = server
-	var err: int = server.start(int(cfg["port"]), int(cfg["seed"]), str(cfg["data_dir"]), cfg["admins"])
+	var err: int = server.start(int(cfg["port"]), int(cfg["seed"]), str(cfg["data_dir"]), cfg["admins"], str(cfg.get("tls_dir", "")))
 	if err != OK:
 		push_error("server failed to start: error %d" % err)
 		return null

@@ -6,6 +6,11 @@ const WorldGen = preload("res://scripts/world/world_generator.gd")
 const Placement = preload("res://scripts/shared/placement.gd")
 const CityState = preload("res://scripts/server/city_state.gd")
 const Persistence = preload("res://scripts/server/persistence.gd")
+const WorldSlots = preload("res://scripts/client/world_slots.gd")
+const GameView = preload("res://scripts/client/game_view.gd")
+const TlsSetup = preload("res://scripts/networking/tls_setup.gd")
+const GameClient = preload("res://scripts/networking/game_client.gd")
+const Settings = preload("res://scripts/client/settings.gd")
 
 var _fail := 0
 var _pass := 0
@@ -29,6 +34,9 @@ func _init() -> void:
 	test_npc_pathfinding()
 	test_economy_chain()
 	test_jobs()
+	test_world_slots()
+	test_npc_label_fade()
+	test_tls_pinning()
 	print("\nRESULT: %d passed, %d failed" % [_pass, _fail])
 	quit(1 if _fail > 0 else 0)
 
@@ -498,3 +506,87 @@ func test_jobs() -> void:
 		old["accounts"][n].erase("work_acc")
 	var cs3 = CityState.from_dict(old)
 	check(cs3 != null and cs3.job_of("worker") == 0, "old saves without jobs still load")
+
+
+func test_world_slots() -> void:
+	print("-- multiple offline worlds --")
+	var worlds: Array = []
+	var a: Dictionary = WorldSlots.add_world(worlds, "  جهان اول  ", 111)
+	check(a["ok"] and worlds.size() == 1 and worlds[0]["name"] == "جهان اول", "world is added with a trimmed name")
+	var b: Dictionary = WorldSlots.add_world(worlds, "Second", 222)
+	check(b["ok"] and a["id"] != b["id"], "each world gets its own id")
+	check(WorldSlots.data_dir(worlds[0]) != WorldSlots.data_dir(worlds[1]), "each world has its own data folder")
+	check(int(WorldSlots.find(worlds, b["id"])["seed"]) == 222, "each world keeps its own seed")
+	check(WorldSlots.add_world(worlds, "second", 5)["error"] == "world_name_taken", "duplicate names are refused (case-insensitive)")
+	check(WorldSlots.add_world(worlds, "   ", 5)["error"] == "bad_world_name", "empty names are refused")
+	check(WorldSlots.clean_name("x".repeat(100)).length() == WorldSlots.NAME_MAX, "long names are cut")
+	# ids are never reused after a delete in the middle
+	WorldSlots.remove_world(worlds, a["id"])
+	var c: Dictionary = WorldSlots.add_world(worlds, "Third", 333)
+	check(c["ok"] and c["id"] != b["id"], "ids stay unique after deleting a world")
+	check(not WorldSlots.remove_world(worlds, "nope"), "deleting an unknown world is a no-op")
+	while worlds.size() < WorldSlots.MAX_WORLDS:
+		WorldSlots.add_world(worlds, "w%d" % worlds.size(), 1)
+	check(WorldSlots.add_world(worlds, "overflow", 1)["error"] == "too_many_worlds", "world count is limited")
+	# فایل‌ها: پاک‌کردن یک جهان به جهان دیگر آسیب نمی‌زند
+	var w1 := {"id": "t1", "name": "x", "seed": 1, "dir": "user://test_worlds/t1"}
+	var w2 := {"id": "t2", "name": "y", "seed": 2, "dir": "user://test_worlds/t2"}
+	Persistence.save_json(WorldSlots.data_dir(w1) + "/city_1.json", {"k": 1})
+	Persistence.save_json(WorldSlots.data_dir(w2) + "/city_1.json", {"k": 2})
+	WorldSlots.erase_files(w1)
+	check(Persistence.load_json(WorldSlots.data_dir(w1) + "/city_1.json").is_empty(), "erased world has no save left")
+	check(int(Persistence.load_json(WorldSlots.data_dir(w2) + "/city_1.json").get("k", 0)) == 2, "other worlds are untouched")
+	WorldSlots.erase_files(w2)
+	DirAccess.remove_absolute("user://test_worlds")
+
+
+func test_npc_label_fade() -> void:
+	print("-- NPC label fade --")
+	check(is_equal_approx(GameView.npc_label_alpha(5.0, 45.0), 1.0), "near NPC name is fully visible")
+	check(is_equal_approx(GameView.npc_label_alpha(27.0, 45.0), 1.0), "name stays solid up to 60% of the limit")
+	var mid: float = GameView.npc_label_alpha(36.0, 45.0)
+	check(mid > 0.1 and mid < 0.9, "name is partly transparent in the fade band")
+	check(is_equal_approx(GameView.npc_label_alpha(45.0, 45.0), 0.0), "name is gone at the limit")
+	check(GameView.npc_label_alpha(500.0, 45.0) == 0.0, "far NPC name is hidden")
+
+
+func test_tls_pinning() -> void:
+	print("-- network encryption (DTLS, certificate pinning) --")
+	Settings.persist = false
+	var dir := "user://test_tls"
+	var kc1: Dictionary = TlsSetup.load_or_create(dir)
+	var kc2: Dictionary = TlsSetup.load_or_create(dir)
+	check(not kc1.is_empty() and not kc2.is_empty(), "server certificate is created")
+	var pem1: String = TlsSetup.cert_pem(kc1)
+	check(pem1 == TlsSetup.cert_pem(kc2) and pem1 != "", "certificate is stored and reused, not regenerated")
+	check(TlsSetup.server_options(kc1) != null, "server TLS options are built")
+	check(TlsSetup.client_options_for(pem1) != null, "client TLS options are built from the pinned certificate")
+	check(TlsSetup.client_options_for("not a certificate") == null, "garbage certificate is rejected")
+	check(TlsSetup.fingerprint(pem1) != TlsSetup.fingerprint(pem1 + "x") and TlsSetup.fingerprint(pem1).length() == 64, "fingerprint is a sha256 of the certificate")
+	check(TlsSetup.is_cert_request(TlsSetup.build_cert_request()), "full-size certificate request is accepted")
+	check(not TlsSetup.is_cert_request(TlsSetup.CERT_MAGIC.to_utf8_buffer()), "short certificate request is ignored (anti-amplification)")
+	check(not TlsSetup.is_cert_request(PackedByteArray([1, 2, 3])), "junk packets are ignored")
+	# کلاینت: گواهی عوض‌شده رد می‌شود؛ اولین گواهی پین می‌شود
+	var c := Node.new()
+	c.set_script(GameClient)
+	root.add_child(c)
+	var errors: Array = []
+	c.login_failed.connect(func(e): errors.append(e))
+	c._cert_host = "127.0.0.1"
+	c._cert_port = 9
+	Settings.save_pin("127.0.0.1", 9, "0".repeat(64))
+	c._on_cert_received(pem1)
+	check(errors == ["cert_changed"], "a changed server certificate is refused")
+	check(Settings.pin_for("127.0.0.1", 9) == "0".repeat(64), "a refused certificate does not overwrite the pin")
+	Settings.clear_pins()
+	check(Settings.pin_for("127.0.0.1", 9) == "", "forgetting certificates clears the pins")
+	c._on_cert_received(pem1)
+	check(Settings.pin_for("127.0.0.1", 9) == TlsSetup.fingerprint(pem1), "first use pins the certificate")
+	c.disconnect_from_server()
+	c.queue_free()
+	var d := DirAccess.open(dir)
+	if d != null:
+		for f in d.get_files():
+			d.remove(f)
+		DirAccess.remove_absolute(dir)
+	Settings.clear_pins()

@@ -5,6 +5,8 @@ extends Node
 const FWConst = preload("res://scripts/core/const.gd")
 const CityState = preload("res://scripts/server/city_state.gd")
 const Placement = preload("res://scripts/shared/placement.gd")
+const TlsSetup = preload("res://scripts/networking/tls_setup.gd")
+const Settings = preload("res://scripts/client/settings.gd")
 
 signal connection_failed
 signal logged_in
@@ -47,6 +49,11 @@ var last_tick_msec: int = 0
 var _pending_name: String = ""
 var _pending_token: String = ""
 var _connecting: bool = false
+var _cert_sock: PacketPeerUDP = null  # دریافت گواهی سرور پیش از اتصال رمزشده
+var _cert_host: String = ""
+var _cert_port: int = 0
+var _cert_wait: float = 0.0
+var _cert_tries: int = 0
 
 
 func setup(net_node: Node) -> void:
@@ -57,10 +64,30 @@ func setup(net_node: Node) -> void:
 func connect_to(host: String, port: int, player_name: String, player_token: String) -> int:
 	_pending_name = player_name
 	_pending_token = player_token
+	if not FWConst.USE_DTLS:
+		return _open_enet(host, port, null)
+	# مرحلهٔ ۱: گرفتن گواهی سرور (UDP، port+1)؛ مرحلهٔ ۲ در _on_cert_received.
+	_cert_sock = PacketPeerUDP.new()
+	if _cert_sock.set_dest_address(host, port + TlsSetup.CERT_PORT_OFFSET) != OK:
+		_cert_sock = null
+		return ERR_CANT_RESOLVE
+	_cert_host = host
+	_cert_port = port
+	_cert_wait = 99.0  # بلافاصله بفرست
+	_cert_tries = 0
+	_connecting = true
+	return OK
+
+
+func _open_enet(host: String, port: int, tls: TLSOptions) -> int:
+	if not is_inside_tree():
+		return ERR_UNCONFIGURED
 	var peer := ENetMultiplayerPeer.new()
 	var err: int = peer.create_client(host, port)
 	if err != OK:
 		return err
+	if tls != null and peer.host.dtls_client_setup(TlsSetup.CERT_CN, tls) != OK:
+		return ERR_CANT_CONNECT
 	multiplayer.multiplayer_peer = peer
 	if not multiplayer.connected_to_server.is_connected(_on_connected):
 		multiplayer.connected_to_server.connect(_on_connected)
@@ -68,6 +95,48 @@ func connect_to(host: String, port: int, player_name: String, player_token: Stri
 		multiplayer.server_disconnected.connect(_on_server_disconnected)
 	_connecting = true
 	return OK
+
+
+func _process(delta: float) -> void:
+	if _cert_sock == null:
+		return
+	if _cert_sock.get_available_packet_count() > 0:
+		var pem: String = _cert_sock.get_packet().get_string_from_utf8()
+		_cert_sock.close()
+		_cert_sock = null
+		_on_cert_received(pem)
+		return
+	_cert_wait += delta
+	if _cert_wait >= 1.0:
+		if _cert_tries >= 4:
+			_cert_sock.close()
+			_cert_sock = null
+			_connecting = false
+			connection_failed.emit()
+			return
+		_cert_sock.put_packet(TlsSetup.build_cert_request())
+		_cert_tries += 1
+		_cert_wait = 0.0
+
+
+## اولین بار اثرانگشت ذخیره می‌شود؛ بعد از آن فقط همان گواهی پذیرفته می‌شود.
+func _on_cert_received(pem: String) -> void:
+	var fp := TlsSetup.fingerprint(pem)
+	var pinned := Settings.pin_for(_cert_host, _cert_port)
+	if pinned != "" and pinned != fp:
+		_connecting = false
+		login_failed.emit("cert_changed")
+		return
+	var tls: TLSOptions = TlsSetup.client_options_for(pem)
+	if tls == null:
+		_connecting = false
+		connection_failed.emit()
+		return
+	if pinned == "":
+		Settings.save_pin(_cert_host, _cert_port, fp)
+	if _open_enet(_cert_host, _cert_port, tls) != OK:
+		_connecting = false
+		connection_failed.emit()
 
 
 ## اتصال مستقیم به سرور داخل همین برنامه (بدون شبکه).
@@ -87,12 +156,15 @@ func _tx(method: String, args: Array) -> void:
 
 
 func disconnect_from_server() -> void:
+	if _cert_sock != null:
+		_cert_sock.close()
+		_cert_sock = null
 	if local_server != null:
 		local_server.detach_local()
 		local_server = null
 		is_logged_in = false
 		return
-	if multiplayer.multiplayer_peer != null:
+	if is_inside_tree() and multiplayer.multiplayer_peer != null:
 		multiplayer.multiplayer_peer.close()
 		multiplayer.multiplayer_peer = null
 	is_logged_in = false

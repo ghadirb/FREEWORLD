@@ -5,6 +5,7 @@ extends SceneTree
 const FWConst = preload("res://scripts/core/const.gd")
 const NetScript = preload("res://scripts/networking/net.gd")
 const GameClient = preload("res://scripts/networking/game_client.gd")
+const Settings = preload("res://scripts/client/settings.gd")
 
 var client
 var net
@@ -18,6 +19,7 @@ var audit_entries: Array = []
 
 
 func _initialize() -> void:
+	Settings.persist = false  # پین گواهی‌ها در تنظیمات واقعی ذخیره نشوند
 	_main.call_deferred()
 
 

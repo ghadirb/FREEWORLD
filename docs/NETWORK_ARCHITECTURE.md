@@ -12,6 +12,14 @@
 | `scripts/server/persistence.gd` | ذخیرهٔ ایمن JSON |
 | `scripts/networking/game_client.gd` | کلاینت بدون UI (هم بازی و هم بات‌های تست از آن استفاده می‌کنند) |
 
+## رمزنگاری (از پروتکل نسخه ۴)
+- ترافیک ENet با **DTLS** رمز می‌شود. سرور هنگام شروع یک گواهی خودامضا (RSA 2048) می‌سازد و در `tls_server.key/.crt` کنار داده‌اش نگه می‌دارد (میزبان گوشی: `user://tls`، تا با حذف جهان عوض نشود).
+- Godot 4.3 در DTLS اجازهٔ اتصال بدون تأیید نمی‌دهد (`TLSOptions.client_unsafe` عملاً کار نمی‌کند)، پس **پین‌کردن در اولین اتصال (TOFU)** پیاده شده: کلاینت پیش از اتصال، گواهی را با یک درخواست UDP به پورت **port+1** می‌گیرد، اثرانگشت SHA-256 را ذخیره می‌کند و از آن به بعد فقط همان گواهی را می‌پذیرد. اگر گواهی عوض شود: خطای `cert_changed` و اتصال رد می‌شود (دکمهٔ «فراموشی گواهی سرورها» در منو).
+- درخواست گواهی باید ≥ ۱۲۰۰ بایت باشد (ضد تقویت DDoS؛ پاسخ حدود ۱۱۰۰ بایت است).
+- **دو پورت UDP لازم است:** `port` (بازی) و `port+1` (گواهی). روی فایروال هر دو را باز کنید.
+- محدودیت: اگر مهاجم درست در «اولین» اتصال وسط راه باشد تشخیص‌پذیر نیست؛ برای انتشار عمومی گواهی معتبر یا اثرانگشت از کانال مطمئن بهتر است.
+- `FWConst.USE_DTLS = false` فقط برای عیب‌یابی.
+
 ## پروتکل (نسخه ۱)
 کلاینت→سرور: `c2s_login(name, token, proto)`، `c2s_move(x,z,yaw)` *(unreliable)*، `c2s_place(req_id,type,cx,cz)`، `c2s_remove(id)`، `c2s_collect(id)`، `c2s_chat(text)`، `c2s_set_role(target,role)`، `c2s_get_audit()`.
 سرور→کلاینت: `s2c_login_result`، `s2c_snapshot`، `s2c_building_added/removed`، `s2c_stocks`، `s2c_money`، `s2c_player_joined/left`، `s2c_notice(code,args)`، `s2c_chat`، `s2c_role`، `s2c_audit`، `s2c_teleport`، `s2c_tick` *(unreliable، ۱۰ هرتز)*.

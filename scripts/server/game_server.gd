@@ -6,6 +6,7 @@ const FWConst = preload("res://scripts/core/const.gd")
 const CityState = preload("res://scripts/server/city_state.gd")
 const Persistence = preload("res://scripts/server/persistence.gd")
 const NpcSim = preload("res://scripts/server/npc_sim.gd")
+const TlsSetup = preload("res://scripts/networking/tls_setup.gd")
 
 const NAME_PATTERN := "^[\\p{L}\\p{N}_]{3,16}$"
 const AUTH_TIMEOUT_MSEC := 10000
@@ -38,10 +39,12 @@ var _stock_acc: float = 0.0
 var _autosave_acc: float = 0.0
 var _last_stocks: Dictionary = {}
 var _last_market: Dictionary = {}
+var _cert_pem: String = ""
+var _cert_sock := PacketPeerUDP.new()  # پاسخ به درخواست گواهی (port+1)
 
 
 ## مقدار برگشتی: OK یا کد خطا.
-func start(port: int, seed_value: int, data_dir: String, admins: Array) -> int:
+func start(port: int, seed_value: int, data_dir: String, admins: Array, tls_dir: String = "") -> int:
 	_name_re.compile(NAME_PATTERN)
 	save_path = data_dir.path_join("city_1.json")
 	var loaded: Dictionary = Persistence.load_json(save_path)
@@ -65,6 +68,16 @@ func start(port: int, seed_value: int, data_dir: String, admins: Array) -> int:
 		var err: int = peer.create_server(port, FWConst.MAX_PLAYERS + 6)
 		if err != OK:
 			return err
+		if FWConst.USE_DTLS:
+			var kc: Dictionary = TlsSetup.load_or_create(tls_dir if tls_dir != "" else data_dir)
+			var tls: TLSOptions = TlsSetup.server_options(kc)
+			if tls == null or peer.host.dtls_server_setup(tls) != OK:
+				push_error("[server] cannot enable network encryption (DTLS); refusing to listen unencrypted")
+				return ERR_CANT_CREATE
+			_cert_pem = TlsSetup.cert_pem(kc)
+			if _cert_sock.bind(port + TlsSetup.CERT_PORT_OFFSET) != OK:
+				push_error("[server] cannot open the certificate port %d" % (port + TlsSetup.CERT_PORT_OFFSET))
+				return ERR_ALREADY_IN_USE
 		multiplayer.multiplayer_peer = peer
 		multiplayer.server_relay = false
 		multiplayer.peer_connected.connect(_on_peer_connected)
@@ -89,6 +102,8 @@ func _notification(what: int) -> void:
 func stop() -> void:
 	if running:
 		shutdown()
+	if _cert_sock.is_bound():
+		_cert_sock.close()
 	if _listening:
 		if multiplayer.peer_connected.is_connected(_on_peer_connected):
 			multiplayer.peer_connected.disconnect(_on_peer_connected)
@@ -166,7 +181,19 @@ func _sync_positions() -> void:
 			cs.accounts[p["name"]]["pos"] = [pos.x, pos.y, pos.z]
 
 
+## فقط درخواست‌های به‌اندازهٔ کافی بزرگ پاسخ می‌گیرند (ضد تقویت DDoS).
+func _serve_cert_requests() -> void:
+	var n := 0
+	while _cert_sock.is_bound() and _cert_sock.get_available_packet_count() > 0 and n < 8:
+		n += 1
+		var pkt: PackedByteArray = _cert_sock.get_packet()
+		if TlsSetup.is_cert_request(pkt) and _cert_pem != "":
+			_cert_sock.set_dest_address(_cert_sock.get_packet_ip(), _cert_sock.get_packet_port())
+			_cert_sock.put_packet(_cert_pem.to_utf8_buffer())
+
+
 func _process(delta: float) -> void:
+	_serve_cert_requests()
 	if not running:
 		return
 	var dt: float = minf(delta, 0.25)

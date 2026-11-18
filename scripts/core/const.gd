@@ -1,7 +1,9 @@
 extends RefCounted
 ## ثابت‌های مشترک بین سرور و کلاینت.
 
-const PROTOCOL_VERSION := 3
+const PROTOCOL_VERSION := 4
+# ترافیک شبکه با DTLS رمز می‌شود (نسخهٔ ۴ به بعد). فقط برای عیب‌یابی خاموش شود.
+const USE_DTLS := true
 const DEFAULT_PORT := 7777
 const MAX_PLAYERS := 10
 
