@@ -85,7 +85,7 @@ static func _make(type: String) -> ArrayMesh:
 			mb.add_box(Vector3(fp.x * 0.5 - 0.2, 1.6, 0), Vector3(0.6, 3.2, 0.6), Color("c9c9c9"))
 		"mill":
 			_foundation(mb, fp, 0.1)
-			mb.add_cylinder(Vector3(0, 1.6, 0), 1.55, 3.2, 12, Color("d8c29b"))
+			mb.add_cylinder(Vector3(0, 1.6, 0), 1.55, 1.55, 3.2, 12, Color("d8c29b"))
 			mb.add_gable(Vector3(0, 3.6, 0), Vector3(3.8, 1.2, 3.8), Color("87513a"))
 			for a in [0.0, PI * 0.5]:
 				mb.add_box(Vector3(0, 3.0, 0.05).rotated(Vector3.UP, a), Vector3(0.18, 0.18, 4.2), WOOD)
@@ -93,8 +93,8 @@ static func _make(type: String) -> ArrayMesh:
 			_foundation(mb, fp, 0.1)
 			mb.add_box(Vector3(0, 1.25, 0), Vector3(3.5, 2.5, 3.4), Color("f3e7c6"))
 			mb.add_gable(Vector3(0, 2.55, 0), Vector3(3.9, 1.1, 3.8), Color("4f83a6"))
-			mb.add_cylinder(Vector3(-0.9, 0.8, 1.4), 0.45, 1.0, 10, Color("e8ecec"))
-			mb.add_cylinder(Vector3(0.9, 0.8, 1.4), 0.45, 1.0, 10, Color("e8ecec"))
+			mb.add_cylinder(Vector3(-0.9, 0.8, 1.4), 0.45, 0.45, 1.0, 10, Color("e8ecec"))
+			mb.add_cylinder(Vector3(0.9, 0.8, 1.4), 0.45, 0.45, 1.0, 10, Color("e8ecec"))
 			mb.add_box(Vector3(0, 0.9, 1.72), Vector3(0.9, 1.8, 0.08), WOOD)
 		"road":
 			mb.add_box(Vector3(0, -0.8, 0), Vector3(fp.x, 1.6, fp.y), Color("5f5f5f"))

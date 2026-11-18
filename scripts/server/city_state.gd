@@ -595,7 +595,8 @@ static func from_dict(d: Dictionary):
 	var pr = d.get("prices", {})
 	if pr is Dictionary:
 		cs.prices = {"egg": float(pr.get("egg", 6.0)), "milk": float(pr.get("milk", 14.0)), "flour": float(pr.get("flour", 16.0)), "bread": float(pr.get("bread", cs.bread_price)), "cheese": float(pr.get("cheese", 34.0))}
-	cs.bread_price = float(cs.prices["bread"])
+	# bread_price در ذخیره‌های نسخه‌های قبل منبع حقیقت بود؛ آن را بر قیمت جدید ترجیح می‌دهیم.
+	cs.prices["bread"] = cs.bread_price
 	var ts := float(d.get("time_speed", 1.0))
 	cs.time_speed = ts if FWConst.TIME_SPEEDS.has(ts) else 1.0
 	var wt := str(d.get("weather", "clear"))
