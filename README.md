@@ -16,7 +16,7 @@ A shared 3D open-world sandbox (Godot 4.3) with an authoritative dedicated serve
 | ذخیره‌سازی ایمن (فایل موقت + نسخهٔ پشتیبان + بازیابی) | ✅ تست واحد + یکپارچه |
 | کلاینت: Life Mode و World Mode، لمسی و ماوس/کیبورد، چت، فارسی RTL | ✅ رندر واقعی و اسکرین‌شات در CI؛ ⚠️ روی گوشی واقعی آزموده نشده |
 | خروجی Android (APK دیباگ)، Linux، Windows با GitHub Actions | ✅ ساخته می‌شود؛ ⚠️ نصب روی گوشی واقعی انجام نشده |
-| حالت آفلاین/تک‌نفره بدون سرور | ❌ هنوز نیست (سند ۰.۲ جهان آنلاین را انتخاب کرده) |
+| حالت آفلاین/تک‌نفره و چندنفرهٔ محلی بدون VPS | ✅ سرور محلی و ذخیره‌سازی جهان روی دستگاه |
 
 جزئیات: [docs/MVP_ACCEPTANCE.md](docs/MVP_ACCEPTANCE.md) · [docs/NETWORK_ARCHITECTURE.md](docs/NETWORK_ARCHITECTURE.md) · [docs/ROADMAP.md](docs/ROADMAP.md)
 
