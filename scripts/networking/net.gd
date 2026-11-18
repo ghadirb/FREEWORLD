@@ -89,6 +89,12 @@ func s2c_stocks(stocks: Dictionary) -> void:
 
 
 @rpc("authority", "call_remote", "reliable")
+func s2c_market(market: Dictionary) -> void:
+	if client:
+		client.on_market(market)
+
+
+@rpc("authority", "call_remote", "reliable")
 func s2c_money(money: int) -> void:
 	if client:
 		client.on_money(money)

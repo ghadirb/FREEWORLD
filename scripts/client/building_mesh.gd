@@ -60,6 +60,17 @@ static func _make(type: String) -> ArrayMesh:
 				for sz in [-1.0, 1.0]:
 					mb.add_box(Vector3(sx * (fp.x * 0.5 - 0.2), 0.5, sz * (fp.y * 0.5 - 0.2)), Vector3(0.18, 1.0, 0.18), WOOD)
 			mb.add_box(Vector3(0, 0.9, fp.y * 0.5 - 0.2), Vector3(fp.x - 0.4, 0.1, 0.1), WOOD)
+		"bakery":
+			_foundation(mb, fp, 0.1)
+			mb.add_box(Vector3(0, 1.3, -0.1), Vector3(3.5, 2.6, 3.3), Color("c98b5e"))
+			mb.add_gable(Vector3(0, 2.6 + 0.6, -0.1), Vector3(4.0, 1.2, 3.8), Color("7a3f2b"))
+			mb.add_box(Vector3(-1.1, 3.9, -0.9), Vector3(0.7, 1.8, 0.7), STONE)
+			mb.add_box(Vector3(-1.1, 4.9, -0.9), Vector3(0.9, 0.2, 0.9), Color("3b3b3b"))
+			mb.add_box(Vector3(0, 0.9, 1.58), Vector3(0.9, 1.8, 0.08), WOOD)
+			mb.add_box(Vector3(1.05, 1.4, 1.58), Vector3(0.9, 0.9, 0.06), Color("ffe3a0"))
+			mb.add_box(Vector3(-1.05, 1.4, 1.58), Vector3(0.9, 0.9, 0.06), Color("ffe3a0"))
+			mb.add_box(Vector3(0, 2.3, 1.75), Vector3(3.6, 0.1, 0.9), Color("f2e2b8"))
+			mb.add_box(Vector3(0, 2.75, 1.5), Vector3(1.4, 0.4, 0.1), Color("e8b04a"))
 		"road":
 			mb.add_box(Vector3(0, -0.8, 0), Vector3(fp.x, 1.6, fp.y), Color("5f5f5f"))
 			mb.add_box(Vector3(0, 0.05, 0), Vector3(fp.x, 0.1, fp.y), Color("707070"))

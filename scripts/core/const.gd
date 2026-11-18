@@ -1,7 +1,7 @@
 extends RefCounted
 ## ثابت‌های مشترک بین سرور و کلاینت.
 
-const PROTOCOL_VERSION := 1
+const PROTOCOL_VERSION := 2
 const DEFAULT_PORT := 7777
 const MAX_PLAYERS := 10
 
@@ -32,6 +32,7 @@ const BUILDING_TYPES := {
 	"farm": {"cost": 200, "size": [3, 3]},
 	"road": {"cost": 20, "size": [1, 1]},
 	"well": {"cost": 100, "size": [1, 1]},
+	"bakery": {"cost": 600, "size": [2, 2]},
 }
 
 const FARM_SECONDS_PER_WHEAT := 10.0
@@ -40,6 +41,17 @@ const WHEAT_BASE_PRICE := 8.0
 const WHEAT_MIN_PRICE := 2.0
 const WHEAT_SELL_DROP := 0.1
 const WHEAT_RECOVER_PER_SEC := 0.02
+
+# نانوایی: ۲ گندم از بازار می‌خرد و ۱ نان می‌پزد.
+const BREAD_WHEAT_COST := 2
+const BAKERY_SECONDS_PER_BREAD := 20.0
+const BAKERY_MAX_STOCK := 10.0
+const BREAD_BASE_PRICE := 20.0
+const BREAD_MIN_PRICE := 8.0
+const BREAD_SELL_DROP := 0.5
+const BREAD_BUY_RISE := 0.5
+const BREAD_RECOVER_PER_SEC := 0.05
+const MARKET_MAX_STOCK := 200.0
 
 # هر ثانیهٔ واقعی = یک دقیقهٔ بازی
 const TIME_SCALE := 60.0
@@ -52,6 +64,8 @@ const WORLD_LIMIT := 400.0
 const NPC_COUNT := 4
 const NPC_SPEED := 3.0
 const NPC_SHOP_PAYMENT := 5
+const NPC_DAILY_INCOME := 15
+const NPC_MAX_MONEY := 200
 const NPC_WORK_BONUS := 0.5
 const NPC_NAMES := ["علی", "مریم", "رضا", "زهرا", "حسین", "سارا"]
 

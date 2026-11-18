@@ -37,6 +37,7 @@ var _tick_acc: float = 0.0
 var _stock_acc: float = 0.0
 var _autosave_acc: float = 0.0
 var _last_stocks: Dictionary = {}
+var _last_market: Dictionary = {}
 
 
 ## مقدار برگشتی: OK یا کد خطا.
@@ -277,11 +278,15 @@ func _broadcast_stocks() -> void:
 	var stocks: Dictionary = {}
 	for id in cs.buildings:
 		var b: Dictionary = cs.buildings[id]
-		if b["type"] == "farm":
+		if b["type"] == "farm" or b["type"] == "bakery":
 			stocks[id] = int(floor(float(b["stock"])))
 	if stocks != _last_stocks:
 		_last_stocks = stocks
 		_broadcast("s2c_stocks", stocks)
+	var mk: Dictionary = cs.market_public()
+	if mk != _last_market:
+		_last_market = mk
+		_broadcast("s2c_market", mk)
 
 
 # ---------------- اتصال ----------------
@@ -350,7 +355,7 @@ func on_login(pid: int, player_name: String, token: String, proto: int) -> void:
 	var info := {
 		"name": player_name, "token": res["token"], "seed": cs.seed_value, "city_id": cs.city_id,
 		"role": acc["role"], "money": acc["money"], "pos": [pos.x, pos.z],
-		"time": cs.world_time, "price": cs.wheat_price,
+		"time": cs.world_time, "price": cs.wheat_price, "market": cs.market_public(),
 	}
 	_send(pid, "s2c_login_result", true, "", info)
 	_send(pid, "s2c_snapshot", cs.all_buildings_public(), NpcSim.public_list(cs), _players_public())
@@ -442,7 +447,7 @@ func on_collect(pid: int, id: int) -> void:
 		_notice(pid, str(res["error"]))
 		return
 	_send(pid, "s2c_money", int(res["money"]))
-	_notice(pid, "collected", {"count": res["count"], "earned": res["earned"]})
+	_notice(pid, "collected", {"good": res["good"], "count": res["count"], "earned": res["earned"]})
 	_dirty = true
 
 

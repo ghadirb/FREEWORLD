@@ -20,6 +20,9 @@ var next_building_id: int = 1
 var audit: Array = []
 var world_time: float = 8.0 * 3600.0
 var wheat_price: float = FWConst.WHEAT_BASE_PRICE
+var bread_price: float = FWConst.BREAD_BASE_PRICE
+## موجودی بازار مشترک شهر: کالایی که کشاورزان فروخته‌اند و هنوز مصرف نشده.
+var market: Dictionary = {"wheat": 0.0, "bread": 0.0}
 var npcs: Array = []
 var _audit_counter: int = 0
 ## با هر تغییر در ساختمان‌ها زیاد می‌شود تا شبکهٔ مسیریابی دوباره ساخته شود (ذخیره نمی‌شود).
@@ -190,6 +193,7 @@ func place_building(player_name: String, req_id: int, type: String, cx: int, cz:
 		"cx": cx,
 		"cz": cz,
 		"stock": 0.0,
+		"prog": 0.0,
 	}
 	next_building_id += 1
 	buildings[b["id"]] = b
@@ -224,25 +228,37 @@ func remove_building(player_name: String, id: int) -> Dictionary:
 	return {"ok": true, "id": id, "owner": owner_name, "refund": refund}
 
 
+## برداشت و فروش تولید: گندم از مزرعه یا نان از نانوایی. کالا به بازار شهر می‌رود.
 func collect(player_name: String, id: int) -> Dictionary:
 	if not accounts.has(player_name) or not buildings.has(id):
 		return {"ok": false, "error": "no_building"}
 	var b: Dictionary = buildings[id]
 	if b["owner"] != player_name:
 		return {"ok": false, "error": "forbidden"}
-	if b["type"] != "farm":
-		return {"ok": false, "error": "not_farm"}
+	var good := ""
+	match str(b["type"]):
+		"farm":
+			good = "wheat"
+		"bakery":
+			good = "bread"
+		_:
+			return {"ok": false, "error": "not_producer"}
 	var n := int(floor(float(b["stock"])))
 	if n < 1:
 		return {"ok": false, "error": "nothing"}
 	var earned := 0
 	for i in range(n):
-		earned += int(floor(wheat_price))
-		wheat_price = maxf(FWConst.WHEAT_MIN_PRICE, wheat_price - FWConst.WHEAT_SELL_DROP)
+		if good == "wheat":
+			earned += int(floor(wheat_price))
+			wheat_price = maxf(FWConst.WHEAT_MIN_PRICE, wheat_price - FWConst.WHEAT_SELL_DROP)
+		else:
+			earned += int(floor(bread_price))
+			bread_price = maxf(FWConst.BREAD_MIN_PRICE, bread_price - FWConst.BREAD_SELL_DROP)
 	b["stock"] = float(b["stock"]) - n
+	market[good] = minf(FWConst.MARKET_MAX_STOCK, float(market[good]) + n)
 	accounts[player_name]["money"] = int(accounts[player_name]["money"]) + earned
-	_log(player_name, "collect", {"id": id, "count": n, "earned": earned})
-	return {"ok": true, "count": n, "earned": earned, "money": accounts[player_name]["money"], "building": b}
+	_log(player_name, "collect", {"id": id, "good": good, "count": n, "earned": earned})
+	return {"ok": true, "good": good, "count": n, "earned": earned, "money": accounts[player_name]["money"], "building": b}
 
 
 func set_role(actor: String, target: String, role: String) -> Dictionary:
@@ -258,10 +274,58 @@ func set_role(actor: String, target: String, role: String) -> Dictionary:
 func tick(delta: float) -> void:
 	world_time = fposmod(world_time + delta * FWConst.TIME_SCALE, 86400.0)
 	wheat_price = minf(FWConst.WHEAT_BASE_PRICE, wheat_price + FWConst.WHEAT_RECOVER_PER_SEC * delta)
+	bread_price = move_toward(bread_price, FWConst.BREAD_BASE_PRICE, FWConst.BREAD_RECOVER_PER_SEC * delta)
 	for id in buildings:
 		var b: Dictionary = buildings[id]
-		if b["type"] == "farm":
-			b["stock"] = minf(FWConst.FARM_MAX_STOCK, float(b["stock"]) + delta / FWConst.FARM_SECONDS_PER_WHEAT)
+		match str(b["type"]):
+			"farm":
+				b["stock"] = minf(FWConst.FARM_MAX_STOCK, float(b["stock"]) + delta / FWConst.FARM_SECONDS_PER_WHEAT)
+			"bakery":
+				_tick_bakery(b, delta)
+
+
+## نانوایی: وقتی زمان پخت رسید، اگر بازار گندم داشته باشد و صاحب‌اش پول گندم را بپردازد، یک نان می‌پزد.
+## (پول گندم به «بازار شهر» می‌رود؛ کشاورز قبلاً هنگام فروش به بازار پولش را گرفته است.)
+func _tick_bakery(b: Dictionary, delta: float) -> void:
+	if float(b["stock"]) >= FWConst.BAKERY_MAX_STOCK:
+		return
+	b["prog"] = minf(float(b.get("prog", 0.0)) + delta, FWConst.BAKERY_SECONDS_PER_BREAD)
+	if float(b["prog"]) < FWConst.BAKERY_SECONDS_PER_BREAD:
+		return
+	var owner_name: String = b["owner"]
+	if not accounts.has(owner_name):
+		return
+	if float(market["wheat"]) < float(FWConst.BREAD_WHEAT_COST):
+		return
+	var cost: int = FWConst.BREAD_WHEAT_COST * int(floor(wheat_price))
+	if int(accounts[owner_name]["money"]) < cost:
+		return
+	accounts[owner_name]["money"] = int(accounts[owner_name]["money"]) - cost
+	market["wheat"] = float(market["wheat"]) - float(FWConst.BREAD_WHEAT_COST)
+	b["stock"] = float(b["stock"]) + 1.0
+	b["prog"] = 0.0
+
+
+## خرید یک نان از بازار توسط NPC؛ پول به صاحب مغازه می‌رسد. true اگر خرید انجام شد.
+func npc_buy_bread(npc: Dictionary, shop: Dictionary) -> bool:
+	var price: int = int(floor(bread_price))
+	if float(market["bread"]) < 1.0 or int(npc["money"]) < price:
+		return false
+	var owner_name: String = shop["owner"]
+	if not accounts.has(owner_name):
+		return false
+	npc["money"] = int(npc["money"]) - price
+	accounts[owner_name]["money"] = int(accounts[owner_name]["money"]) + price
+	market["bread"] = float(market["bread"]) - 1.0
+	bread_price = minf(FWConst.BREAD_BASE_PRICE * 2.0, bread_price + FWConst.BREAD_BUY_RISE)
+	return true
+
+
+func market_public() -> Dictionary:
+	return {
+		"wheat_price": snappedf(wheat_price, 0.01), "bread_price": snappedf(bread_price, 0.01),
+		"wheat": int(floor(float(market["wheat"]))), "bread": int(floor(float(market["bread"]))),
+	}
 
 
 func building_public(b: Dictionary) -> Dictionary:
@@ -288,6 +352,8 @@ func to_dict() -> Dictionary:
 		"seed": seed_value,
 		"world_time": world_time,
 		"wheat_price": wheat_price,
+		"bread_price": bread_price,
+		"market": market,
 		"next_building_id": next_building_id,
 		"accounts": accounts,
 		"buildings": bl,
@@ -306,6 +372,10 @@ static func from_dict(d: Dictionary):
 	var cs = load("res://scripts/server/city_state.gd").new(int(d["seed"]), str(d["city_id"]))
 	cs.world_time = float(d.get("world_time", 8.0 * 3600.0))
 	cs.wheat_price = float(d.get("wheat_price", FWConst.WHEAT_BASE_PRICE))
+	cs.bread_price = float(d.get("bread_price", FWConst.BREAD_BASE_PRICE))
+	var mk = d.get("market", {})
+	if mk is Dictionary:
+		cs.market = {"wheat": float(mk.get("wheat", 0.0)), "bread": float(mk.get("bread", 0.0))}
 	cs.next_building_id = int(d["next_building_id"])
 	for name in d["accounts"]:
 		var a: Dictionary = d["accounts"][name]
@@ -330,6 +400,7 @@ static func from_dict(d: Dictionary):
 		var nb := {
 			"id": int(b["id"]), "type": str(b["type"]), "owner": str(b["owner"]),
 			"cx": int(b["cx"]), "cz": int(b["cz"]), "stock": float(b.get("stock", 0.0)),
+			"prog": float(b.get("prog", 0.0)),
 		}
 		cs.buildings[nb["id"]] = nb
 		for c in Placement.footprint(nb["type"], nb["cx"], nb["cz"]):
@@ -342,6 +413,7 @@ static func from_dict(d: Dictionary):
 				"state": str(n.get("state", "idle")), "money": int(n.get("money", 100)),
 				"paid_day": int(n.get("paid_day", -1)),
 				"income_day": int(n.get("income_day", -1)),
+				"bread_day": int(n.get("bread_day", -1)),
 			})
 	for e in d.get("audit", []):
 		cs.audit.append(e)

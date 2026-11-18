@@ -14,6 +14,7 @@ signal snapshot_received
 signal building_added(b: Dictionary)
 signal building_removed(id: int)
 signal stocks_changed
+signal market_changed
 signal money_changed(money: int)
 signal player_joined(player_name: String)
 signal player_left(player_name: String)
@@ -33,6 +34,8 @@ var role: String = FWConst.ROLE_PLAYER
 var money: int = 0
 var world_time: float = 0.0
 var wheat_price: float = FWConst.WHEAT_BASE_PRICE
+var bread_price: float = FWConst.BREAD_BASE_PRICE
+var market_stock: Dictionary = {"wheat": 0, "bread": 0}
 var players: Dictionary = {}  # نام -> {pos: Vector3, yaw: float, role: String}
 var npcs: Array = []
 var spawn: Vector2 = Vector2.ZERO
@@ -172,6 +175,7 @@ func on_login_result(ok: bool, error: String, info: Dictionary) -> void:
 	money = int(info["money"])
 	world_time = float(info["time"])
 	wheat_price = float(info["price"])
+	_apply_market(info.get("market", {}))
 	spawn = Vector2(info["pos"][0], info["pos"][1])
 	mirror = CityState.new(int(info["seed"]), str(info["city_id"]))
 	is_logged_in = true
@@ -208,6 +212,19 @@ func on_building_added(b: Dictionary) -> void:
 func on_building_removed(id: int) -> void:
 	mirror.apply_remove(id)
 	building_removed.emit(id)
+
+
+func _apply_market(mk: Dictionary) -> void:
+	if mk.is_empty():
+		return
+	wheat_price = float(mk.get("wheat_price", wheat_price))
+	bread_price = float(mk.get("bread_price", bread_price))
+	market_stock = {"wheat": int(mk.get("wheat", 0)), "bread": int(mk.get("bread", 0))}
+
+
+func on_market(mk: Dictionary) -> void:
+	_apply_market(mk)
+	market_changed.emit()
 
 
 func on_stocks(stocks: Dictionary) -> void:

@@ -10,7 +10,7 @@ signal disconnect_requested
 signal quality_changed(q: int)
 signal language_changed
 
-const TYPES := ["house", "shop", "farm", "road", "well"]
+const TYPES := ["house", "shop", "farm", "bakery", "road", "well"]
 
 var client
 var view
@@ -203,8 +203,10 @@ func _build_palette() -> void:
 	_palette.add_child(v)
 	_hint = _label(Loc.t("tap_to_place"), 22, Color("d6e4ff"))
 	v.add_child(_hint)
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 8)
+	var row := GridContainer.new()
+	row.columns = 3
+	row.add_theme_constant_override("h_separation", 8)
+	row.add_theme_constant_override("v_separation", 8)
 	v.add_child(row)
 	for t in TYPES:
 		var cost := int(FWConst.BUILDING_TYPES[t]["cost"])
@@ -377,7 +379,8 @@ func _on_notice(code: String, args: Dictionary) -> void:
 	match code:
 		"collected":
 			Sfx.play(self, "coin")
-			toast(Loc.fmt("msg_collected", [Loc.digits(str(args["count"])), Loc.digits(str(args["earned"]))]), Color("c8f08a"))
+			var msg_key := "msg_collected_bread" if str(args.get("good", "wheat")) == "bread" else "msg_collected"
+			toast(Loc.fmt(msg_key, [Loc.digits(str(args["count"])), Loc.digits(str(args["earned"]))]), Color("c8f08a"))
 		"role_set":
 			toast(Loc.fmt("msg_role_set", [args["target"], Loc.role_name(str(args["role"]))]))
 		"your_building_removed":
@@ -390,7 +393,8 @@ func _on_notice(code: String, args: Dictionary) -> void:
 func _refresh_stats() -> void:
 	_money.text = "%s %s" % [Loc.digits(str(client.money)), Loc.t("coins")]
 	_clock.text = Loc.clock(client.world_time)
-	_price.text = "%s: %s" % [Loc.t("wheat_price"), Loc.digits("%.1f" % client.wheat_price)]
+	_price.text = "%s: %s  |  %s: %s" % [Loc.t("wheat_price"), Loc.digits("%.1f" % client.wheat_price),
+		Loc.t("bread_price"), Loc.digits("%.1f" % client.bread_price)]
 	_online.text = "%s: %s" % [Loc.t("online"), Loc.digits(str(client.players.size()))]
 	if _info.visible and _info_id >= 0:
 		_fill_info(_info_id)
@@ -469,11 +473,13 @@ func _fill_info(id: int) -> void:
 	var b: Dictionary = client.mirror.buildings[id]
 	_info_title.text = Loc.t("type_" + str(b["type"]))
 	var body := "%s: %s" % [Loc.t("owner"), b["owner"]]
-	if b["type"] == "farm":
+	if b["type"] == "farm" or b["type"] == "bakery":
 		body += "\n%s: %s" % [Loc.t("stock"), Loc.digits(str(int(b["stock"])))]
+	if b["type"] == "bakery":
+		body += "\n%s: %s" % [Loc.t("market_wheat"), Loc.digits(str(int(client.market_stock["wheat"])))]
 	_info_body.text = body
 	var mine: bool = b["owner"] == client.my_name
-	_info_collect.visible = mine and b["type"] == "farm"
+	_info_collect.visible = mine and (b["type"] == "farm" or b["type"] == "bakery")
 	_info_demolish.visible = mine or FWConst.is_admin(client.role)
 
 

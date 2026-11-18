@@ -119,6 +119,21 @@ static func _advance(cs, npc: Dictionary, pos: Vector2, target: Vector2, dt: flo
 	return {"p": p, "arrived": false}
 
 
+## ساعت تفریح: هر NPC روزی یک‌بار هزینهٔ ثابت مغازه می‌دهد و یک‌بار (اگر نان در بازار باشد) نان می‌خرد.
+static func _leisure_shopping(cs, npc: Dictionary, day: int) -> void:
+	var shop = _pick(_list(cs, "shop"), int(npc["id"]) - 1)
+	if shop == null:
+		return
+	if int(npc["paid_day"]) != day and int(npc["money"]) >= FWConst.NPC_SHOP_PAYMENT:
+		var owner_name: String = shop["owner"]
+		if cs.accounts.has(owner_name):
+			npc["money"] = int(npc["money"]) - FWConst.NPC_SHOP_PAYMENT
+			cs.accounts[owner_name]["money"] = int(cs.accounts[owner_name]["money"]) + FWConst.NPC_SHOP_PAYMENT
+			npc["paid_day"] = day
+	if int(npc.get("bread_day", -1)) != day and cs.npc_buy_bread(npc, shop):
+		npc["bread_day"] = day
+
+
 static func step(cs, dt: float) -> void:
 	var h := hour_of(cs)
 	var day := int(floor(cs.world_time / 86400.0))
@@ -142,23 +157,17 @@ static func step(cs, dt: float) -> void:
 				if b != null and b["type"] == "farm":
 					b["stock"] = minf(FWConst.FARM_MAX_STOCK,
 						float(b["stock"]) + dt / FWConst.FARM_SECONDS_PER_WHEAT * FWConst.NPC_WORK_BONUS)
-			elif activity == "leisure" and int(npc["paid_day"]) != day:
-				var shop = _pick(_list(cs, "shop"), int(npc["id"]) - 1)
-				if shop != null and int(npc["money"]) >= FWConst.NPC_SHOP_PAYMENT:
-					var owner_name: String = shop["owner"]
-					if cs.accounts.has(owner_name):
-						npc["money"] = int(npc["money"]) - FWConst.NPC_SHOP_PAYMENT
-						cs.accounts[owner_name]["money"] = int(cs.accounts[owner_name]["money"]) + FWConst.NPC_SHOP_PAYMENT
-						npc["paid_day"] = day
+			elif activity == "leisure":
+				_leisure_shopping(cs, npc, day)
 	_daily_income(cs, day)
 
 
-## هر NPC روزی ۳ سکه درآمد دارد (سقف ۲۰۰) تا چرخهٔ خرید از مغازه متوقف نشود.
+## هر NPC روزی NPC_DAILY_INCOME سکه درآمد دارد (سقف NPC_MAX_MONEY) تا چرخهٔ خرید متوقف نشود.
 static func _daily_income(cs, day: int) -> void:
 	for npc in cs.npcs:
 		if not npc.has("income_day") or int(npc["income_day"]) != day:
 			npc["income_day"] = day
-			npc["money"] = mini(int(npc["money"]) + 3, 200)
+			npc["money"] = mini(int(npc["money"]) + FWConst.NPC_DAILY_INCOME, FWConst.NPC_MAX_MONEY)
 
 
 static func public_list(cs) -> Array:

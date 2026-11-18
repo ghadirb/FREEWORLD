@@ -27,6 +27,7 @@ func _init() -> void:
 	test_persistence()
 	test_npc()
 	test_npc_pathfinding()
+	test_economy_chain()
 	print("\nRESULT: %d passed, %d failed" % [_pass, _fail])
 	quit(1 if _fail > 0 else 0)
 
@@ -277,3 +278,119 @@ func test_npc_pathfinding() -> void:
 	var cs2 = CityState.new(12345)
 	var far = cs2.nav.find_path(Vector2(100.0, 100.0), Vector2(100.0, 100.0))
 	check(far != null and far.size() <= 1, "same-cell goal gives a trivial path (just the exact goal)")
+
+
+func _tick_for(cs, seconds: float, step: float = 0.5) -> void:
+	var t := 0.0
+	while t < seconds:
+		cs.tick(step)
+		t += step
+
+
+func test_economy_chain() -> void:
+	print("[economy chain: wheat -> market -> bread -> npc]")
+	var NpcSim = load("res://scripts/server/npc_sim.gd")
+	var cs = CityState.new(12345)
+	_login(cs, "farmer")
+	_login(cs, "baker")
+	_login(cs, "shopper")
+	for n in ["farmer", "baker", "shopper"]:
+		cs.accounts[n]["money"] = 5000
+	check(cs.place_building("farmer", 1, "farm", 4, 14)["ok"], "farm placed")
+	var rb: Dictionary = cs.place_building("baker", 2, "bakery", 12, 14)
+	check(rb["ok"], "bakery placed (cost %d)" % int(FWConst.BUILDING_TYPES["bakery"]["cost"]))
+	check(cs.place_building("shopper", 3, "shop", 20, 14)["ok"], "shop placed")
+	check(cs.place_building("shopper", 4, "house", 4, 4)["ok"], "house placed")
+	var bakery: Dictionary = _first_of(cs, "bakery")
+	var farm: Dictionary = _first_of(cs, "farm")
+
+	# بدون گندم در بازار، نانوایی نان نمی‌پزد.
+	_tick_for(cs, 120.0)
+	check(int(floor(float(bakery["stock"]))) == 0, "bakery makes no bread while the market has no wheat")
+	check(float(cs.market["wheat"]) == 0.0, "market starts empty")
+
+	# کشاورز گندم می‌فروشد ← بازار گندم پیدا می‌کند.
+	var wheat_before: int = cs.money_of("farmer")
+	var col: Dictionary = cs.collect("farmer", farm["id"])
+	check(col["ok"] and col["good"] == "wheat" and col["count"] >= 5, "farmer sells wheat (%d)" % int(col.get("count", 0)))
+	check(cs.money_of("farmer") > wheat_before, "farmer earned money")
+	var in_market: float = float(cs.market["wheat"])
+	check(in_market >= 5.0, "wheat is now in the market (%d)" % int(in_market))
+
+	# نانوایی با خرید گندم از بازار نان می‌پزد و پول گندم از صاحبش کم می‌شود.
+	var baker_money: int = cs.money_of("baker")
+	var price_at_start: int = int(floor(cs.wheat_price))
+	_tick_for(cs, 25.0)
+	check(int(floor(float(bakery["stock"]))) >= 1, "bakery baked bread from market wheat")
+	check(float(cs.market["wheat"]) <= in_market - 2.0, "baking consumed %d wheat from the market" % FWConst.BREAD_WHEAT_COST)
+	check(cs.money_of("baker") <= baker_money - FWConst.BREAD_WHEAT_COST * (price_at_start - 1), "baker paid for the wheat")
+
+	# نانوایی تا سقف موجودی تولید می‌کند و بیشتر نمی‌شود.
+	cs.market["wheat"] = 1000.0
+	_tick_for(cs, 400.0)
+	check(float(bakery["stock"]) <= FWConst.BAKERY_MAX_STOCK, "bakery stock is capped")
+	check(float(bakery["stock"]) >= FWConst.BAKERY_MAX_STOCK - 0.01, "bakery fills up when wheat is available")
+
+	# صاحب نانوایی نان را می‌فروشد؛ قیمت نان افت می‌کند و نان به بازار می‌رود.
+	var bp_before: float = cs.bread_price
+	var money_b: int = cs.money_of("baker")
+	var sale: Dictionary = cs.collect("baker", bakery["id"])
+	check(sale["ok"] and sale["good"] == "bread", "baker sells bread")
+	check(cs.money_of("baker") > money_b and sale["earned"] > 0, "baker earned money from bread")
+	check(cs.bread_price < bp_before, "selling bread lowers the bread price")
+	check(float(cs.market["bread"]) >= float(sale["count"]), "bread entered the market")
+	check(not cs.collect("baker", bakery["id"])["ok"], "nothing left to collect right after selling")
+
+	# فقط صاحب می‌تواند؛ ساختمان غیرتولیدی هم نه.
+	check(cs.collect("farmer", bakery["id"])["error"] == "forbidden", "only the owner collects from a bakery")
+	var house: Dictionary = _first_of(cs, "house")
+	check(cs.collect("shopper", house["id"])["error"] == "not_producer", "a house is not a producer")
+
+	# NPCها در ساعت تفریح نان می‌خرند و پولش به صاحب مغازه می‌رسد.
+	NpcSim.ensure_npcs(cs, 4)
+	cs.market["bread"] = 20.0
+	cs.bread_price = FWConst.BREAD_BASE_PRICE
+	var shop_money: int = cs.money_of("shopper")
+	_run_hours(cs, 12.0, 21.0)
+	var bought: float = 20.0 - float(cs.market["bread"])
+	check(bought >= 1.0, "npcs bought bread from the market (%d)" % int(bought))
+	check(cs.money_of("shopper") > shop_money + int(bought), "the shop owner got paid for bread (beyond the fixed fee)")
+	var bought_day1: float = bought
+	_run_hours(cs, 21.0, 23.9)  # همان روز دوباره نمی‌خرند
+	check(20.0 - float(cs.market["bread"]) == bought_day1, "each npc buys at most one bread per day")
+
+	# بدون نان در بازار NPC چیزی نمی‌خرد و پولش حفظ می‌شود.
+	var cs3 = CityState.new(12345)
+	_login(cs3, "s")
+	cs3.accounts["s"]["money"] = 5000
+	cs3.place_building("s", 1, "shop", 20, 14)
+	cs3.place_building("s", 2, "house", 4, 4)
+	NpcSim.ensure_npcs(cs3, 2)
+	var nm: int = int(cs3.npcs[0]["money"])
+	check(not cs3.npc_buy_bread(cs3.npcs[0], _first_of(cs3, "shop")), "npc cannot buy bread when the market has none")
+	check(int(cs3.npcs[0]["money"]) == nm, "npc money unchanged on a failed purchase")
+
+	# صاحب نانوایی بدون پول گندم نمی‌تواند نان بپزد.
+	var cs4 = CityState.new(12345)
+	_login(cs4, "poor")
+	cs4.accounts["poor"]["money"] = 600
+	check(cs4.place_building("poor", 1, "bakery", 12, 14)["ok"], "poor baker places bakery")
+	check(cs4.money_of("poor") == 0, "poor baker has no money left")
+	cs4.market["wheat"] = 50.0
+	_tick_for(cs4, 100.0)
+	check(int(floor(float(_first_of(cs4, "bakery")["stock"]))) == 0, "bakery cannot bake without money for wheat")
+	check(float(cs4.market["wheat"]) == 50.0, "market wheat untouched when the owner cannot pay")
+
+	# ذخیره و بازیابی: بازار، قیمت نان و پیشرفت پخت حفظ می‌شود.
+	cs.market["bread"] = 7.0
+	cs.bread_price = 13.5
+	var cs2 = CityState.from_dict(JSON.parse_string(JSON.stringify(cs.to_dict())))
+	check(cs2 != null, "economy state serializes")
+	check(float(cs2.market["bread"]) == 7.0 and absf(cs2.bread_price - 13.5) < 0.001, "market and bread price survive save/load")
+	check(cs2.buildings.size() == cs.buildings.size(), "buildings survive save/load")
+	# ذخیره‌ی قدیمی (بدون بازار) بدون خطا بارگذاری می‌شود.
+	var old: Dictionary = JSON.parse_string(JSON.stringify(cs.to_dict()))
+	old.erase("market")
+	old.erase("bread_price")
+	var cs5 = CityState.from_dict(old)
+	check(cs5 != null and float(cs5.market["bread"]) == 0.0 and cs5.bread_price == FWConst.BREAD_BASE_PRICE, "old saves without a market still load")

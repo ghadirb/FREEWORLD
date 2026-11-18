@@ -16,7 +16,7 @@ signal building_tapped(id: int)
 signal ghost_changed(error: String)
 signal mode_changed(new_mode: String)
 
-const HEIGHTS := {"house": 4.4, "shop": 4.0, "farm": 1.3, "road": 0.2, "well": 2.5}
+const HEIGHTS := {"house": 4.4, "shop": 4.0, "farm": 1.3, "road": 0.2, "well": 2.5, "bakery": 4.4}
 
 var client
 var world
@@ -232,7 +232,7 @@ func _spawn_building(b: Dictionary, animate: bool) -> void:
 		lbl.position = Vector3(0, label_y, 0)
 		lbl.modulate = Color("fff1c4")
 		node.add_child(lbl)
-	if type == "farm":
+	if type == "farm" or type == "bakery":
 		var sl := Label3D.new()
 		sl.name = "Stock"
 		sl.font = Avatar.font()
