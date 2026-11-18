@@ -7,3 +7,4 @@ export_credentials.cfg
 *.jks
 server_data/
 .mono/
+!build_config/debug.keystore
