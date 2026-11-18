@@ -137,7 +137,7 @@ func _kick(pid: int) -> void:
 	if pid == LOCAL_PID or not _listening:
 		return
 	if multiplayer.multiplayer_peer != null:
-		_kick(pid)
+		multiplayer.multiplayer_peer.disconnect_peer(pid)
 
 
 func shutdown() -> void:
