@@ -326,7 +326,7 @@ func _broadcast_stocks() -> void:
 	var stocks: Dictionary = {}
 	for id in cs.buildings:
 		var b: Dictionary = cs.buildings[id]
-		if b["type"] == "farm" or b["type"] == "bakery":
+		if FWConst.PRODUCERS.has(str(b["type"])):
 			stocks[id] = int(floor(float(b["stock"])))
 	if stocks != _last_stocks:
 		_last_stocks = stocks

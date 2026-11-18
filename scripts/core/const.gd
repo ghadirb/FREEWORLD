@@ -35,7 +35,17 @@ const BUILDING_TYPES := {
 	"road": {"cost": 20, "size": [1, 1]},
 	"well": {"cost": 100, "size": [1, 1]},
 	"bakery": {"cost": 600, "size": [2, 2]},
+	"coop": {"cost": 250, "size": [2, 2]},
+	"barn": {"cost": 350, "size": [3, 2]},
 }
+
+# دامداری: مرغداری تخم‌مرغ و گاوداری شیر تولید می‌کند (مثل مزرعه، با موجودی و قیمت بازار).
+const LIVESTOCK := {
+	"coop": {"good": "egg", "seconds": 15.0, "max": 12.0, "base": 6.0, "min": 2.0, "drop": 0.3, "recover": 0.03},
+	"barn": {"good": "milk", "seconds": 25.0, "max": 8.0, "base": 14.0, "min": 5.0, "drop": 0.6, "recover": 0.05},
+}
+# ساختمان‌هایی که تولید و «برداشت و فروش» دارند.
+const PRODUCERS := ["farm", "bakery", "coop", "barn"]
 
 const FARM_SECONDS_PER_WHEAT := 10.0
 const FARM_MAX_STOCK := 10.0
@@ -59,7 +69,7 @@ const MARKET_MAX_STOCK := 200.0
 const WORKER_BONUS := 0.5
 const WAGE_INTERVAL := 30.0
 const WAGE_AMOUNT := 12
-const JOB_TYPES := ["farm", "bakery"]
+const JOB_TYPES := ["farm", "bakery", "coop", "barn"]
 
 # هر ثانیهٔ واقعی = یک دقیقهٔ بازی
 const TIME_SCALE := 60.0
@@ -80,6 +90,10 @@ const NPC_NAMES := ["علی", "مریم", "رضا", "زهرا", "حسین", "س�
 
 static func role_rank(role: String) -> int:
 	return ROLES.find(role)
+
+
+static func is_livestock(type: String) -> bool:
+	return LIVESTOCK.has(type)
 
 
 static func is_admin(role: String) -> bool:

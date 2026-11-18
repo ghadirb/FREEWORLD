@@ -71,6 +71,18 @@ static func _make(type: String) -> ArrayMesh:
 			mb.add_box(Vector3(-1.05, 1.4, 1.58), Vector3(0.9, 0.9, 0.06), Color("ffe3a0"))
 			mb.add_box(Vector3(0, 2.3, 1.75), Vector3(3.6, 0.1, 0.9), Color("f2e2b8"))
 			mb.add_box(Vector3(0, 2.75, 1.5), Vector3(1.4, 0.4, 0.1), Color("e8b04a"))
+		"coop":
+			_foundation(mb, fp, 0.1)
+			mb.add_box(Vector3(0, 0.9, 0), Vector3(fp.x - 0.7, 1.8, fp.y - 0.9), Color("d9b36a"))
+			mb.add_gable(Vector3(0, 1.8 + 0.4, 0), Vector3(fp.x - 0.3, 0.9, fp.y - 0.5), Color("a6452f"))
+			mb.add_box(Vector3(0, 0.6, fp.y * 0.5 - 0.42), Vector3(0.6, 1.0, 0.08), WOOD)
+			mb.add_box(Vector3(1.2, 0.25, fp.y * 0.5 - 0.1), Vector3(0.9, 0.5, 0.5), Color("f4f0e0"))
+		"barn":
+			_foundation(mb, fp, 0.1)
+			mb.add_box(Vector3(0, 1.4, 0), Vector3(fp.x - 0.6, 2.8, fp.y - 0.6), Color("b23b2e"))
+			mb.add_gable(Vector3(0, 2.8 + 0.7, 0), Vector3(fp.x - 0.2, 1.4, fp.y - 0.2), Color("5a3a2a"))
+			mb.add_box(Vector3(0, 1.0, fp.y * 0.5 - 0.3), Vector3(1.6, 2.0, 0.1), Color("f4f0e0"))
+			mb.add_box(Vector3(fp.x * 0.5 - 0.2, 1.6, 0), Vector3(0.6, 3.2, 0.6), Color("c9c9c9"))
 		"road":
 			mb.add_box(Vector3(0, -0.8, 0), Vector3(fp.x, 1.6, fp.y), Color("5f5f5f"))
 			mb.add_box(Vector3(0, 0.05, 0), Vector3(fp.x, 0.1, fp.y), Color("707070"))

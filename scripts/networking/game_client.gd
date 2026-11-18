@@ -39,7 +39,9 @@ var world_time: float = 0.0
 var wheat_price: float = FWConst.WHEAT_BASE_PRICE
 var bread_price: float = FWConst.BREAD_BASE_PRICE
 var job_id: int = 0
-var market_stock: Dictionary = {"wheat": 0, "bread": 0}
+var egg_price: float = 6.0
+var milk_price: float = 14.0
+var market_stock: Dictionary = {"wheat": 0, "bread": 0, "egg": 0, "milk": 0}
 var players: Dictionary = {}  # نام -> {pos: Vector3, yaw: float, role: String}
 var npcs: Array = []
 var spawn: Vector2 = Vector2.ZERO
@@ -304,7 +306,10 @@ func _apply_market(mk: Dictionary) -> void:
 		return
 	wheat_price = float(mk.get("wheat_price", wheat_price))
 	bread_price = float(mk.get("bread_price", bread_price))
-	market_stock = {"wheat": int(mk.get("wheat", 0)), "bread": int(mk.get("bread", 0))}
+	egg_price = float(mk.get("egg_price", egg_price))
+	milk_price = float(mk.get("milk_price", milk_price))
+	market_stock = {"wheat": int(mk.get("wheat", 0)), "bread": int(mk.get("bread", 0)),
+		"egg": int(mk.get("egg", 0)), "milk": int(mk.get("milk", 0))}
 
 
 func on_market(mk: Dictionary) -> void:

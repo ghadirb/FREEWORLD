@@ -10,7 +10,7 @@ signal disconnect_requested
 signal quality_changed(q: int)
 signal language_changed
 
-const TYPES := ["house", "shop", "farm", "bakery", "road", "well"]
+const TYPES := ["house", "shop", "farm", "coop", "barn", "bakery", "road", "well"]
 
 var client
 var view
@@ -384,7 +384,8 @@ func _on_notice(code: String, args: Dictionary) -> void:
 	match code:
 		"collected":
 			Sfx.play(self, "coin")
-			var msg_key := "msg_collected_bread" if str(args.get("good", "wheat")) == "bread" else "msg_collected"
+			var good_name := str(args.get("good", "wheat"))
+			var msg_key := "msg_collected" if good_name == "wheat" else "msg_collected_" + good_name
 			toast(Loc.fmt(msg_key, [Loc.digits(str(args["count"])), Loc.digits(str(args["earned"]))]), Color("c8f08a"))
 		"job_taken":
 			Sfx.play(self, "notify")
@@ -413,6 +414,8 @@ func _refresh_stats() -> void:
 	_clock.text = Loc.clock(client.world_time)
 	_price.text = "%s: %s  |  %s: %s" % [Loc.t("wheat_price"), Loc.digits("%.1f" % client.wheat_price),
 		Loc.t("bread_price"), Loc.digits("%.1f" % client.bread_price)]
+	_price.text += "  |  %s: %s  |  %s: %s" % [Loc.t("egg_price"), Loc.digits("%.1f" % client.egg_price),
+		Loc.t("milk_price"), Loc.digits("%.1f" % client.milk_price)]
 	_online.text = "%s: %s" % [Loc.t("online"), Loc.digits(str(client.players.size()))]
 	if _info.visible and _info_id >= 0:
 		_fill_info(_info_id)
@@ -491,13 +494,13 @@ func _fill_info(id: int) -> void:
 	var b: Dictionary = client.mirror.buildings[id]
 	_info_title.text = Loc.t("type_" + str(b["type"]))
 	var body := "%s: %s" % [Loc.t("owner"), b["owner"]]
-	if b["type"] == "farm" or b["type"] == "bakery":
+	if FWConst.PRODUCERS.has(str(b["type"])):
 		body += "\n%s: %s" % [Loc.t("stock"), Loc.digits(str(int(b["stock"])))]
 	if b["type"] == "bakery":
 		body += "\n%s: %s" % [Loc.t("market_wheat"), Loc.digits(str(int(client.market_stock["wheat"])))]
 	_info_body.text = body
 	var mine: bool = b["owner"] == client.my_name
-	_info_collect.visible = mine and (b["type"] == "farm" or b["type"] == "bakery")
+	_info_collect.visible = mine and FWConst.PRODUCERS.has(str(b["type"]))
 	var employed_here: bool = client.job_id == id
 	if employed_here:
 		body += "\n" + Loc.t("job_here")

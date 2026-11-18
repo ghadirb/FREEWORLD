@@ -22,7 +22,9 @@ var world_time: float = 8.0 * 3600.0
 var wheat_price: float = FWConst.WHEAT_BASE_PRICE
 var bread_price: float = FWConst.BREAD_BASE_PRICE
 ## موجودی بازار مشترک شهر: کالایی که کشاورزان فروخته‌اند و هنوز مصرف نشده.
-var market: Dictionary = {"wheat": 0.0, "bread": 0.0}
+var market: Dictionary = {"wheat": 0.0, "bread": 0.0, "egg": 0.0, "milk": 0.0}
+## قیمت کالاهای دامی (تخم‌مرغ و شیر).
+var prices: Dictionary = {"egg": 6.0, "milk": 14.0}
 var npcs: Array = []
 ## فاصلهٔ پرداخت حقوق (قابل تغییر در تست).
 var wage_interval: float = FWConst.WAGE_INTERVAL
@@ -248,6 +250,8 @@ func collect(player_name: String, id: int) -> Dictionary:
 			good = "wheat"
 		"bakery":
 			good = "bread"
+		"coop", "barn":
+			good = str(FWConst.LIVESTOCK[str(b["type"])]["good"])
 		_:
 			return {"ok": false, "error": "not_producer"}
 	var n := int(floor(float(b["stock"])))
@@ -258,9 +262,13 @@ func collect(player_name: String, id: int) -> Dictionary:
 		if good == "wheat":
 			earned += int(floor(wheat_price))
 			wheat_price = maxf(FWConst.WHEAT_MIN_PRICE, wheat_price - FWConst.WHEAT_SELL_DROP)
-		else:
+		elif good == "bread":
 			earned += int(floor(bread_price))
 			bread_price = maxf(FWConst.BREAD_MIN_PRICE, bread_price - FWConst.BREAD_SELL_DROP)
+		else:
+			var lv: Dictionary = FWConst.LIVESTOCK[str(b["type"])]
+			earned += int(floor(float(prices[good])))
+			prices[good] = maxf(float(lv["min"]), float(prices[good]) - float(lv["drop"]))
 	b["stock"] = float(b["stock"]) - n
 	market[good] = minf(FWConst.MARKET_MAX_STOCK, float(market[good]) + n)
 	accounts[player_name]["money"] = int(accounts[player_name]["money"]) + earned
@@ -337,6 +345,9 @@ func work_step(delta: float, positions: Dictionary) -> Array:
 					float(b["stock"]) + delta / FWConst.FARM_SECONDS_PER_WHEAT * FWConst.WORKER_BONUS)
 			"bakery":
 				b["prog"] = minf(float(b.get("prog", 0.0)) + delta * FWConst.WORKER_BONUS, FWConst.BAKERY_SECONDS_PER_BREAD)
+			"coop", "barn":
+				var lv: Dictionary = FWConst.LIVESTOCK[str(b["type"])]
+				b["stock"] = minf(float(lv["max"]), float(b["stock"]) + delta / float(lv["seconds"]) * FWConst.WORKER_BONUS)
 		acc["work_acc"] = float(acc.get("work_acc", 0.0)) + delta
 		if float(acc["work_acc"]) < wage_interval:
 			continue
@@ -373,6 +384,13 @@ func tick(delta: float) -> void:
 				b["stock"] = minf(FWConst.FARM_MAX_STOCK, float(b["stock"]) + delta / FWConst.FARM_SECONDS_PER_WHEAT)
 			"bakery":
 				_tick_bakery(b, delta)
+			"coop", "barn":
+				var lv: Dictionary = FWConst.LIVESTOCK[str(b["type"])]
+				b["stock"] = minf(float(lv["max"]), float(b["stock"]) + delta / float(lv["seconds"]))
+	for t in FWConst.LIVESTOCK:
+		var lv: Dictionary = FWConst.LIVESTOCK[t]
+		var g: String = lv["good"]
+		prices[g] = minf(float(lv["base"]), float(prices[g]) + float(lv["recover"]) * delta)
 
 
 ## نانوایی: وقتی زمان پخت رسید، اگر بازار گندم داشته باشد و صاحب‌اش پول گندم را بپردازد، یک نان می‌پزد.
@@ -412,10 +430,28 @@ func npc_buy_bread(npc: Dictionary, shop: Dictionary) -> bool:
 	return true
 
 
+## خرید یک تخم‌مرغ یا شیر از بازار توسط NPC؛ پول به صاحب مغازه می‌رسد.
+func npc_buy_good(npc: Dictionary, shop: Dictionary, good: String) -> bool:
+	if not prices.has(good):
+		return false
+	var price: int = int(floor(float(prices[good])))
+	if float(market[good]) < 1.0 or int(npc["money"]) < price:
+		return false
+	var owner_name: String = shop["owner"]
+	if not accounts.has(owner_name):
+		return false
+	npc["money"] = int(npc["money"]) - price
+	accounts[owner_name]["money"] = int(accounts[owner_name]["money"]) + price
+	market[good] = float(market[good]) - 1.0
+	return true
+
+
 func market_public() -> Dictionary:
 	return {
 		"wheat_price": snappedf(wheat_price, 0.01), "bread_price": snappedf(bread_price, 0.01),
 		"wheat": int(floor(float(market["wheat"]))), "bread": int(floor(float(market["bread"]))),
+		"egg_price": snappedf(float(prices["egg"]), 0.01), "milk_price": snappedf(float(prices["milk"]), 0.01),
+		"egg": int(floor(float(market["egg"]))), "milk": int(floor(float(market["milk"]))),
 	}
 
 
@@ -445,6 +481,7 @@ func to_dict() -> Dictionary:
 		"wheat_price": wheat_price,
 		"bread_price": bread_price,
 		"market": market,
+		"prices": prices,
 		"next_building_id": next_building_id,
 		"accounts": accounts,
 		"buildings": bl,
@@ -466,7 +503,13 @@ static func from_dict(d: Dictionary):
 	cs.bread_price = float(d.get("bread_price", FWConst.BREAD_BASE_PRICE))
 	var mk = d.get("market", {})
 	if mk is Dictionary:
-		cs.market = {"wheat": float(mk.get("wheat", 0.0)), "bread": float(mk.get("bread", 0.0))}
+		cs.market = {
+			"wheat": float(mk.get("wheat", 0.0)), "bread": float(mk.get("bread", 0.0)),
+			"egg": float(mk.get("egg", 0.0)), "milk": float(mk.get("milk", 0.0)),
+		}
+	var pr = d.get("prices", {})
+	if pr is Dictionary:
+		cs.prices = {"egg": float(pr.get("egg", 6.0)), "milk": float(pr.get("milk", 14.0))}
 	cs.next_building_id = int(d["next_building_id"])
 	for name in d["accounts"]:
 		var a: Dictionary = d["accounts"][name]
@@ -507,6 +550,7 @@ static func from_dict(d: Dictionary):
 				"paid_day": int(n.get("paid_day", -1)),
 				"income_day": int(n.get("income_day", -1)),
 				"bread_day": int(n.get("bread_day", -1)),
+				"goods_day": int(n.get("goods_day", -1)),
 			})
 	for e in d.get("audit", []):
 		cs.audit.append(e)

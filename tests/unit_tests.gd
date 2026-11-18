@@ -34,6 +34,7 @@ func _init() -> void:
 	test_npc_pathfinding()
 	test_economy_chain()
 	test_jobs()
+	test_livestock()
 	test_world_slots()
 	test_npc_label_fade()
 	test_tls_pinning()
@@ -506,6 +507,70 @@ func test_jobs() -> void:
 		old["accounts"][n].erase("work_acc")
 	var cs3 = CityState.from_dict(old)
 	check(cs3 != null and cs3.job_of("worker") == 0, "old saves without jobs still load")
+
+
+func test_livestock() -> void:
+	var NpcSim = load("res://scripts/server/npc_sim.gd")
+	var cs = CityState.new(12345)
+	_login(cs, "herder")
+	_login(cs, "helper")
+	cs.accounts["herder"]["money"] = 5000
+	var rc: Dictionary = cs.place_building("herder", 1, "coop", 12, 14)
+	var rb: Dictionary = cs.place_building("herder", 2, "barn", 20, 14)
+	check(rc["ok"] and rb["ok"], "coop and barn can be placed")
+	var coop: Dictionary = _first_of(cs, "coop")
+	var barn: Dictionary = _first_of(cs, "barn")
+	check(not cs.collect("herder", coop["id"])["ok"], "nothing to collect from a fresh coop")
+	_tick_for(cs, 60.0)
+	check(int(floor(float(coop["stock"]))) >= 3, "coop lays eggs over time")
+	check(float(barn["stock"]) >= 2.0, "barn gives milk over time")
+	_tick_for(cs, 600.0)
+	check(float(coop["stock"]) <= float(FWConst.LIVESTOCK["coop"]["max"]), "coop stock is capped")
+	var ep: float = float(cs.prices["egg"])
+	var money: int = cs.money_of("herder")
+	var sale: Dictionary = cs.collect("herder", coop["id"])
+	check(sale["ok"] and sale["good"] == "egg" and sale["earned"] > 0, "owner sells eggs")
+	check(cs.money_of("herder") == money + int(sale["earned"]), "money matches earnings")
+	check(float(cs.prices["egg"]) < ep, "selling eggs lowers the egg price")
+	check(float(cs.prices["egg"]) >= float(FWConst.LIVESTOCK["coop"]["min"]), "egg price has a floor")
+	check(float(cs.market["egg"]) >= float(sale["count"]) - 0.01, "eggs entered the market")
+	var ms: Dictionary = cs.collect("herder", barn["id"])
+	check(ms["ok"] and ms["good"] == "milk", "owner sells milk")
+	check(cs.collect("helper", coop["id"])["error"] == "forbidden", "only the owner collects")
+	var low: float = float(cs.prices["milk"])
+	_tick_for(cs, 120.0)
+	check(float(cs.prices["milk"]) > low, "milk price recovers")
+	check(float(cs.prices["milk"]) <= float(FWConst.LIVESTOCK["barn"]["base"]), "milk price never exceeds base")
+
+	# مشاغل: کارگر کنار مرغداری تولید را سریع‌تر می‌کند.
+	check(cs.take_job("helper", coop["id"])["ok"], "can take a job at a coop")
+	coop["stock"] = 0.0
+	cs.work_step(10.0, {"helper": cs.door_point(coop)})
+	check(float(coop["stock"]) > 0.3, "worker speeds up the coop")
+
+	# NPCها تخم‌مرغ و شیر می‌خرند؛ روزی حداکثر یک کالا.
+	var cs2 = CityState.new(12345)
+	_login(cs2, "shopper")
+	cs2.accounts["shopper"]["money"] = 5000
+	cs2.place_building("shopper", 1, "shop", 20, 14)
+	NpcSim.ensure_npcs(cs2, 4)
+	cs2.market["egg"] = 20.0
+	cs2.market["milk"] = 20.0
+	var before: float = 40.0
+	_run_hours(cs2, 12.0, 21.0)
+	var bought: float = before - float(cs2.market["egg"]) - float(cs2.market["milk"])
+	check(bought >= 1.0, "npcs bought eggs or milk (%d)" % int(bought))
+	check(bought <= 4.0, "each npc buys at most one egg/milk per day")
+
+	# ذخیره و بارگذاری قیمت‌ها و موجودی بازار دامی را حفظ می‌کند.
+	cs.prices["egg"] = 3.5
+	cs.market["milk"] = 7.0
+	var cs3 = CityState.from_dict(JSON.parse_string(JSON.stringify(cs.to_dict())))
+	check(cs3 != null and absf(float(cs3.prices["egg"]) - 3.5) < 0.001, "egg price survives save/load")
+	check(cs3 != null and absf(float(cs3.market["milk"]) - 7.0) < 0.001, "milk stock survives save/load")
+	check(cs3 != null and _first_of(cs3, "barn").size() > 0, "barn survives save/load")
+	var pub: Dictionary = cs.market_public()
+	check(pub.has("egg_price") and pub.has("milk") and pub.has("egg"), "market_public exposes livestock goods")
 
 
 func test_world_slots() -> void:
