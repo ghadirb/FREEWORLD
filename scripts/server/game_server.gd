@@ -18,7 +18,7 @@ const SAVE_DEBOUNCE_MSEC := 1000
 const LOCAL_PID := 1
 const LOCAL_METHODS := [
 	"c2s_login", "c2s_move", "c2s_place", "c2s_remove", "c2s_collect",
-	"c2s_chat", "c2s_set_role", "c2s_get_audit",
+	"c2s_chat", "c2s_set_role", "c2s_get_audit", "c2s_job",
 ]
 
 var net: Node
@@ -172,6 +172,7 @@ func _process(delta: float) -> void:
 	var dt: float = minf(delta, 0.25)
 	cs.tick(dt)
 	NpcSim.step(cs, dt)
+	_work_step(dt)
 	var now := Time.get_ticks_msec()
 	for pid in peers.keys():
 		var p: Dictionary = peers[pid]
@@ -191,6 +192,26 @@ func _process(delta: float) -> void:
 		_dirty = true
 	if _dirty and now - _last_save_msec >= SAVE_DEBOUNCE_MSEC:
 		_save()
+
+
+func _work_step(dt: float) -> void:
+	var positions: Dictionary = {}
+	for pid in _auth_peers():
+		var p: Dictionary = peers[pid]
+		var pos: Vector3 = p["pos"]
+		positions[p["name"]] = Vector2(pos.x, pos.z)
+	for ev in cs.work_step(dt, positions):
+		var worker: String = ev["worker"]
+		if int(ev["amount"]) > 0:
+			if by_name.has(worker):
+				_send(by_name[worker], "s2c_money", cs.money_of(worker))
+				_notice(by_name[worker], "wage", {"amount": ev["amount"]})
+			var employer: String = ev["employer"]
+			if by_name.has(employer):
+				_send(by_name[employer], "s2c_money", cs.money_of(employer))
+			_dirty = true
+		elif by_name.has(worker):
+			_notice(by_name[worker], "employer_broke", {"employer": ev["employer"]})
 
 
 # ---------------- ابزارها ----------------
@@ -356,6 +377,7 @@ func on_login(pid: int, player_name: String, token: String, proto: int) -> void:
 		"name": player_name, "token": res["token"], "seed": cs.seed_value, "city_id": cs.city_id,
 		"role": acc["role"], "money": acc["money"], "pos": [pos.x, pos.z],
 		"time": cs.world_time, "price": cs.wheat_price, "market": cs.market_public(),
+		"job": cs.job_of(player_name),
 	}
 	_send(pid, "s2c_login_result", true, "", info)
 	_send(pid, "s2c_snapshot", cs.all_buildings_public(), NpcSim.public_list(cs), _players_public())
@@ -419,6 +441,10 @@ func on_remove(pid: int, id: int) -> void:
 		_notice(pid, str(res["error"]))
 		return
 	_broadcast("s2c_building_removed", id)
+	for w in res["fired"]:
+		if by_name.has(w):
+			_send(by_name[w], "s2c_job", 0)
+			_notice(by_name[w], "job_lost")
 	var owner_name: String = res["owner"]
 	if by_name.has(owner_name):
 		_send(by_name[owner_name], "s2c_money", cs.money_of(owner_name))
@@ -490,3 +516,37 @@ func on_get_audit(pid: int) -> void:
 		_notice(pid, "forbidden")
 		return
 	_send(pid, "s2c_audit", cs.audit.slice(maxi(0, cs.audit.size() - 50)))
+
+
+## id > 0: شغل گرفتن در آن ساختمان (باید نزدیک باشد)؛ id == 0: ترک شغل.
+func on_job(pid: int, id: int) -> void:
+	var p := _player_of(pid)
+	if p.is_empty():
+		return
+	if not _allow_action(p):
+		_notice(pid, "rate_limited")
+		return
+	if id == 0:
+		var q: Dictionary = cs.quit_job(p["name"])
+		if not q["ok"]:
+			_notice(pid, str(q["error"]))
+			return
+		_send(pid, "s2c_job", 0)
+		_notice(pid, "job_quit")
+		_dirty = true
+		return
+	if not cs.buildings.has(id):
+		_notice(pid, "no_building")
+		return
+	var door: Vector2 = cs.door_point(cs.buildings[id])
+	var pos: Vector3 = p["pos"]
+	if Vector2(pos.x, pos.z).distance_to(door) > FWConst.INTERACT_RANGE:
+		_notice(pid, "too_far")
+		return
+	var res: Dictionary = cs.take_job(p["name"], id)
+	if not res["ok"]:
+		_notice(pid, str(res["error"]))
+		return
+	_send(pid, "s2c_job", id)
+	_notice(pid, "job_taken", {"employer": cs.buildings[id]["owner"]})
+	_dirty = true

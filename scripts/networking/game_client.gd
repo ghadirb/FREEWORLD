@@ -15,6 +15,7 @@ signal building_added(b: Dictionary)
 signal building_removed(id: int)
 signal stocks_changed
 signal market_changed
+signal job_changed
 signal money_changed(money: int)
 signal player_joined(player_name: String)
 signal player_left(player_name: String)
@@ -35,6 +36,7 @@ var money: int = 0
 var world_time: float = 0.0
 var wheat_price: float = FWConst.WHEAT_BASE_PRICE
 var bread_price: float = FWConst.BREAD_BASE_PRICE
+var job_id: int = 0
 var market_stock: Dictionary = {"wheat": 0, "bread": 0}
 var players: Dictionary = {}  # نام -> {pos: Vector3, yaw: float, role: String}
 var npcs: Array = []
@@ -128,6 +130,16 @@ func remove(id: int) -> void:
 		_tx("c2s_remove", [id])
 
 
+func set_job(building_id: int) -> void:
+	if is_logged_in:
+		_tx("c2s_job", [building_id])
+
+
+func on_job(building_id: int) -> void:
+	job_id = building_id
+	job_changed.emit()
+
+
 func collect(id: int) -> void:
 	if is_logged_in:
 		_tx("c2s_collect", [id])
@@ -176,6 +188,7 @@ func on_login_result(ok: bool, error: String, info: Dictionary) -> void:
 	world_time = float(info["time"])
 	wheat_price = float(info["price"])
 	_apply_market(info.get("market", {}))
+	job_id = int(info.get("job", 0))
 	spawn = Vector2(info["pos"][0], info["pos"][1])
 	mirror = CityState.new(int(info["seed"]), str(info["city_id"]))
 	is_logged_in = true

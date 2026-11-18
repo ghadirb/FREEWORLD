@@ -1,7 +1,7 @@
 extends RefCounted
 ## ثابت‌های مشترک بین سرور و کلاینت.
 
-const PROTOCOL_VERSION := 2
+const PROTOCOL_VERSION := 3
 const DEFAULT_PORT := 7777
 const MAX_PLAYERS := 10
 
@@ -52,6 +52,12 @@ const BREAD_SELL_DROP := 0.5
 const BREAD_BUY_RISE := 0.5
 const BREAD_RECOVER_PER_SEC := 0.05
 const MARKET_MAX_STOCK := 200.0
+
+# مشاغل: کارگر کنار محل کار حاضر باشد ← تولید ۵۰٪ سریع‌تر و هر WAGE_INTERVAL ثانیه حقوق از کارفرما.
+const WORKER_BONUS := 0.5
+const WAGE_INTERVAL := 30.0
+const WAGE_AMOUNT := 12
+const JOB_TYPES := ["farm", "bakery"]
 
 # هر ثانیهٔ واقعی = یک دقیقهٔ بازی
 const TIME_SCALE := 60.0

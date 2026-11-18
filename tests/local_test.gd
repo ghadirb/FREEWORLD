@@ -7,6 +7,7 @@ const FWConst = preload("res://scripts/core/const.gd")
 const NetScript = preload("res://scripts/networking/net.gd")
 const GameClient = preload("res://scripts/networking/game_client.gd")
 const ServerMain = preload("res://scripts/server/server_main.gd")
+const Placement = preload("res://scripts/shared/placement.gd")
 
 var fails := 0
 var net: Node
@@ -90,6 +91,52 @@ func _run() -> void:
 	c.connect_local(server, "hosty", "secret-secret-1")
 	ok(await wait_until(func(): return c.is_logged_in, 3.0), "login after restart")
 	ok(server.cs.buildings.size() == 1, "building survived restart")
+	c.disconnect_from_server()
+	server.stop()
+	server.queue_free()
+	c.queue_free()
+	await create_timer(0.3).timeout
+
+	print("== jobs over the local RPC path ==")
+	var jdir := OS.get_user_data_dir().path_join("local_test_jobs_%d" % Time.get_ticks_msec())
+	server = _start_server(0, jdir)
+	c = _mk_client()
+	c.connect_local(server, "hosty", "secret-secret-1")
+	ok(await wait_until(func(): return c.is_logged_in, 3.0), "login for the jobs test")
+	var boss_tok: String = server.cs.authenticate("boss", "")["token"]
+	server.cs.accounts["boss"]["money"] = 5000
+	var spot2 := Vector2i(-1, -1)
+	for cx in range(4, 30):
+		for cz in range(4, 30):
+			if spot2.x < 0 and Placement.check(server.cs.world, server.cs.occupied, "farm", cx, cz, FWConst.ROLE_PLAYER) == "":
+				spot2 = Vector2i(cx, cz)
+	ok(spot2.x >= 0, "found a spot for the boss farm")
+	var placed: Dictionary = server.cs.place_building("boss", 0, "farm", spot2.x, spot2.y)
+	ok(placed["ok"], "boss builds a farm on the server")
+	var fid: int = int(placed["building"]["id"])
+	var codes: Array = []
+	c.notice.connect(func(code, _a): codes.append(code))
+	var door: Vector2 = server.cs.door_point(server.cs.buildings[fid])
+	server.peers[1]["pos"] = Vector3(door.x + 200.0, 0.0, door.y)
+	c.set_job(fid)
+	ok(await wait_until(func(): return codes.has("too_far"), 2.0), "cannot take a job while far away")
+	ok(c.job_id == 0, "client has no job after the refusal")
+	server.peers[1]["pos"] = Vector3(door.x, 0.0, door.y)
+	await create_timer(0.3).timeout  # جلوگیری از محدودیت نرخ
+	c.set_job(fid)
+	ok(await wait_until(func(): return c.job_id == fid, 3.0), "job is confirmed to the client")
+	ok(codes.has("job_taken"), "client got the job_taken notice")
+	server.cs.wage_interval = 1.0
+	var m0: int = c.money
+	ok(await wait_until(func(): return c.money >= m0 + FWConst.WAGE_AMOUNT, 6.0), "wage reaches the client over the RPC path")
+	ok(codes.has("wage"), "client got the wage notice")
+	var boss_after: int = server.cs.money_of("boss")
+	ok(boss_after <= 5000 - int(FWConst.BUILDING_TYPES["farm"]["cost"]) - FWConst.WAGE_AMOUNT, "the employer paid at least one wage (%d left)" % boss_after)
+	c.remove(fid)
+	ok(await wait_until(func(): return c.job_id == 0, 3.0), "job ends when the workplace is removed")
+	ok(codes.has("job_lost"), "client got the job_lost notice")
+	c.set_job(0)
+	ok(await wait_until(func(): return codes.has("no_job"), 3.0), "quitting without a job reports no_job")
 	c.disconnect_from_server()
 	server.stop()
 	server.queue_free()

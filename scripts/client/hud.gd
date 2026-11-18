@@ -34,6 +34,7 @@ var _info_title: Label
 var _info_body: Label
 var _info_collect: Button
 var _info_demolish: Button
+var _info_job: Button
 var _info_id: int = -1
 var _toasts: VBoxContainer
 var _chat_log: RichTextLabel
@@ -94,6 +95,7 @@ func setup(game_client, game_view) -> void:
 	view.mode_changed.connect(_on_mode_changed)
 	client.money_changed.connect(func(_m): _refresh_stats())
 	client.notice.connect(_on_notice)
+	client.job_changed.connect(func(): if _info.visible and _info_id >= 0: _fill_info(_info_id))
 	client.chat_received.connect(_on_chat)
 	client.role_changed.connect(func(_r): _refresh_role())
 	client.player_joined.connect(func(n): toast(Loc.fmt("msg_joined", [n])); Sfx.play(self, "notify"))
@@ -251,6 +253,9 @@ func _build_info_panel() -> void:
 	row.add_child(_info_collect)
 	row.add_child(_info_demolish)
 	row.add_child(close)
+	_info_job = UiTheme.button(Loc.t("job_take"), Vector2(0, 64))
+	_info_job.pressed.connect(func(): client.set_job(0 if client.job_id == _info_id else _info_id))
+	v.add_child(_info_job)
 
 
 func _build_toasts() -> void:
@@ -381,6 +386,19 @@ func _on_notice(code: String, args: Dictionary) -> void:
 			Sfx.play(self, "coin")
 			var msg_key := "msg_collected_bread" if str(args.get("good", "wheat")) == "bread" else "msg_collected"
 			toast(Loc.fmt(msg_key, [Loc.digits(str(args["count"])), Loc.digits(str(args["earned"]))]), Color("c8f08a"))
+		"job_taken":
+			Sfx.play(self, "notify")
+			toast(Loc.fmt("msg_job_taken", [args["employer"]]), Color("c8f08a"))
+		"job_quit":
+			toast(Loc.t("msg_job_quit"))
+		"job_lost":
+			Sfx.play(self, "error")
+			toast(Loc.t("msg_job_lost"), Color("ff9a8a"))
+		"wage":
+			Sfx.play(self, "coin")
+			toast(Loc.fmt("msg_wage", [Loc.digits(str(args["amount"]))]), Color("c8f08a"))
+		"employer_broke":
+			toast(Loc.fmt("msg_employer_broke", [args["employer"]]), Color("ff9a8a"))
 		"role_set":
 			toast(Loc.fmt("msg_role_set", [args["target"], Loc.role_name(str(args["role"]))]))
 		"your_building_removed":
@@ -480,6 +498,12 @@ func _fill_info(id: int) -> void:
 	_info_body.text = body
 	var mine: bool = b["owner"] == client.my_name
 	_info_collect.visible = mine and (b["type"] == "farm" or b["type"] == "bakery")
+	var employed_here: bool = client.job_id == id
+	if employed_here:
+		body += "\n" + Loc.t("job_here")
+		_info_body.text = body
+	_info_job.visible = employed_here or (not mine and FWConst.JOB_TYPES.has(str(b["type"])))
+	_info_job.text = Loc.t("job_quit_btn") if employed_here else Loc.t("job_take")
 	_info_demolish.visible = mine or FWConst.is_admin(client.role)
 
 

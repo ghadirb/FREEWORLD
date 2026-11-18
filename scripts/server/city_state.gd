@@ -24,6 +24,8 @@ var bread_price: float = FWConst.BREAD_BASE_PRICE
 ## موجودی بازار مشترک شهر: کالایی که کشاورزان فروخته‌اند و هنوز مصرف نشده.
 var market: Dictionary = {"wheat": 0.0, "bread": 0.0}
 var npcs: Array = []
+## فاصلهٔ پرداخت حقوق (قابل تغییر در تست).
+var wage_interval: float = FWConst.WAGE_INTERVAL
 var _audit_counter: int = 0
 ## با هر تغییر در ساختمان‌ها زیاد می‌شود تا شبکهٔ مسیریابی دوباره ساخته شود (ذخیره نمی‌شود).
 var nav_version: int = 0
@@ -71,6 +73,8 @@ func authenticate(player_name: String, token: String) -> Dictionary:
 		"pos": [sp.x, sp.y, sp.z],
 		"wheat": 0,
 		"requests": [],
+		"job": 0,
+		"work_acc": 0.0,
 	}
 	_log(player_name, "account_created", {})
 	return {"ok": true, "token": t}
@@ -90,6 +94,8 @@ func provision_admin(player_name: String, secret: String, role: String = FWConst
 		"pos": [sp.x, sp.y, sp.z],
 		"wheat": 0,
 		"requests": [],
+		"job": 0,
+		"work_acc": 0.0,
 	}
 
 
@@ -216,6 +222,7 @@ func remove_building(player_name: String, id: int) -> Dictionary:
 		occupied.erase(Placement.cell_key(c.x, c.y))
 	buildings.erase(id)
 	nav_version += 1
+	var fired: Array = _clear_jobs_for(id)
 	var refund := int(int(FWConst.BUILDING_TYPES[b["type"]]["cost"]) * FWConst.REFUND_RATIO)
 	var owner_name: String = b["owner"]
 	if accounts.has(owner_name):
@@ -225,7 +232,7 @@ func remove_building(player_name: String, id: int) -> Dictionary:
 		_log(player_name, "admin_remove", {"id": id, "owner": owner_name, "type": b["type"]})
 	else:
 		_log(player_name, "remove", {"id": id, "type": b["type"]})
-	return {"ok": true, "id": id, "owner": owner_name, "refund": refund}
+	return {"ok": true, "id": id, "owner": owner_name, "refund": refund, "fired": fired}
 
 
 ## برداشت و فروش تولید: گندم از مزرعه یا نان از نانوایی. کالا به بازار شهر می‌رود.
@@ -259,6 +266,90 @@ func collect(player_name: String, id: int) -> Dictionary:
 	accounts[player_name]["money"] = int(accounts[player_name]["money"]) + earned
 	_log(player_name, "collect", {"id": id, "good": good, "count": n, "earned": earned})
 	return {"ok": true, "good": good, "count": n, "earned": earned, "money": accounts[player_name]["money"], "building": b}
+
+
+# ---------------- مشاغل ----------------
+
+func _clear_jobs_for(building_id: int) -> Array:
+	var fired: Array = []
+	for n in accounts:
+		if int(accounts[n].get("job", 0)) == building_id:
+			accounts[n]["job"] = 0
+			accounts[n]["work_acc"] = 0.0
+			fired.append(n)
+	return fired
+
+
+func job_of(player_name: String) -> int:
+	if accounts.has(player_name):
+		return int(accounts[player_name].get("job", 0))
+	return 0
+
+
+## استخدام در مزرعه یا نانوایی بازیکن دیگر. شغل قبلی (در صورت وجود) جایگزین می‌شود.
+func take_job(player_name: String, building_id: int) -> Dictionary:
+	if not accounts.has(player_name) or not buildings.has(building_id):
+		return {"ok": false, "error": "no_building"}
+	var b: Dictionary = buildings[building_id]
+	if not FWConst.JOB_TYPES.has(str(b["type"])):
+		return {"ok": false, "error": "bad_workplace"}
+	if b["owner"] == player_name:
+		return {"ok": false, "error": "own_workplace"}
+	if not accounts.has(b["owner"]):
+		return {"ok": false, "error": "bad_workplace"}
+	if job_of(player_name) == building_id:
+		return {"ok": false, "error": "already_employed"}
+	accounts[player_name]["job"] = building_id
+	accounts[player_name]["work_acc"] = 0.0
+	_log(player_name, "job_taken", {"building": building_id, "employer": b["owner"]})
+	return {"ok": true, "building": building_id}
+
+
+func quit_job(player_name: String) -> Dictionary:
+	if job_of(player_name) == 0:
+		return {"ok": false, "error": "no_job"}
+	var old: int = job_of(player_name)
+	accounts[player_name]["job"] = 0
+	accounts[player_name]["work_acc"] = 0.0
+	_log(player_name, "job_quit", {"building": old})
+	return {"ok": true}
+
+
+## یک گام کار: positions = {نام بازیکن آنلاین: Vector2}. کارگر حاضر در محل کار تولید را سریع‌تر
+## می‌کند و به‌ازای هر wage_interval ثانیه حقوق از جیب کارفرما می‌گیرد.
+## رویدادها: {worker, employer, amount (۰ یعنی کارفرما پول نداشت)}
+func work_step(delta: float, positions: Dictionary) -> Array:
+	var events: Array = []
+	for name in accounts:
+		var acc: Dictionary = accounts[name]
+		var jid: int = int(acc.get("job", 0))
+		if jid == 0 or not positions.has(name):
+			continue
+		if not buildings.has(jid):
+			acc["job"] = 0
+			continue
+		var b: Dictionary = buildings[jid]
+		if (positions[name] as Vector2).distance_to(door_point(b)) > FWConst.INTERACT_RANGE:
+			continue
+		match str(b["type"]):
+			"farm":
+				b["stock"] = minf(FWConst.FARM_MAX_STOCK,
+					float(b["stock"]) + delta / FWConst.FARM_SECONDS_PER_WHEAT * FWConst.WORKER_BONUS)
+			"bakery":
+				b["prog"] = minf(float(b.get("prog", 0.0)) + delta * FWConst.WORKER_BONUS, FWConst.BAKERY_SECONDS_PER_BREAD)
+		acc["work_acc"] = float(acc.get("work_acc", 0.0)) + delta
+		if float(acc["work_acc"]) < wage_interval:
+			continue
+		acc["work_acc"] = float(acc["work_acc"]) - wage_interval
+		var employer: String = b["owner"]
+		if accounts.has(employer) and int(accounts[employer]["money"]) >= FWConst.WAGE_AMOUNT:
+			accounts[employer]["money"] = int(accounts[employer]["money"]) - FWConst.WAGE_AMOUNT
+			acc["money"] = int(acc["money"]) + FWConst.WAGE_AMOUNT
+			_log(employer, "wage", {"worker": name, "amount": FWConst.WAGE_AMOUNT})
+			events.append({"worker": name, "employer": employer, "amount": FWConst.WAGE_AMOUNT})
+		else:
+			events.append({"worker": name, "employer": employer, "amount": 0})
+	return events
 
 
 func set_role(actor: String, target: String, role: String) -> Dictionary:
@@ -391,6 +482,8 @@ static func from_dict(d: Dictionary):
 			"pos": [float(a["pos"][0]), float(a["pos"][1]), float(a["pos"][2])],
 			"wheat": int(a.get("wheat", 0)),
 			"requests": reqs,
+			"job": int(a.get("job", 0)),
+			"work_acc": float(a.get("work_acc", 0.0)),
 		}
 	for b in d["buildings"]:
 		if not (b.has("id") and b.has("type") and b.has("owner") and b.has("cx") and b.has("cz")):

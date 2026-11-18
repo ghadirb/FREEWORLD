@@ -28,6 +28,7 @@ func _init() -> void:
 	test_npc()
 	test_npc_pathfinding()
 	test_economy_chain()
+	test_jobs()
 	print("\nRESULT: %d passed, %d failed" % [_pass, _fail])
 	quit(1 if _fail > 0 else 0)
 
@@ -394,3 +395,106 @@ func test_economy_chain() -> void:
 	old.erase("bread_price")
 	var cs5 = CityState.from_dict(old)
 	check(cs5 != null and float(cs5.market["bread"]) == 0.0 and cs5.bread_price == FWConst.BREAD_BASE_PRICE, "old saves without a market still load")
+
+
+func test_jobs() -> void:
+	print("[jobs and wages]")
+	var cs = CityState.new(12345)
+	_login(cs, "boss")
+	_login(cs, "worker")
+	_login(cs, "other")
+	cs.accounts["boss"]["money"] = 5000
+	check(cs.place_building("boss", 1, "farm", 4, 14)["ok"], "boss farm placed")
+	check(cs.place_building("boss", 2, "house", 12, 4)["ok"], "boss house placed")
+	check(cs.place_building("other", 3, "bakery", 20, 14)["ok"], "other bakery placed")
+	var farm: Dictionary = _first_of(cs, "farm")
+	var house: Dictionary = _first_of(cs, "house")
+	var bakery: Dictionary = _first_of(cs, "bakery")
+	cs.wage_interval = 10.0
+
+	# قوانین استخدام
+	check(cs.take_job("boss", farm["id"])["error"] == "own_workplace", "cannot work for yourself")
+	check(cs.take_job("worker", house["id"])["error"] == "bad_workplace", "a house offers no work")
+	check(cs.take_job("worker", 9999)["error"] == "no_building", "unknown building")
+	check(cs.take_job("worker", farm["id"])["ok"] and cs.job_of("worker") == farm["id"], "worker is hired at the farm")
+	check(cs.take_job("worker", farm["id"])["error"] == "already_employed", "cannot be hired twice at the same place")
+
+	# حقوق فقط برای کارگر حاضر در محل کار
+	var door: Vector2 = cs.door_point(farm)
+	var far := Vector2(door.x + 100.0, door.y)
+	var worker_money: int = cs.money_of("worker")
+	var boss_money: int = cs.money_of("boss")
+	for i in range(40):
+		cs.work_step(0.5, {"worker": far})
+	check(cs.money_of("worker") == worker_money, "no wage while away from the workplace")
+	check(cs.money_of("boss") == boss_money, "employer pays nothing for an absent worker")
+	var paid := 0
+	for i in range(40):
+		for ev in cs.work_step(0.5, {"worker": door}):
+			paid += int(ev["amount"])
+	check(paid == FWConst.WAGE_AMOUNT * 2, "two wages in 20s of presence (%d)" % paid)
+	check(cs.money_of("worker") == worker_money + paid, "worker received exactly the wages")
+	check(cs.money_of("boss") == boss_money - paid, "wages come out of the employer's money (conserved)")
+	check(cs.money_of("worker") + cs.money_of("boss") == worker_money + boss_money, "no money is created")
+	# بازیکن آفلاین (در positions نیست) کار نمی‌کند
+	var before: int = cs.money_of("worker")
+	for i in range(60):
+		cs.work_step(0.5, {})
+	check(cs.money_of("worker") == before, "offline worker is not paid")
+
+	# حضور کارگر تولید را سریع‌تر می‌کند
+	var a = CityState.new(12345)
+	var b = CityState.new(12345)
+	for c in [a, b]:
+		_login(c, "boss")
+		_login(c, "worker")
+		c.accounts["boss"]["money"] = 5000
+		c.place_building("boss", 1, "farm", 4, 14)
+	b.take_job("worker", _first_of(b, "farm")["id"])
+	for i in range(100):
+		a.tick(0.5)
+		b.tick(0.5)
+		b.work_step(0.5, {"worker": b.door_point(_first_of(b, "farm"))})
+	check(float(_first_of(b, "farm")["stock"]) > float(_first_of(a, "farm")["stock"]) * 1.3, "worker speeds up the farm (%.1f vs %.1f)" % [float(_first_of(b, "farm")["stock"]), float(_first_of(a, "farm")["stock"])])
+
+	# کارفرمای بی‌پول: حقوق صفر و رویداد هشدار
+	cs.accounts["boss"]["money"] = 5
+	var broke := false
+	var money_w: int = cs.money_of("worker")
+	for i in range(40):
+		for ev in cs.work_step(0.5, {"worker": door}):
+			if int(ev["amount"]) == 0:
+				broke = true
+	check(broke, "broke employer produces a warning event")
+	check(cs.money_of("worker") == money_w and cs.money_of("boss") == 5, "broke employer pays nothing and keeps their coins")
+
+	# نانوایی هم کار می‌دهد؛ شغل جدید جای قبلی را می‌گیرد
+	check(cs.take_job("worker", bakery["id"])["ok"] and cs.job_of("worker") == bakery["id"], "job at the bakery replaces the old one")
+	var bk_door: Vector2 = cs.door_point(bakery)
+	cs.market["wheat"] = 100.0
+	cs.accounts["other"]["money"] = 5000
+	bakery["prog"] = 0.0
+	cs.work_step(10.0, {"worker": bk_door})
+	check(float(bakery["prog"]) >= 4.9, "worker speeds up baking")
+
+	# ترک شغل
+	check(cs.quit_job("worker")["ok"] and cs.job_of("worker") == 0, "worker quits")
+	check(cs.quit_job("worker")["error"] == "no_job", "quitting twice is an error")
+
+	# حذف ساختمان ← شغل لغو می‌شود
+	cs.take_job("worker", farm["id"])
+	cs.take_job("other", farm["id"])
+	var rm: Dictionary = cs.remove_building("boss", farm["id"])
+	check(rm["ok"] and rm["fired"].size() == 2, "removing a workplace fires its workers")
+	check(cs.job_of("worker") == 0 and cs.job_of("other") == 0, "fired workers have no job")
+
+	# ذخیره و بازیابی
+	cs.take_job("worker", bakery["id"])
+	var cs2 = CityState.from_dict(JSON.parse_string(JSON.stringify(cs.to_dict())))
+	check(cs2 != null and cs2.job_of("worker") == bakery["id"], "job survives save/load")
+	var old: Dictionary = JSON.parse_string(JSON.stringify(cs.to_dict()))
+	for n in old["accounts"]:
+		old["accounts"][n].erase("job")
+		old["accounts"][n].erase("work_acc")
+	var cs3 = CityState.from_dict(old)
+	check(cs3 != null and cs3.job_of("worker") == 0, "old saves without jobs still load")

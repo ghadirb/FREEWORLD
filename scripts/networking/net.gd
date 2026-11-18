@@ -51,6 +51,12 @@ func c2s_set_role(target: String, role: String) -> void:
 
 
 @rpc("any_peer", "call_remote", "reliable")
+func c2s_job(building_id: int) -> void:
+	if server:
+		server.on_job(multiplayer.get_remote_sender_id(), building_id)
+
+
+@rpc("any_peer", "call_remote", "reliable")
 func c2s_get_audit() -> void:
 	if server:
 		server.on_get_audit(multiplayer.get_remote_sender_id())
@@ -86,6 +92,12 @@ func s2c_building_removed(id: int) -> void:
 func s2c_stocks(stocks: Dictionary) -> void:
 	if client:
 		client.on_stocks(stocks)
+
+
+@rpc("authority", "call_remote", "reliable")
+func s2c_job(building_id: int) -> void:
+	if client:
+		client.on_job(building_id)
 
 
 @rpc("authority", "call_remote", "reliable")
