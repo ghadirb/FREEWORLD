@@ -132,9 +132,9 @@ static func _leisure_shopping(cs, npc: Dictionary, day: int) -> void:
 			npc["paid_day"] = day
 	if int(npc.get("bread_day", -1)) != day and cs.npc_buy_bread(npc, shop):
 		npc["bread_day"] = day
-	# هر روز یک تخم‌مرغ یا شیر (به‌نوبت)، اگر در بازار باشد.
+	# هر روز یک خوراکی پروتئینی/لبنی (به‌نوبت)، اگر در بازار باشد.
 	if int(npc.get("goods_day", -1)) != day:
-		var order: Array = ["egg", "milk"] if (int(npc["id"]) + day) % 2 == 0 else ["milk", "egg"]
+		var order: Array = ["egg", "milk", "cheese"] if (int(npc["id"]) + day) % 2 == 0 else ["cheese", "milk", "egg"]
 		for g in order:
 			if cs.npc_buy_good(npc, shop, g):
 				npc["goods_day"] = day

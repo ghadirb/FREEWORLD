@@ -33,6 +33,7 @@ func _init() -> void:
 	test_npc()
 	test_npc_pathfinding()
 	test_economy_chain()
+	test_processing_chain()
 	test_jobs()
 	test_livestock()
 	test_world_tools()
@@ -309,11 +310,14 @@ func test_economy_chain() -> void:
 	for n in ["farmer", "baker", "shopper"]:
 		cs.accounts[n]["money"] = 5000
 	check(cs.place_building("farmer", 1, "farm", 4, 14)["ok"], "farm placed")
-	var rb: Dictionary = cs.place_building("baker", 2, "bakery", 12, 14)
+	var rm: Dictionary = cs.place_building("baker", 2, "mill", 12, 14)
+	check(rm["ok"], "mill placed")
+	var rb: Dictionary = cs.place_building("baker", 3, "bakery", 16, 14)
 	check(rb["ok"], "bakery placed (cost %d)" % int(FWConst.BUILDING_TYPES["bakery"]["cost"]))
-	check(cs.place_building("shopper", 3, "shop", 20, 14)["ok"], "shop placed")
-	check(cs.place_building("shopper", 4, "house", 4, 4)["ok"], "house placed")
+	check(cs.place_building("shopper", 4, "shop", 24, 14)["ok"], "shop placed")
+	check(cs.place_building("shopper", 5, "house", 4, 4)["ok"], "house placed")
 	var bakery: Dictionary = _first_of(cs, "bakery")
+	var mill: Dictionary = _first_of(cs, "mill")
 	var farm: Dictionary = _first_of(cs, "farm")
 
 	# بدون گندم در بازار، نانوایی نان نمی‌پزد.
@@ -329,16 +333,21 @@ func test_economy_chain() -> void:
 	var in_market: float = float(cs.market["wheat"])
 	check(in_market >= 5.0, "wheat is now in the market (%d)" % int(in_market))
 
-	# نانوایی با خرید گندم از بازار نان می‌پزد و پول گندم از صاحبش کم می‌شود.
+	# آسیاب با خرید گندم از بازار آرد می‌سازد، سپس نانوایی آرد را مصرف می‌کند.
+	var mill_money: int = cs.money_of("baker")
+	_tick_for(cs, 20.0)
+	check(int(floor(float(mill["stock"]))) >= 1, "mill made flour from market wheat")
+	var flour_sale: Dictionary = cs.collect("baker", mill["id"])
+	check(flour_sale["ok"] and flour_sale["good"] == "flour" and float(cs.market["flour"]) >= 1.0, "miller sells flour to market")
+	check(cs.money_of("baker") > mill_money, "miller has income after selling flour")
 	var baker_money: int = cs.money_of("baker")
-	var price_at_start: int = int(floor(cs.wheat_price))
 	_tick_for(cs, 25.0)
-	check(int(floor(float(bakery["stock"]))) >= 1, "bakery baked bread from market wheat")
-	check(float(cs.market["wheat"]) <= in_market - 2.0, "baking consumed %d wheat from the market" % FWConst.BREAD_WHEAT_COST)
-	check(cs.money_of("baker") <= baker_money - FWConst.BREAD_WHEAT_COST * (price_at_start - 1), "baker paid for the wheat")
+	check(int(floor(float(bakery["stock"]))) >= 1, "bakery baked bread from market flour")
+	check(float(cs.market["flour"]) <= 0.0, "baking consumed flour from the market")
+	check(cs.money_of("baker") < baker_money, "baker paid for the flour")
 
 	# نانوایی تا سقف موجودی تولید می‌کند و بیشتر نمی‌شود.
-	cs.market["wheat"] = 1000.0
+	cs.market["flour"] = 1000.0
 	_tick_for(cs, 400.0)
 	check(float(bakery["stock"]) <= FWConst.BAKERY_MAX_STOCK, "bakery stock is capped")
 	check(float(bakery["stock"]) >= FWConst.BAKERY_MAX_STOCK - 0.01, "bakery fills up when wheat is available")
@@ -388,10 +397,10 @@ func test_economy_chain() -> void:
 	cs4.accounts["poor"]["money"] = 600
 	check(cs4.place_building("poor", 1, "bakery", 12, 14)["ok"], "poor baker places bakery")
 	check(cs4.money_of("poor") == 0, "poor baker has no money left")
-	cs4.market["wheat"] = 50.0
+	cs4.market["flour"] = 50.0
 	_tick_for(cs4, 100.0)
 	check(int(floor(float(_first_of(cs4, "bakery")["stock"]))) == 0, "bakery cannot bake without money for wheat")
-	check(float(cs4.market["wheat"]) == 50.0, "market wheat untouched when the owner cannot pay")
+	check(float(cs4.market["flour"]) == 50.0, "market flour untouched when the owner cannot pay")
 
 	# ذخیره و بازیابی: بازار، قیمت نان و پیشرفت پخت حفظ می‌شود.
 	cs.market["bread"] = 7.0
@@ -406,6 +415,30 @@ func test_economy_chain() -> void:
 	old.erase("bread_price")
 	var cs5 = CityState.from_dict(old)
 	check(cs5 != null and float(cs5.market["bread"]) == 0.0 and cs5.bread_price == FWConst.BREAD_BASE_PRICE, "old saves without a market still load")
+
+
+func test_processing_chain() -> void:
+	print("[milk -> cheese processing]")
+	var cs = CityState.new(12345)
+	_login(cs, "herder")
+	_login(cs, "maker")
+	cs.accounts["herder"]["money"] = 5000
+	cs.accounts["maker"]["money"] = 5000
+	check(cs.place_building("herder", 1, "barn", 4, 14)["ok"], "barn placed for cheese chain")
+	check(cs.place_building("maker", 2, "dairy", 12, 14)["ok"], "dairy placed")
+	var barn: Dictionary = _first_of(cs, "barn")
+	var dairy: Dictionary = _first_of(cs, "dairy")
+	_tick_for(cs, 55.0)
+	var milk: Dictionary = cs.collect("herder", barn["id"])
+	check(milk["ok"] and milk["good"] == "milk" and float(cs.market["milk"]) >= 2.0, "milk reaches shared market")
+	var before: int = cs.money_of("maker")
+	_tick_for(cs, 30.0)
+	check(int(floor(float(dairy["stock"]))) >= 1, "dairy made cheese from milk")
+	var cheese: Dictionary = cs.collect("maker", dairy["id"])
+	check(cheese["ok"] and cheese["good"] == "cheese" and cheese["earned"] > 0, "cheese can be sold for income")
+	check(cs.money_of("maker") > before, "cheese maker earns net income")
+	var restored = CityState.from_dict(JSON.parse_string(JSON.stringify(cs.to_dict())))
+	check(restored != null and restored.market.has("cheese") and restored.prices.has("flour"), "new processing market persists")
 
 
 func test_jobs() -> void:

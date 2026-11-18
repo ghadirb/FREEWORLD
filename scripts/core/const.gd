@@ -1,7 +1,7 @@
 extends RefCounted
 ## ثابت‌های مشترک بین سرور و کلاینت.
 
-const PROTOCOL_VERSION := 6
+const PROTOCOL_VERSION := 7
 # ترافیک شبکه با DTLS رمز می‌شود (نسخهٔ ۴ به بعد). فقط برای عیب‌یابی خاموش شود.
 const USE_DTLS := true
 const DEFAULT_PORT := 7777
@@ -37,6 +37,8 @@ const BUILDING_TYPES := {
 	"bakery": {"cost": 600, "size": [2, 2]},
 	"coop": {"cost": 250, "size": [2, 2]},
 	"barn": {"cost": 350, "size": [3, 2]},
+	"mill": {"cost": 450, "size": [2, 2]},
+	"dairy": {"cost": 550, "size": [2, 2]},
 }
 
 # دامداری: مرغداری تخم‌مرغ و گاوداری شیر تولید می‌کند (مثل مزرعه، با موجودی و قیمت بازار).
@@ -45,7 +47,13 @@ const LIVESTOCK := {
 	"barn": {"good": "milk", "seconds": 25.0, "max": 8.0, "base": 14.0, "min": 5.0, "drop": 0.6, "recover": 0.05},
 }
 # ساختمان‌هایی که تولید و «برداشت و فروش» دارند.
-const PRODUCERS := ["farm", "bakery", "coop", "barn"]
+const PROCESSORS := {
+	"mill": {"input": "wheat", "output": "flour", "amount": 2, "seconds": 16.0, "max": 12.0, "base": 16.0, "min": 6.0, "drop": 0.4, "recover": 0.05},
+	"bakery": {"input": "flour", "output": "bread", "amount": 2, "seconds": 20.0, "max": 10.0, "base": 20.0, "min": 8.0, "drop": 0.5, "recover": 0.05},
+	"dairy": {"input": "milk", "output": "cheese", "amount": 2, "seconds": 24.0, "max": 8.0, "base": 34.0, "min": 14.0, "drop": 0.7, "recover": 0.06},
+}
+# ساختمان‌هایی که محصولشان را می‌توان برداشت و در بازار فروخت.
+const PRODUCERS := ["farm", "bakery", "coop", "barn", "mill", "dairy"]
 
 const FARM_SECONDS_PER_WHEAT := 10.0
 const FARM_MAX_STOCK := 10.0
@@ -54,8 +62,8 @@ const WHEAT_MIN_PRICE := 2.0
 const WHEAT_SELL_DROP := 0.1
 const WHEAT_RECOVER_PER_SEC := 0.02
 
-# نانوایی: ۲ گندم از بازار می‌خرد و ۱ نان می‌پزد.
-const BREAD_WHEAT_COST := 2
+# نانوایی: ۲ آرد از بازار می‌خرد و ۱ نان می‌پزد.
+const BREAD_WHEAT_COST := 2 # نام قدیمی برای سازگاری با ذخیره‌ها/افزونه‌های قدیمی
 const BAKERY_SECONDS_PER_BREAD := 20.0
 const BAKERY_MAX_STOCK := 10.0
 const BREAD_BASE_PRICE := 20.0
@@ -69,7 +77,7 @@ const MARKET_MAX_STOCK := 200.0
 const WORKER_BONUS := 0.5
 const WAGE_INTERVAL := 30.0
 const WAGE_AMOUNT := 12
-const JOB_TYPES := ["farm", "bakery", "coop", "barn"]
+const JOB_TYPES := ["farm", "bakery", "coop", "barn", "mill", "dairy"]
 
 # ساختمان‌های قابل‌ورود. خانه فقط برای صاحبش؛ مغازه و نانوایی برای همه.
 const ENTERABLE := ["house", "shop", "bakery"]

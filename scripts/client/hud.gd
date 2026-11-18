@@ -10,7 +10,7 @@ signal disconnect_requested
 signal quality_changed(q: int)
 signal language_changed
 
-const TYPES := ["house", "shop", "farm", "coop", "barn", "bakery", "road", "well"]
+const TYPES := ["house", "shop", "farm", "coop", "barn", "mill", "dairy", "bakery", "road", "well"]
 
 var client
 var view
@@ -466,6 +466,8 @@ func _refresh_stats() -> void:
 		Loc.t("bread_price"), Loc.digits("%.1f" % client.bread_price)]
 	_price.text += "  |  %s: %s  |  %s: %s" % [Loc.t("egg_price"), Loc.digits("%.1f" % client.egg_price),
 		Loc.t("milk_price"), Loc.digits("%.1f" % client.milk_price)]
+	_price.text += "  |  %s: %s  |  %s: %s" % [Loc.t("flour_price"), Loc.digits("%.1f" % client.flour_price),
+		Loc.t("cheese_price"), Loc.digits("%.1f" % client.cheese_price)]
 	_online.text = "%s: %s" % [Loc.t("online"), Loc.digits(str(client.players.size()))]
 	if _info.visible and _info_id >= 0:
 		_fill_info(_info_id)

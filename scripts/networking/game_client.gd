@@ -48,7 +48,9 @@ var time_speed: float = 1.0
 var weather: String = "clear"
 var egg_price: float = 6.0
 var milk_price: float = 14.0
-var market_stock: Dictionary = {"wheat": 0, "bread": 0, "egg": 0, "milk": 0}
+var flour_price: float = 16.0
+var cheese_price: float = 34.0
+var market_stock: Dictionary = {"wheat": 0, "flour": 0, "bread": 0, "egg": 0, "milk": 0, "cheese": 0}
 var players: Dictionary = {}  # نام -> {pos: Vector3, yaw: float, role: String}
 var npcs: Array = []
 var spawn: Vector2 = Vector2.ZERO
@@ -317,8 +319,10 @@ func _apply_market(mk: Dictionary) -> void:
 	bread_price = float(mk.get("bread_price", bread_price))
 	egg_price = float(mk.get("egg_price", egg_price))
 	milk_price = float(mk.get("milk_price", milk_price))
-	market_stock = {"wheat": int(mk.get("wheat", 0)), "bread": int(mk.get("bread", 0)),
-		"egg": int(mk.get("egg", 0)), "milk": int(mk.get("milk", 0))}
+	flour_price = float(mk.get("flour_price", flour_price))
+	cheese_price = float(mk.get("cheese_price", cheese_price))
+	market_stock = {"wheat": int(mk.get("wheat", 0)), "flour": int(mk.get("flour", 0)), "bread": int(mk.get("bread", 0)),
+		"egg": int(mk.get("egg", 0)), "milk": int(mk.get("milk", 0)), "cheese": int(mk.get("cheese", 0))}
 
 
 func _apply_world(w: Dictionary) -> void:

@@ -25,9 +25,9 @@ var time_speed: float = 1.0
 var weather: String = "clear"
 var bread_price: float = FWConst.BREAD_BASE_PRICE
 ## موجودی بازار مشترک شهر: کالایی که کشاورزان فروخته‌اند و هنوز مصرف نشده.
-var market: Dictionary = {"wheat": 0.0, "bread": 0.0, "egg": 0.0, "milk": 0.0}
+var market: Dictionary = {"wheat": 0.0, "flour": 0.0, "bread": 0.0, "egg": 0.0, "milk": 0.0, "cheese": 0.0}
 ## قیمت کالاهای دامی (تخم‌مرغ و شیر).
-var prices: Dictionary = {"egg": 6.0, "milk": 14.0}
+var prices: Dictionary = {"egg": 6.0, "milk": 14.0, "flour": 16.0, "bread": 20.0, "cheese": 34.0}
 var npcs: Array = []
 ## فاصلهٔ پرداخت حقوق (قابل تغییر در تست).
 var wage_interval: float = FWConst.WAGE_INTERVAL
@@ -257,6 +257,8 @@ func collect(player_name: String, id: int) -> Dictionary:
 			good = "bread"
 		"coop", "barn":
 			good = str(FWConst.LIVESTOCK[str(b["type"])]["good"])
+		"mill", "dairy":
+			good = str(FWConst.PROCESSORS[str(b["type"])]["output"])
 		_:
 			return {"ok": false, "error": "not_producer"}
 	var n := int(floor(float(b["stock"])))
@@ -268,8 +270,13 @@ func collect(player_name: String, id: int) -> Dictionary:
 			earned += int(floor(wheat_price))
 			wheat_price = maxf(FWConst.WHEAT_MIN_PRICE, wheat_price - FWConst.WHEAT_SELL_DROP)
 		elif good == "bread":
-			earned += int(floor(bread_price))
-			bread_price = maxf(FWConst.BREAD_MIN_PRICE, bread_price - FWConst.BREAD_SELL_DROP)
+			earned += int(floor(float(prices[good])))
+			prices[good] = maxf(float(FWConst.PROCESSORS["bakery"]["min"]), float(prices[good]) - float(FWConst.PROCESSORS["bakery"]["drop"]))
+			bread_price = float(prices[good]) # compatibility for existing clients/saves
+		elif FWConst.PROCESSORS.has(str(b["type"])):
+			var proc: Dictionary = FWConst.PROCESSORS[str(b["type"])]
+			earned += int(floor(float(prices[good])))
+			prices[good] = maxf(float(proc["min"]), float(prices[good]) - float(proc["drop"]))
 		else:
 			var lv: Dictionary = FWConst.LIVESTOCK[str(b["type"])]
 			earned += int(floor(float(prices[good])))
@@ -350,8 +357,8 @@ func work_step(delta: float, positions: Dictionary) -> Array:
 			"farm":
 				b["stock"] = minf(FWConst.FARM_MAX_STOCK,
 					float(b["stock"]) + delta / FWConst.FARM_SECONDS_PER_WHEAT * FWConst.WORKER_BONUS)
-			"bakery":
-				b["prog"] = minf(float(b.get("prog", 0.0)) + delta * FWConst.WORKER_BONUS, FWConst.BAKERY_SECONDS_PER_BREAD)
+			"bakery", "mill", "dairy":
+				b["prog"] = minf(float(b.get("prog", 0.0)) + delta * FWConst.WORKER_BONUS, float(FWConst.PROCESSORS[str(b["type"])]["seconds"]))
 			"coop", "barn":
 				var lv: Dictionary = FWConst.LIVESTOCK[str(b["type"])]
 				b["stock"] = minf(float(lv["max"]), float(b["stock"]) + delta / float(lv["seconds"]) * FWConst.WORKER_BONUS)
@@ -444,8 +451,8 @@ func tick(delta: float) -> void:
 		match str(b["type"]):
 			"farm":
 				b["stock"] = minf(FWConst.FARM_MAX_STOCK, float(b["stock"]) + delta / FWConst.FARM_SECONDS_PER_WHEAT)
-			"bakery":
-				_tick_bakery(b, delta)
+			"bakery", "mill", "dairy":
+				_tick_processor(b, delta)
 			"coop", "barn":
 				var lv: Dictionary = FWConst.LIVESTOCK[str(b["type"])]
 				b["stock"] = minf(float(lv["max"]), float(b["stock"]) + delta / float(lv["seconds"]))
@@ -453,26 +460,34 @@ func tick(delta: float) -> void:
 		var lv: Dictionary = FWConst.LIVESTOCK[t]
 		var g: String = lv["good"]
 		prices[g] = minf(float(lv["base"]), float(prices[g]) + float(lv["recover"]) * delta)
+	for t in FWConst.PROCESSORS:
+		var proc: Dictionary = FWConst.PROCESSORS[t]
+		var output: String = proc["output"]
+		prices[output] = minf(float(proc["base"]), float(prices.get(output, proc["base"])) + float(proc["recover"]) * delta)
+	bread_price = float(prices["bread"])
 
 
 ## نانوایی: وقتی زمان پخت رسید، اگر بازار گندم داشته باشد و صاحب‌اش پول گندم را بپردازد، یک نان می‌پزد.
 ## (پول گندم به «بازار شهر» می‌رود؛ کشاورز قبلاً هنگام فروش به بازار پولش را گرفته است.)
-func _tick_bakery(b: Dictionary, delta: float) -> void:
-	if float(b["stock"]) >= FWConst.BAKERY_MAX_STOCK:
+func _tick_processor(b: Dictionary, delta: float) -> void:
+	var proc: Dictionary = FWConst.PROCESSORS[str(b["type"])]
+	if float(b["stock"]) >= float(proc["max"]):
 		return
-	b["prog"] = minf(float(b.get("prog", 0.0)) + delta, FWConst.BAKERY_SECONDS_PER_BREAD)
-	if float(b["prog"]) < FWConst.BAKERY_SECONDS_PER_BREAD:
+	b["prog"] = minf(float(b.get("prog", 0.0)) + delta, float(proc["seconds"]))
+	if float(b["prog"]) < float(proc["seconds"]):
 		return
 	var owner_name: String = b["owner"]
 	if not accounts.has(owner_name):
 		return
-	if float(market["wheat"]) < float(FWConst.BREAD_WHEAT_COST):
+	var input: String = proc["input"]
+	var amount: int = int(proc["amount"])
+	if float(market[input]) < float(amount):
 		return
-	var cost: int = FWConst.BREAD_WHEAT_COST * int(floor(wheat_price))
+	var cost: int = amount * int(floor(_price_for(input)))
 	if int(accounts[owner_name]["money"]) < cost:
 		return
 	accounts[owner_name]["money"] = int(accounts[owner_name]["money"]) - cost
-	market["wheat"] = float(market["wheat"]) - float(FWConst.BREAD_WHEAT_COST)
+	market[input] = float(market[input]) - float(amount)
 	b["stock"] = float(b["stock"]) + 1.0
 	b["prog"] = 0.0
 
@@ -488,7 +503,8 @@ func npc_buy_bread(npc: Dictionary, shop: Dictionary) -> bool:
 	npc["money"] = int(npc["money"]) - price
 	accounts[owner_name]["money"] = int(accounts[owner_name]["money"]) + price
 	market["bread"] = float(market["bread"]) - 1.0
-	bread_price = minf(FWConst.BREAD_BASE_PRICE * 2.0, bread_price + FWConst.BREAD_BUY_RISE)
+	prices["bread"] = minf(FWConst.BREAD_BASE_PRICE * 2.0, float(prices["bread"]) + FWConst.BREAD_BUY_RISE)
+	bread_price = float(prices["bread"])
 	return true
 
 
@@ -511,10 +527,15 @@ func npc_buy_good(npc: Dictionary, shop: Dictionary, good: String) -> bool:
 func market_public() -> Dictionary:
 	return {
 		"wheat_price": snappedf(wheat_price, 0.01), "bread_price": snappedf(bread_price, 0.01),
-		"wheat": int(floor(float(market["wheat"]))), "bread": int(floor(float(market["bread"]))),
+		"wheat": int(floor(float(market["wheat"]))), "flour": int(floor(float(market["flour"]))), "bread": int(floor(float(market["bread"]))),
 		"egg_price": snappedf(float(prices["egg"]), 0.01), "milk_price": snappedf(float(prices["milk"]), 0.01),
-		"egg": int(floor(float(market["egg"]))), "milk": int(floor(float(market["milk"]))),
+		"flour_price": snappedf(float(prices["flour"]), 0.01), "cheese_price": snappedf(float(prices["cheese"]), 0.01),
+		"egg": int(floor(float(market["egg"]))), "milk": int(floor(float(market["milk"]))), "cheese": int(floor(float(market["cheese"]))),
 	}
+
+
+func _price_for(good: String) -> float:
+	return wheat_price if good == "wheat" else float(prices.get(good, 0.0))
 
 
 func building_public(b: Dictionary) -> Dictionary:
@@ -568,12 +589,13 @@ static func from_dict(d: Dictionary):
 	var mk = d.get("market", {})
 	if mk is Dictionary:
 		cs.market = {
-			"wheat": float(mk.get("wheat", 0.0)), "bread": float(mk.get("bread", 0.0)),
-			"egg": float(mk.get("egg", 0.0)), "milk": float(mk.get("milk", 0.0)),
+			"wheat": float(mk.get("wheat", 0.0)), "flour": float(mk.get("flour", 0.0)), "bread": float(mk.get("bread", 0.0)),
+			"egg": float(mk.get("egg", 0.0)), "milk": float(mk.get("milk", 0.0)), "cheese": float(mk.get("cheese", 0.0)),
 		}
 	var pr = d.get("prices", {})
 	if pr is Dictionary:
-		cs.prices = {"egg": float(pr.get("egg", 6.0)), "milk": float(pr.get("milk", 14.0))}
+		cs.prices = {"egg": float(pr.get("egg", 6.0)), "milk": float(pr.get("milk", 14.0)), "flour": float(pr.get("flour", 16.0)), "bread": float(pr.get("bread", cs.bread_price)), "cheese": float(pr.get("cheese", 34.0))}
+	cs.bread_price = float(cs.prices["bread"])
 	var ts := float(d.get("time_speed", 1.0))
 	cs.time_speed = ts if FWConst.TIME_SPEEDS.has(ts) else 1.0
 	var wt := str(d.get("weather", "clear"))
