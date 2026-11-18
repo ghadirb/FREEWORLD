@@ -39,17 +39,25 @@ func height_at(x: float, z: float) -> float:
 	return h - lake
 
 
-func biome_at(x: float, z: float) -> String:
-	var h := height_at(x, z)
+func moisture_at(x: float, z: float) -> float:
+	return _moist.get_noise_2d(x, z)
+
+
+## زیست‌بوم از روی ارتفاع و رطوبت از پیش محاسبه‌شده (برای تولید سریع چانک).
+func biome_from(h: float, moisture: float) -> String:
 	if h < FWConst.SEA_LEVEL:
 		return "water"
 	if h < 0.9:
 		return "beach"
 	if h > 14.0:
 		return "mountain"
-	if _moist.get_noise_2d(x, z) > 0.15:
+	if moisture > 0.15:
 		return "forest"
 	return "plain"
+
+
+func biome_at(x: float, z: float) -> String:
+	return biome_from(height_at(x, z), moisture_at(x, z))
 
 
 func is_outside_city(x: float, z: float) -> bool:

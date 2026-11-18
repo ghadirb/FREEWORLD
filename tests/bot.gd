@@ -115,6 +115,8 @@ func _main() -> void:
 			await _persist()
 		"admin":
 			await _admin()
+		"village":
+			await _village()
 	client.disconnect_from_server()
 	await create_timer(0.3).timeout
 	quit(1 if failed else 0)
@@ -215,3 +217,18 @@ func _admin() -> void:
 	for e in audit_entries:
 		actions.append(e["action"])
 	expect("admin_remove" in actions and "set_role" in actions, "admin actions are in the audit log")
+
+
+func _village() -> void:
+	## چند ساختمان نزدیک میدان می‌سازد (برای تست بصری).
+	var plan := [["house", 36, 36], ["house", 40, 36], ["farm", 44, 36], ["well", 36, 40],
+		["road", 38, 40], ["road", 39, 40], ["road", 40, 40], ["road", 41, 40], ["road", 42, 40]]
+	for e in plan:
+		var err: String = client.preview_error(e[0], e[1], e[2])
+		if err != "":
+			log_line("skip %s at %d,%d: %s" % [e[0], e[1], e[2], err])
+			continue
+		client.place(e[0], e[1], e[2])
+		await create_timer(0.25).timeout
+	await create_timer(1.0).timeout
+	expect(client.mirror.buildings.size() >= 5, "village built (%d buildings)" % client.mirror.buildings.size())

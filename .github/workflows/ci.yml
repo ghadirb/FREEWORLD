@@ -44,6 +44,45 @@ jobs:
             echo "::error title=$f::$msg"
           done
 
+  visual-smoke:
+    name: Client render smoke test
+    needs: tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Godot and a virtual display
+        run: |
+          curl -sSL -o godot.zip "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+          unzip -q godot.zip
+          sudo mv "Godot_v${GODOT_VERSION}-stable_linux.x86_64" /usr/local/bin/godot
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq xvfb libgl1-mesa-dri libglx-mesa0 libegl1 >/dev/null
+          godot --headless --path . --import || true
+      - name: Server, village bot and screenshots
+        run: |
+          set -o pipefail
+          mkdir -p shots data
+          godot --headless --path . -- --server --port 17888 --seed 2026 --data-dir data > server.log 2>&1 &
+          sleep 5
+          godot --headless --path . --script res://tests/bot.gd -- --scenario village --name builder1 --port 17888 --token-file data/b.token | grep "^\[bot"
+          for m in life world; do
+            xvfb-run -a -s "-screen 0 1280x720x24" godot --path . --rendering-driver opengl3 -- --connect 127.0.0.1:17888 --name viewer1 --shot shots/$m.png --shot-delay 7 --shot-mode $m 2>&1 | tee -a render.log
+          done
+          xvfb-run -a -s "-screen 0 1280x720x24" godot --path . --rendering-driver opengl3 -- --connect 127.0.0.1:17888 --name viewer1 --shot shots/build.png --shot-delay 7 --shot-mode world --build shop 2>&1 | tee -a render.log
+          xvfb-run -a -s "-screen 0 1280x720x24" godot --path . --rendering-driver opengl3 -- --shot shots/menu.png --shot-delay 2 2>&1 | tee -a render.log
+          test -s shots/life.png && test -s shots/world.png && test -s shots/build.png && test -s shots/menu.png
+          ! grep -E "SCRIPT ERROR" render.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: screenshots
+          path: shots/
+      - name: Publish failure details
+        if: failure()
+        run: |
+          msg=$(grep -E "SCRIPT ERROR|ERROR|FAIL" render.log server.log 2>/dev/null | tail -n 25 | sed ':a;N;$!ba;s/\n/%0A/g')
+          echo "::error title=render smoke failed::$msg"
+
   export:
     name: Export ${{ matrix.preset }}
     needs: tests
