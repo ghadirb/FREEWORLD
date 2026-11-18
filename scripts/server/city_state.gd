@@ -20,6 +20,9 @@ var next_building_id: int = 1
 var audit: Array = []
 var world_time: float = 8.0 * 3600.0
 var wheat_price: float = FWConst.WHEAT_BASE_PRICE
+## ابزارهای World Mode: ضریب سرعت گذر زمان و آب‌وهوا (هر دو ذخیره می‌شوند).
+var time_speed: float = 1.0
+var weather: String = "clear"
 var bread_price: float = FWConst.BREAD_BASE_PRICE
 ## موجودی بازار مشترک شهر: کالایی که کشاورزان فروخته‌اند و هنوز مصرف نشده.
 var market: Dictionary = {"wheat": 0.0, "bread": 0.0, "egg": 0.0, "milk": 0.0}
@@ -363,6 +366,30 @@ func work_step(delta: float, positions: Dictionary) -> Array:
 	return events
 
 
+## تغییر تنظیمات جهان توسط مدیر. key: "time_speed" یا "weather".
+func set_world(actor: String, key: String, value: Variant) -> Dictionary:
+	if not FWConst.is_admin(role_of(actor)):
+		return {"ok": false, "error": "forbidden"}
+	match key:
+		"time_speed":
+			var v := float(value)
+			if not FWConst.TIME_SPEEDS.has(v):
+				return {"ok": false, "error": "bad_request"}
+			time_speed = v
+		"weather":
+			if not FWConst.WEATHERS.has(str(value)):
+				return {"ok": false, "error": "bad_request"}
+			weather = str(value)
+		_:
+			return {"ok": false, "error": "bad_request"}
+	_log(actor, "set_world", {"key": key, "value": value})
+	return {"ok": true, "world": world_public()}
+
+
+func world_public() -> Dictionary:
+	return {"time_speed": time_speed, "weather": weather}
+
+
 func set_role(actor: String, target: String, role: String) -> Dictionary:
 	if role_of(actor) != FWConst.ROLE_WORLD_ADMIN:
 		return {"ok": false, "error": "forbidden"}
@@ -374,7 +401,7 @@ func set_role(actor: String, target: String, role: String) -> Dictionary:
 
 
 func tick(delta: float) -> void:
-	world_time = fposmod(world_time + delta * FWConst.TIME_SCALE, 86400.0)
+	world_time = fposmod(world_time + delta * FWConst.TIME_SCALE * time_speed, 86400.0)
 	wheat_price = minf(FWConst.WHEAT_BASE_PRICE, wheat_price + FWConst.WHEAT_RECOVER_PER_SEC * delta)
 	bread_price = move_toward(bread_price, FWConst.BREAD_BASE_PRICE, FWConst.BREAD_RECOVER_PER_SEC * delta)
 	for id in buildings:
@@ -479,6 +506,8 @@ func to_dict() -> Dictionary:
 		"seed": seed_value,
 		"world_time": world_time,
 		"wheat_price": wheat_price,
+		"time_speed": time_speed,
+		"weather": weather,
 		"bread_price": bread_price,
 		"market": market,
 		"prices": prices,
@@ -510,6 +539,10 @@ static func from_dict(d: Dictionary):
 	var pr = d.get("prices", {})
 	if pr is Dictionary:
 		cs.prices = {"egg": float(pr.get("egg", 6.0)), "milk": float(pr.get("milk", 14.0))}
+	var ts := float(d.get("time_speed", 1.0))
+	cs.time_speed = ts if FWConst.TIME_SPEEDS.has(ts) else 1.0
+	var wt := str(d.get("weather", "clear"))
+	cs.weather = wt if FWConst.WEATHERS.has(wt) else "clear"
 	cs.next_building_id = int(d["next_building_id"])
 	for name in d["accounts"]:
 		var a: Dictionary = d["accounts"][name]

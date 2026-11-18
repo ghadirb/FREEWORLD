@@ -1,7 +1,7 @@
 extends RefCounted
 ## ثابت‌های مشترک بین سرور و کلاینت.
 
-const PROTOCOL_VERSION := 4
+const PROTOCOL_VERSION := 5
 # ترافیک شبکه با DTLS رمز می‌شود (نسخهٔ ۴ به بعد). فقط برای عیب‌یابی خاموش شود.
 const USE_DTLS := true
 const DEFAULT_PORT := 7777
@@ -73,6 +73,9 @@ const JOB_TYPES := ["farm", "bakery", "coop", "barn"]
 
 # هر ثانیهٔ واقعی = یک دقیقهٔ بازی
 const TIME_SCALE := 60.0
+# ابزارهای World Mode (فقط مدیران): ضریب سرعت زمان و آب‌وهوا.
+const TIME_SPEEDS := [0.0, 1.0, 4.0, 10.0]
+const WEATHERS := ["clear", "rain", "fog"]
 
 const MAX_BUILDINGS_PER_PLAYER := 40
 const MAX_ACCOUNTS := 500

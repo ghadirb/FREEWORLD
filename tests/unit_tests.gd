@@ -35,6 +35,7 @@ func _init() -> void:
 	test_economy_chain()
 	test_jobs()
 	test_livestock()
+	test_world_tools()
 	test_world_slots()
 	test_npc_label_fade()
 	test_tls_pinning()
@@ -571,6 +572,43 @@ func test_livestock() -> void:
 	check(cs3 != null and _first_of(cs3, "barn").size() > 0, "barn survives save/load")
 	var pub: Dictionary = cs.market_public()
 	check(pub.has("egg_price") and pub.has("milk") and pub.has("egg"), "market_public exposes livestock goods")
+
+
+func test_world_tools() -> void:
+	var cs = CityState.new(12345)
+	_login(cs, "plain")
+	_login(cs, "mayor")
+	cs.accounts["mayor"]["role"] = FWConst.ROLE_CITY_ADMIN
+	check(cs.set_world("plain", "weather", "rain")["error"] == "forbidden", "ordinary player cannot change the weather")
+	check(cs.set_world("plain", "time_speed", 4.0)["error"] == "forbidden", "ordinary player cannot change time speed")
+	check(cs.weather == "clear" and cs.time_speed == 1.0, "forbidden changes leave the world untouched")
+	check(cs.set_world("mayor", "weather", "snow")["error"] == "bad_request", "unknown weather is rejected")
+	check(cs.set_world("mayor", "time_speed", 999.0)["error"] == "bad_request", "unlisted time speed is rejected")
+	check(cs.set_world("mayor", "nonsense", 1)["error"] == "bad_request", "unknown setting is rejected")
+	check(cs.set_world("mayor", "weather", "rain")["ok"] and cs.weather == "rain", "admin sets rain")
+	var t0: float = cs.world_time
+	cs.tick(1.0)
+	var normal: float = cs.world_time - t0
+	check(cs.set_world("mayor", "time_speed", 10.0)["ok"], "admin speeds up time")
+	t0 = cs.world_time
+	cs.tick(1.0)
+	check(absf((cs.world_time - t0) - normal * 10.0) < 0.01, "time runs 10x faster")
+	check(cs.set_world("mayor", "time_speed", 0.0)["ok"], "admin pauses time")
+	t0 = cs.world_time
+	cs.tick(5.0)
+	check(cs.world_time == t0, "paused time does not advance")
+	var logged := false
+	for e in cs.audit:
+		if e["action"] == "set_world" and e["actor"] == "mayor":
+			logged = true
+	check(logged, "world changes are written to the audit log")
+	var cs2 = CityState.from_dict(JSON.parse_string(JSON.stringify(cs.to_dict())))
+	check(cs2 != null and cs2.weather == "rain" and cs2.time_speed == 0.0, "weather and time speed survive save/load")
+	var old: Dictionary = cs.to_dict()
+	old.erase("weather")
+	old.erase("time_speed")
+	var cs3 = CityState.from_dict(JSON.parse_string(JSON.stringify(old)))
+	check(cs3 != null and cs3.weather == "clear" and cs3.time_speed == 1.0, "old saves default to clear weather, normal speed")
 
 
 func test_world_slots() -> void:

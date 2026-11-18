@@ -21,7 +21,7 @@
 - `FWConst.USE_DTLS = false` فقط برای عیب‌یابی.
 
 ## پروتکل (نسخه ۱)
-کلاینت→سرور: `c2s_login(name, token, proto)`، `c2s_move(x,z,yaw)` *(unreliable)*، `c2s_place(req_id,type,cx,cz)`، `c2s_remove(id)`، `c2s_collect(id)`، `c2s_chat(text)`، `c2s_set_role(target,role)`، `c2s_get_audit()`.
+کلاینت→سرور: `c2s_login(name, token, proto)`، `c2s_move(x,z,yaw)` *(unreliable)*، `c2s_place(req_id,type,cx,cz)`، `c2s_remove(id)`، `c2s_collect(id)`، `c2s_set_world(key,value)` (فقط مدیران: `time_speed` یا `weather`؛ سرور تأیید و در گزارش ثبت می‌کند و `s2c_world` را پخش می‌کند)، `c2s_chat(text)`، `c2s_set_role(target,role)`، `c2s_get_audit()`.
 سرور→کلاینت: `s2c_login_result`، `s2c_snapshot`، `s2c_building_added/removed`، `s2c_stocks`، `s2c_money`، `s2c_player_joined/left`، `s2c_notice(code,args)`، `s2c_chat`، `s2c_role`، `s2c_audit`، `s2c_teleport`، `s2c_tick` *(unreliable، ۱۰ هرتز)*.
 پیام‌های `s2c_*` با `authority` علامت‌گذاری شده‌اند؛ کلاینت نمی‌تواند آن‌ها را جعل کند. `server_relay` خاموش است.
 

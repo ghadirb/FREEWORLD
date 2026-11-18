@@ -17,6 +17,7 @@ signal building_added(b: Dictionary)
 signal building_removed(id: int)
 signal stocks_changed
 signal market_changed
+signal world_changed
 signal job_changed
 signal money_changed(money: int)
 signal player_joined(player_name: String)
@@ -39,6 +40,8 @@ var world_time: float = 0.0
 var wheat_price: float = FWConst.WHEAT_BASE_PRICE
 var bread_price: float = FWConst.BREAD_BASE_PRICE
 var job_id: int = 0
+var time_speed: float = 1.0
+var weather: String = "clear"
 var egg_price: float = 6.0
 var milk_price: float = 14.0
 var market_stock: Dictionary = {"wheat": 0, "bread": 0, "egg": 0, "milk": 0}
@@ -262,6 +265,7 @@ func on_login_result(ok: bool, error: String, info: Dictionary) -> void:
 	world_time = float(info["time"])
 	wheat_price = float(info["price"])
 	_apply_market(info.get("market", {}))
+	_apply_world(info.get("world", {}))
 	job_id = int(info.get("job", 0))
 	spawn = Vector2(info["pos"][0], info["pos"][1])
 	mirror = CityState.new(int(info["seed"]), str(info["city_id"]))
@@ -310,6 +314,21 @@ func _apply_market(mk: Dictionary) -> void:
 	milk_price = float(mk.get("milk_price", milk_price))
 	market_stock = {"wheat": int(mk.get("wheat", 0)), "bread": int(mk.get("bread", 0)),
 		"egg": int(mk.get("egg", 0)), "milk": int(mk.get("milk", 0))}
+
+
+func _apply_world(w: Dictionary) -> void:
+	time_speed = float(w.get("time_speed", time_speed))
+	weather = str(w.get("weather", weather))
+
+
+func on_world(w: Dictionary) -> void:
+	_apply_world(w)
+	world_changed.emit()
+
+
+func set_world(key: String, value: Variant) -> void:
+	if is_logged_in:
+		_tx("c2s_set_world", [key, value])
 
 
 func on_market(mk: Dictionary) -> void:

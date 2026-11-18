@@ -39,6 +39,12 @@ func c2s_collect(id: int) -> void:
 
 
 @rpc("any_peer", "call_remote", "reliable")
+func c2s_set_world(key: String, value: Variant) -> void:
+	if server:
+		server.on_set_world(multiplayer.get_remote_sender_id(), key, value)
+
+
+@rpc("any_peer", "call_remote", "reliable")
 func c2s_chat(text: String) -> void:
 	if server:
 		server.on_chat(multiplayer.get_remote_sender_id(), text)
@@ -98,6 +104,12 @@ func s2c_stocks(stocks: Dictionary) -> void:
 func s2c_job(building_id: int) -> void:
 	if client:
 		client.on_job(building_id)
+
+
+@rpc("authority", "call_remote", "reliable")
+func s2c_world(settings: Dictionary) -> void:
+	if client:
+		client.on_world(settings)
 
 
 @rpc("authority", "call_remote", "reliable")

@@ -19,7 +19,7 @@ const SAVE_DEBOUNCE_MSEC := 1000
 const LOCAL_PID := 1
 const LOCAL_METHODS := [
 	"c2s_login", "c2s_move", "c2s_place", "c2s_remove", "c2s_collect",
-	"c2s_chat", "c2s_set_role", "c2s_get_audit", "c2s_job",
+	"c2s_chat", "c2s_set_role", "c2s_get_audit", "c2s_job", "c2s_set_world",
 ]
 
 var net: Node
@@ -404,7 +404,7 @@ func on_login(pid: int, player_name: String, token: String, proto: int) -> void:
 		"name": player_name, "token": res["token"], "seed": cs.seed_value, "city_id": cs.city_id,
 		"role": acc["role"], "money": acc["money"], "pos": [pos.x, pos.z],
 		"time": cs.world_time, "price": cs.wheat_price, "market": cs.market_public(),
-		"job": cs.job_of(player_name),
+		"job": cs.job_of(player_name), "world": cs.world_public(),
 	}
 	_send(pid, "s2c_login_result", true, "", info)
 	_send(pid, "s2c_snapshot", cs.all_buildings_public(), NpcSim.public_list(cs), _players_public())
@@ -532,6 +532,21 @@ func on_set_role(pid: int, target: String, role: String) -> void:
 	if by_name.has(target):
 		_send(by_name[target], "s2c_role", role)
 	_notice(pid, "role_set", {"target": target, "role": role})
+	_dirty = true
+
+
+func on_set_world(pid: int, key: String, value: Variant) -> void:
+	var p := _player_of(pid)
+	if p.is_empty():
+		return
+	if not _allow_action(p):
+		_notice(pid, "rate_limited")
+		return
+	var res: Dictionary = cs.set_world(p["name"], key, value)
+	if not res["ok"]:
+		_notice(pid, str(res["error"]))
+		return
+	_broadcast("s2c_world", res["world"])
 	_dirty = true
 
 

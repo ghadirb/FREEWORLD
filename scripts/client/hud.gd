@@ -314,6 +314,25 @@ func _build_admin_panel() -> void:
 		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		b.pressed.connect(func(): client.set_role(_admin_target.text.strip_edges(), r))
 		row.add_child(b)
+	v.add_child(_label(Loc.t("time_speed"), 22, Color("c8f08a")))
+	var srow := HBoxContainer.new()
+	srow.add_theme_constant_override("separation", 8)
+	v.add_child(srow)
+	for sp in FWConst.TIME_SPEEDS:
+		var txt: String = Loc.t("time_paused") if float(sp) == 0.0 else "×" + Loc.digits(str(int(sp)))
+		var sb := UiTheme.button(txt, Vector2(0, 56))
+		sb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		sb.pressed.connect(func(): client.set_world("time_speed", sp))
+		srow.add_child(sb)
+	v.add_child(_label(Loc.t("weather"), 22, Color("c8f08a")))
+	var wrow := HBoxContainer.new()
+	wrow.add_theme_constant_override("separation", 8)
+	v.add_child(wrow)
+	for w in FWConst.WEATHERS:
+		var wb := UiTheme.button(Loc.t("weather_" + w), Vector2(0, 56))
+		wb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		wb.pressed.connect(func(): client.set_world("weather", w))
+		wrow.add_child(wb)
 	var audit := UiTheme.button(Loc.t("audit"), Vector2(0, 60))
 	audit.pressed.connect(func(): client.request_audit())
 	v.add_child(audit)

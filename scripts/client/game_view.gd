@@ -24,6 +24,7 @@ var cam
 var streamer
 var sun: DirectionalLight3D
 var env: Environment
+var _rain: CPUParticles3D
 var sky_mat: ProceduralSkyMaterial
 var water: MeshInstance3D
 var my_avatar
@@ -119,6 +120,52 @@ func _on_snapshot() -> void:
 	# snapshot بعد از سیگنال ورود می‌رسد؛ ساختمان‌های موجود را بدون انیمیشن بساز.
 	for id in client.mirror.buildings:
 		_spawn_building(client.mirror.buildings[id], false)
+
+
+func _weather_fog() -> float:
+	match client.weather:
+		"rain":
+			return 2.0
+		"fog":
+			return 4.5
+	return 1.0
+
+
+func _weather_light() -> float:
+	match client.weather:
+		"rain":
+			return 0.55
+		"fog":
+			return 0.7
+	return 1.0
+
+
+## باران: ذره‌های سبک که دور کانون دوربین می‌افتند (فقط وقتی هوا بارانی است).
+func _update_rain() -> void:
+	if _rain == null:
+		_rain = CPUParticles3D.new()
+		_rain.amount = 350 if quality >= 1 else 160
+		_rain.lifetime = 1.1
+		_rain.preprocess = 1.0
+		_rain.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
+		_rain.emission_box_extents = Vector3(24, 0.5, 24)
+		_rain.direction = Vector3(0.1, -1, 0)
+		_rain.spread = 2.0
+		_rain.gravity = Vector3(0, -25, 0)
+		_rain.initial_velocity_min = 14.0
+		_rain.initial_velocity_max = 18.0
+		var qm := QuadMesh.new()
+		qm.size = Vector2(0.03, 0.7)
+		var mat := StandardMaterial3D.new()
+		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		mat.albedo_color = Color(0.75, 0.85, 1.0, 0.55)
+		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		mat.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+		qm.material = mat
+		_rain.mesh = qm
+		add_child(_rain)
+	_rain.emitting = client.weather == "rain"
+	_rain.position = cam.focus + Vector3(0, 18, 0)
 
 
 func _fog_base() -> float:
@@ -546,9 +593,10 @@ func _process(delta: float) -> void:
 			cam.pan(kb.x * speed, -kb.y * speed)
 	streamer.update_focus(cam.focus)
 	# دوربین نمای شهر دور است؛ مه را کم می‌کنیم تا رنگ‌ها شسته نشوند.
-	env.fog_density = lerpf(env.fog_density, _fog_base() * (1.0 if mode == "life" else 0.22), minf(dt * 3.0, 1.0))
+	env.fog_density = lerpf(env.fog_density, _fog_base() * _weather_fog() * (1.0 if mode == "life" else 0.22), minf(dt * 3.0, 1.0))
+	_update_rain()
 	water.position = Vector3(snappedf(cam.focus.x, 16.0), 0.0, snappedf(cam.focus.z, 16.0))
-	_time = lerpf(_time + dt * FWConst.TIME_SCALE, client.world_time, minf(dt * 0.5, 1.0))
+	_time = lerpf(_time + dt * FWConst.TIME_SCALE * client.time_speed, client.world_time, minf(dt * 0.5, 1.0))
 	_update_sky(fposmod(_time, 86400.0) / 3600.0)
 	_sync_remote(dt)
 	_label_acc += dt
@@ -673,7 +721,7 @@ func _update_sky(h: float) -> void:
 	var night_col := Color(0.45, 0.55, 1.0)
 	var col := night_col.lerp(day_col, light).lerp(dusk_col, dusk * 0.6 * light)
 	sun.light_color = col
-	sun.light_energy = lerpf(0.2, 0.85, light)
+	sun.light_energy = lerpf(0.2, 0.85, light) * _weather_light()
 	var top := Color(0.02, 0.03, 0.09).lerp(Color(0.26, 0.52, 0.88), light)
 	var horizon := Color(0.05, 0.07, 0.15).lerp(Color(0.7, 0.84, 0.95), light).lerp(Color(0.96, 0.58, 0.34), dusk * 0.7)
 	sky_mat.sky_top_color = top
