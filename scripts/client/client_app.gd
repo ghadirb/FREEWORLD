@@ -246,8 +246,35 @@ func _on_logged_in() -> void:
 	if _args.has("build"):
 		hud._toggle_build()
 		hud._select_type(str(_args["build"]))
+	if _args.has("enter") and client.local_server != null:
+		_debug_enter(str(_args["enter"]))
 	if _shot_path != "":
 		_take_shot_later()
+
+
+## آزمایشی (--enter house): ساختمان می‌سازد و وارد آن می‌شود تا داخلش در CI عکس گرفته شود.
+func _debug_enter(type: String) -> void:
+	var spot := Vector2i(-1, -1)
+	for cx in range(4, 28):
+		for cz in range(4, 28):
+			if client.preview_error(type, cx, cz) == "":
+				spot = Vector2i(cx, cz)
+				break
+		if spot.x >= 0:
+			break
+	if spot.x < 0:
+		return
+	client.place(type, spot.x, spot.y)
+	var srv = client.local_server
+	var t0 := Time.get_ticks_msec()
+	while srv.cs.buildings.is_empty() and Time.get_ticks_msec() - t0 < 3000:
+		await get_tree().create_timer(0.1).timeout
+	if srv.cs.buildings.is_empty():
+		return
+	var id: int = srv.cs.buildings.keys()[0]
+	var d: Vector2 = srv.cs.door_point(srv.cs.buildings[id])
+	srv.peers[1]["pos"] = Vector3(d.x, 0.0, d.y)
+	client.enter_building(id)
 
 
 func _take_shot_later() -> void:

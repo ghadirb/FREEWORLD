@@ -97,6 +97,45 @@ func _run() -> void:
 	c.queue_free()
 	await create_timer(0.3).timeout
 
+	print("== entering buildings over the local RPC path ==")
+	var edir := OS.get_user_data_dir().path_join("local_test_enter_%d" % Time.get_ticks_msec())
+	server = _start_server(0, edir)
+	c = _mk_client()
+	c.connect_local(server, "hosty", "secret-secret-1")
+	ok(await wait_until(func(): return c.is_logged_in, 3.0), "login for the enter test")
+	var espot := Vector2i(-1, -1)
+	for cx in range(4, 20):
+		for cz in range(4, 20):
+			if c.preview_error("house", cx, cz) == "":
+				espot = Vector2i(cx, cz)
+				break
+		if espot.x >= 0:
+			break
+	c.place("house", espot.x, espot.y)
+	ok(await wait_until(func(): return server.cs.buildings.size() == 1, 3.0), "house exists for the enter test")
+	var hid: int = server.cs.buildings.keys()[0]
+	var edoor: Vector2 = server.cs.door_point(server.cs.buildings[hid])
+	server.peers[1]["pos"] = Vector3(edoor.x + 40.0, 0.0, edoor.y)
+	c.enter_building(hid)
+	await create_timer(0.3).timeout
+	ok(c.inside_id == 0, "cannot enter from far away")
+	server.peers[1]["pos"] = Vector3(edoor.x, 0.0, edoor.y)
+	c.enter_building(hid)
+	ok(await wait_until(func(): return c.inside_id == hid, 3.0), "enter succeeds next to the door")
+	var pos_before: Vector3 = server.peers[1]["pos"]
+	c.send_move(edoor.x + 3.0, edoor.y, 0.0)
+	await create_timer(0.3).timeout
+	ok((server.peers[1]["pos"] as Vector3).distance_to(pos_before) < 0.01, "moves are ignored while inside")
+	server.cs.accounts["hosty"]["energy"] = 20.0
+	ok(await wait_until(func(): return c.energy > 25, 6.0), "energy is restored and reported to the client while resting")
+	c.leave_building()
+	ok(await wait_until(func(): return c.inside_id == 0, 3.0), "leave succeeds")
+	c.disconnect_from_server()
+	server.stop()
+	server.queue_free()
+	c.queue_free()
+	await create_timer(0.3).timeout
+
 	print("== jobs over the local RPC path ==")
 	var jdir := OS.get_user_data_dir().path_join("local_test_jobs_%d" % Time.get_ticks_msec())
 	server = _start_server(0, jdir)

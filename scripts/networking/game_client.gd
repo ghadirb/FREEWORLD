@@ -18,6 +18,8 @@ signal building_removed(id: int)
 signal stocks_changed
 signal market_changed
 signal world_changed
+signal inside_changed(building_id: int)
+signal energy_changed
 signal job_changed
 signal money_changed(money: int)
 signal player_joined(player_name: String)
@@ -40,6 +42,8 @@ var world_time: float = 0.0
 var wheat_price: float = FWConst.WHEAT_BASE_PRICE
 var bread_price: float = FWConst.BREAD_BASE_PRICE
 var job_id: int = 0
+var inside_id: int = 0
+var energy: int = 100
 var time_speed: float = 1.0
 var weather: String = "clear"
 var egg_price: float = 6.0
@@ -289,6 +293,7 @@ func _apply_players(player_dict: Dictionary) -> void:
 		entry["pos"] = Vector3(a[0], a[1], a[2])
 		entry["yaw"] = float(a[3])
 		entry["role"] = str(a[4])
+		entry["inside"] = int(a[5]) if a.size() > 5 else 0
 		players[n] = entry
 	for n in players.keys():
 		if not player_dict.has(n):
@@ -324,6 +329,26 @@ func _apply_world(w: Dictionary) -> void:
 func on_world(w: Dictionary) -> void:
 	_apply_world(w)
 	world_changed.emit()
+
+
+func enter_building(id: int) -> void:
+	if is_logged_in:
+		_tx("c2s_enter", [id])
+
+
+func leave_building() -> void:
+	if is_logged_in:
+		_tx("c2s_leave", [])
+
+
+func on_inside(id: int) -> void:
+	inside_id = id
+	inside_changed.emit(id)
+
+
+func on_energy(v: int) -> void:
+	energy = v
+	energy_changed.emit()
 
 
 func set_world(key: String, value: Variant) -> void:

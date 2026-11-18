@@ -3,6 +3,7 @@ extends Node3D
 ## منطق بازی اینجا نیست؛ فقط درخواست می‌فرستد و وضعیت سرور را نشان می‌دهد.
 
 const FWConst = preload("res://scripts/core/const.gd")
+const InteriorMesh = preload("res://scripts/client/interior_mesh.gd")
 const Placement = preload("res://scripts/shared/placement.gd")
 const Loc = preload("res://scripts/client/loc.gd")
 const Sfx = preload("res://scripts/client/sfx.gd")
@@ -25,6 +26,11 @@ var streamer
 var sun: DirectionalLight3D
 var env: Environment
 var _rain: CPUParticles3D
+## داخل ساختمان: اتاق بالای آسمان شهر ساخته می‌شود تا با زمین و آب قاطی نشود.
+var inside_id: int = 0
+var _interior: Node3D
+var _interior_origin: Vector3 = Vector3(FWConst.CITY_SIZE * 0.5, 200.0, FWConst.CITY_SIZE * 0.5)
+var _outside_pos: Vector3 = Vector3.ZERO
 var sky_mat: ProceduralSkyMaterial
 var water: MeshInstance3D
 var my_avatar
@@ -89,6 +95,7 @@ func setup(game_client, quality_level: int) -> void:
 	client.building_removed.connect(_remove_building)
 	client.stocks_changed.connect(_refresh_stock_labels)
 	client.teleported.connect(_on_teleported)
+	client.inside_changed.connect(_on_inside_changed)
 	_ghost = MeshInstance3D.new()
 	_ghost.visible = false
 	add_child(_ghost)
@@ -224,6 +231,8 @@ func _setup_water() -> void:
 # ---------------- حالت‌ها ----------------
 
 func toggle_mode() -> void:
+	if inside_id > 0:
+		return
 	set_mode("world" if mode == "life" else "life")
 
 
@@ -433,6 +442,8 @@ func _pick_building(screen_pos: Vector2, max_dist: float) -> int:
 
 
 func _tap(pos: Vector2) -> void:
+	if inside_id > 0:
+		return
 	var hit = ground_hit(pos)
 	var ground_t := 1.0e9
 	if hit != null:
@@ -591,7 +602,8 @@ func _process(delta: float) -> void:
 		if kb.length() > 0.0:
 			var speed: float = cam.world_distance * 0.9 * dt
 			cam.pan(kb.x * speed, -kb.y * speed)
-	streamer.update_focus(cam.focus)
+	if inside_id == 0:
+		streamer.update_focus(cam.focus)
 	# دوربین نمای شهر دور است؛ مه را کم می‌کنیم تا رنگ‌ها شسته نشوند.
 	env.fog_density = lerpf(env.fog_density, _fog_base() * _weather_fog() * (1.0 if mode == "life" else 0.22), minf(dt * 3.0, 1.0))
 	_update_rain()
@@ -608,6 +620,15 @@ func _process(delta: float) -> void:
 func _move_player(dt: float, input: Vector2) -> void:
 	var len := minf(input.length(), 1.0)
 	if len < 0.08:
+		return
+	if inside_id > 0:
+		var d: Vector3 = (cam.right_flat() * input.x + cam.forward_flat() * (-input.y)).normalized()
+		var rel: Vector3 = InteriorMesh.clamp_to_room(my_pos - _interior_origin + d * FWConst.PLAYER_SPEED * 0.6 * len * dt)
+		my_pos = _interior_origin + rel
+		my_yaw = atan2(d.x, d.z)
+		my_avatar.position = my_pos
+		my_avatar.target = my_pos
+		my_avatar.target_yaw = my_yaw
 		return
 	var dir: Vector3 = (cam.right_flat() * input.x + cam.forward_flat() * (-input.y)).normalized()
 	var step := dir * FWConst.PLAYER_SPEED * len * dt
@@ -639,7 +660,61 @@ func _move_player(dt: float, input: Vector2) -> void:
 			client.send_move(my_pos.x, my_pos.z, my_yaw)
 
 
+func _on_inside_changed(id: int) -> void:
+	if id > 0 and client.mirror.buildings.has(id):
+		_enter_interior(id)
+	else:
+		_exit_interior()
+
+
+func _enter_interior(id: int) -> void:
+	var type: String = str(client.mirror.buildings[id]["type"])
+	_outside_pos = my_pos
+	inside_id = id
+	build_type = ""
+	_ghost.visible = false
+	if _interior != null:
+		_interior.queue_free()
+	_interior = Node3D.new()
+	_interior.position = _interior_origin
+	add_child(_interior)
+	var mi := MeshInstance3D.new()
+	mi.mesh = InteriorMesh.get_mesh(type)
+	mi.material_override = _bmat
+	_interior.add_child(mi)
+	var lamp := OmniLight3D.new()
+	lamp.position = Vector3(0, 3.0, 0.5)
+	lamp.omni_range = 16.0
+	lamp.light_energy = 1.1
+	_interior.add_child(lamp)
+	set_mode("life")
+	joy = Vector2.ZERO
+	my_pos = _interior_origin + InteriorMesh.entry_point()
+	my_avatar.teleport_to(my_pos)
+	cam.life_distance = 6.5
+	cam.set_life_focus(my_pos)
+	cam.snap(cam.focus)
+
+
+func _exit_interior() -> void:
+	if inside_id == 0:
+		return
+	inside_id = 0
+	if _interior != null:
+		_interior.queue_free()
+		_interior = null
+	cam.life_distance = 9.0
+	my_pos = _outside_pos
+	my_avatar.teleport_to(my_pos)
+	cam.set_life_focus(my_pos)
+	cam.snap(cam.focus)
+	streamer.update_focus(my_pos)
+	_last_sent = Vector2(-9999, -9999)
+
+
 func _on_teleported(p: Vector2) -> void:
+	if inside_id > 0:
+		return
 	my_pos = Vector3(p.x, world.height_at(p.x, p.y), p.y)
 	my_avatar.teleport_to(my_pos)
 	_last_sent = p
@@ -661,6 +736,7 @@ func _sync_remote(_dt: float) -> void:
 			av.label.modulate = Color("ffd24a")
 		av.target = data["pos"]
 		av.target_yaw = data["yaw"]
+		av.visible = int(data.get("inside", 0)) == 0
 	for pname in avatars.keys():
 		if not client.players.has(pname):
 			avatars[pname].queue_free()

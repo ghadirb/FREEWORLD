@@ -36,6 +36,7 @@ func _init() -> void:
 	test_jobs()
 	test_livestock()
 	test_world_tools()
+	test_interiors()
 	test_world_slots()
 	test_npc_label_fade()
 	test_tls_pinning()
@@ -609,6 +610,66 @@ func test_world_tools() -> void:
 	old.erase("time_speed")
 	var cs3 = CityState.from_dict(JSON.parse_string(JSON.stringify(old)))
 	check(cs3 != null and cs3.weather == "clear" and cs3.time_speed == 1.0, "old saves default to clear weather, normal speed")
+
+
+func test_interiors() -> void:
+	var cs = CityState.new(12345)
+	_login(cs, "owner")
+	_login(cs, "guest")
+	cs.accounts["owner"]["money"] = 5000
+	check(cs.place_building("owner", 1, "house", 12, 14)["ok"], "house placed")
+	check(cs.place_building("owner", 2, "shop", 20, 14)["ok"], "shop placed")
+	check(cs.place_building("owner", 3, "farm", 28, 14)["ok"], "farm placed")
+	var house: Dictionary = _first_of(cs, "house")
+	var shop: Dictionary = _first_of(cs, "shop")
+	var farm: Dictionary = _first_of(cs, "farm")
+	var near_house: Vector2 = cs.door_point(house)
+	check(cs.enter_error("owner", house["id"], near_house) == "", "owner can enter own house")
+	check(cs.enter_error("guest", house["id"], near_house) == "private_house", "guests cannot enter a private house")
+	check(cs.enter_error("guest", shop["id"], cs.door_point(shop)) == "", "anyone can enter a shop")
+	check(cs.enter_error("owner", farm["id"], cs.door_point(farm)) == "not_enterable", "a farm cannot be entered")
+	check(cs.enter_error("owner", house["id"], near_house + Vector2(100, 0)) == "too_far", "must be near the door")
+	check(cs.enter_error("owner", 9999, near_house) == "no_building", "unknown building")
+
+	# انرژی: بیرون کم می‌شود، در خانهٔ خود زیاد می‌شود، در مغازه استراحت نمی‌شود.
+	var e0: float = float(cs.accounts["owner"]["energy"])
+	cs.energy_step(100.0, {"owner": 0})
+	check(float(cs.accounts["owner"]["energy"]) < e0, "energy drains outside")
+	var low: float = float(cs.accounts["owner"]["energy"])
+	cs.energy_step(10.0, {"owner": shop["id"]})
+	check(float(cs.accounts["owner"]["energy"]) < low, "no rest in a shop")
+	cs.accounts["owner"]["energy"] = 10.0
+	cs.energy_step(10.0, {"owner": house["id"]})
+	check(float(cs.accounts["owner"]["energy"]) > 30.0, "rest in own house restores energy")
+	cs.energy_step(1000.0, {"owner": house["id"]})
+	check(float(cs.accounts["owner"]["energy"]) == FWConst.ENERGY_MAX, "energy is capped")
+	cs.accounts["guest"]["energy"] = 50.0
+	cs.energy_step(10.0, {"guest": house["id"]})
+	check(float(cs.accounts["guest"]["energy"]) < 50.0, "no rest in someone else's house")
+	cs.accounts["guest"]["energy"] = 0.0
+	cs.energy_step(1000.0, {"guest": 0})
+	check(float(cs.accounts["guest"]["energy"]) == 0.0, "energy never goes below zero")
+
+	# بدون انرژی کار نمی‌شود (تولید و حقوق متوقف).
+	cs.place_building("owner", 4, "farm", 34, 14)
+	var farm2: Dictionary = {}
+	for id in cs.buildings:
+		if cs.buildings[id]["type"] == "farm" and cs.buildings[id]["cx"] == 34:
+			farm2 = cs.buildings[id]
+	cs.take_job("guest", farm2["id"])
+	farm2["stock"] = 0.0
+	cs.work_step(10.0, {"guest": cs.door_point(farm2)})
+	check(float(farm2["stock"]) == 0.0, "an exhausted worker does not speed production")
+	cs.accounts["guest"]["energy"] = 50.0
+	cs.work_step(10.0, {"guest": cs.door_point(farm2)})
+	check(float(farm2["stock"]) > 0.0, "a rested worker works")
+	cs.accounts["owner"]["energy"] = 42.0
+	var cs2 = CityState.from_dict(JSON.parse_string(JSON.stringify(cs.to_dict())))
+	check(cs2 != null and absf(float(cs2.accounts["owner"]["energy"]) - 42.0) < 0.001, "energy survives save/load")
+	var d: Dictionary = JSON.parse_string(JSON.stringify(cs.to_dict()))
+	d["accounts"]["owner"].erase("energy")
+	var cs3 = CityState.from_dict(d)
+	check(cs3 != null and float(cs3.accounts["owner"]["energy"]) == FWConst.ENERGY_MAX, "old saves start with full energy")
 
 
 func test_world_slots() -> void:

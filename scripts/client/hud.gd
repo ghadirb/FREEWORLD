@@ -33,6 +33,8 @@ var _info: PanelContainer
 var _info_title: Label
 var _info_body: Label
 var _info_collect: Button
+var _info_enter: Button
+var _leave_btn: Button
 var _info_demolish: Button
 var _info_job: Button
 var _info_id: int = -1
@@ -85,6 +87,7 @@ func setup(game_client, game_view) -> void:
 	_build_side_buttons()
 	_build_palette()
 	_build_info_panel()
+	_build_leave_button()
 	_build_toasts()
 	_build_chat()
 	_build_admin_panel()
@@ -95,6 +98,8 @@ func setup(game_client, game_view) -> void:
 	view.mode_changed.connect(_on_mode_changed)
 	client.money_changed.connect(func(_m): _refresh_stats())
 	client.notice.connect(_on_notice)
+	client.inside_changed.connect(_on_inside_changed)
+	client.energy_changed.connect(_refresh_stats)
 	client.job_changed.connect(func(): if _info.visible and _info_id >= 0: _fill_info(_info_id))
 	client.chat_received.connect(_on_chat)
 	client.role_changed.connect(func(_r): _refresh_role())
@@ -253,9 +258,35 @@ func _build_info_panel() -> void:
 	row.add_child(_info_collect)
 	row.add_child(_info_demolish)
 	row.add_child(close)
+	_info_enter = UiTheme.button(Loc.t("enter"), Vector2(0, 64))
+	_info_enter.pressed.connect(func():
+		client.enter_building(_info_id)
+		_info.visible = false)
+	v.add_child(_info_enter)
 	_info_job = UiTheme.button(Loc.t("job_take"), Vector2(0, 64))
 	_info_job.pressed.connect(func(): client.set_job(0 if client.job_id == _info_id else _info_id))
 	v.add_child(_info_job)
+
+
+func _build_leave_button() -> void:
+	_leave_btn = UiTheme.button(Loc.t("leave"), Vector2(260, 76))
+	_leave_btn.visible = false
+	_leave_btn.pressed.connect(func(): Sfx.play(self, "click"); client.leave_building())
+	root.add_child(_leave_btn)
+	_place(_leave_btn, 0.5, 1.0, 0.0, 40.0)
+	_interactive.append(_leave_btn)
+
+
+func _on_inside_changed(id: int) -> void:
+	_leave_btn.visible = id > 0
+	_info.visible = false
+	if id > 0:
+		_palette.visible = false
+		var b: Dictionary = client.mirror.buildings.get(id, {})
+		toast(Loc.fmt("msg_entered", [Loc.t("type_" + str(b.get("type", "house")))]))
+		if b.get("type", "") == "house":
+			toast(Loc.t("msg_resting"), Color("c8f08a"))
+	_refresh_stats()
 
 
 func _build_toasts() -> void:
@@ -430,7 +461,7 @@ func _on_notice(code: String, args: Dictionary) -> void:
 
 func _refresh_stats() -> void:
 	_money.text = "%s %s" % [Loc.digits(str(client.money)), Loc.t("coins")]
-	_clock.text = Loc.clock(client.world_time)
+	_clock.text = "%s   %s: %s" % [Loc.clock(client.world_time), Loc.t("energy"), Loc.digits(str(client.energy))]
 	_price.text = "%s: %s  |  %s: %s" % [Loc.t("wheat_price"), Loc.digits("%.1f" % client.wheat_price),
 		Loc.t("bread_price"), Loc.digits("%.1f" % client.bread_price)]
 	_price.text += "  |  %s: %s  |  %s: %s" % [Loc.t("egg_price"), Loc.digits("%.1f" % client.egg_price),
@@ -465,6 +496,8 @@ func _on_mode_changed(_m: String) -> void:
 
 
 func _toggle_build() -> void:
+	if view.inside_id > 0:
+		return
 	Sfx.play(self, "click")
 	var on := not _palette.visible
 	_palette.visible = on
@@ -520,6 +553,7 @@ func _fill_info(id: int) -> void:
 	_info_body.text = body
 	var mine: bool = b["owner"] == client.my_name
 	_info_collect.visible = mine and FWConst.PRODUCERS.has(str(b["type"]))
+	_info_enter.visible = FWConst.ENTERABLE.has(str(b["type"])) and (mine or str(b["type"]) != "house")
 	var employed_here: bool = client.job_id == id
 	if employed_here:
 		body += "\n" + Loc.t("job_here")

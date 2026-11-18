@@ -1,7 +1,7 @@
 extends RefCounted
 ## ثابت‌های مشترک بین سرور و کلاینت.
 
-const PROTOCOL_VERSION := 5
+const PROTOCOL_VERSION := 6
 # ترافیک شبکه با DTLS رمز می‌شود (نسخهٔ ۴ به بعد). فقط برای عیب‌یابی خاموش شود.
 const USE_DTLS := true
 const DEFAULT_PORT := 7777
@@ -70,6 +70,13 @@ const WORKER_BONUS := 0.5
 const WAGE_INTERVAL := 30.0
 const WAGE_AMOUNT := 12
 const JOB_TYPES := ["farm", "bakery", "coop", "barn"]
+
+# ساختمان‌های قابل‌ورود. خانه فقط برای صاحبش؛ مغازه و نانوایی برای همه.
+const ENTERABLE := ["house", "shop", "bakery"]
+# انرژی بازیکن: به‌آرامی کم می‌شود؛ در خانهٔ خودش استراحت می‌کند. صفر = توان کار ندارد (حقوق/تولید متوقف).
+const ENERGY_MAX := 100.0
+const ENERGY_DECAY_PER_SEC := 0.04
+const ENERGY_REST_PER_SEC := 2.5
 
 # هر ثانیهٔ واقعی = یک دقیقهٔ بازی
 const TIME_SCALE := 60.0

@@ -80,6 +80,7 @@ func authenticate(player_name: String, token: String) -> Dictionary:
 		"requests": [],
 		"job": 0,
 		"work_acc": 0.0,
+		"energy": FWConst.ENERGY_MAX,
 	}
 	_log(player_name, "account_created", {})
 	return {"ok": true, "token": t}
@@ -101,6 +102,7 @@ func provision_admin(player_name: String, secret: String, role: String = FWConst
 		"requests": [],
 		"job": 0,
 		"work_acc": 0.0,
+		"energy": FWConst.ENERGY_MAX,
 	}
 
 
@@ -336,6 +338,8 @@ func work_step(delta: float, positions: Dictionary) -> Array:
 		var jid: int = int(acc.get("job", 0))
 		if jid == 0 or not positions.has(name):
 			continue
+		if float(acc.get("energy", FWConst.ENERGY_MAX)) <= 0.0:
+			continue  # خسته است؛ باید در خانه استراحت کند
 		if not buildings.has(jid):
 			acc["job"] = 0
 			continue
@@ -367,6 +371,37 @@ func work_step(delta: float, positions: Dictionary) -> Array:
 
 
 ## تغییر تنظیمات جهان توسط مدیر. key: "time_speed" یا "weather".
+## خطای ورود به ساختمان یا رشتهٔ خالی. pos فاصلهٔ تعامل را می‌سنجد.
+func enter_error(player_name: String, id: int, pos: Vector2) -> String:
+	if not accounts.has(player_name) or not buildings.has(id):
+		return "no_building"
+	var b: Dictionary = buildings[id]
+	if not FWConst.ENTERABLE.has(str(b["type"])):
+		return "not_enterable"
+	if str(b["type"]) == "house" and b["owner"] != player_name:
+		return "private_house"
+	if pos.distance_to(door_point(b)) > FWConst.INTERACT_RANGE:
+		return "too_far"
+	return ""
+
+
+## یک گام انرژی. online = {نام بازیکن: شناسهٔ ساختمانی که داخلش است (۰ = بیرون)}.
+## در خانهٔ خودش استراحت می‌کند؛ در غیر این صورت به‌آرامی کم می‌شود.
+func energy_step(delta: float, online: Dictionary) -> void:
+	for name in online:
+		if not accounts.has(name):
+			continue
+		var acc: Dictionary = accounts[name]
+		var e: float = float(acc.get("energy", FWConst.ENERGY_MAX))
+		var bid: int = int(online[name])
+		var resting: bool = bid > 0 and buildings.has(bid) and str(buildings[bid]["type"]) == "house" and buildings[bid]["owner"] == name
+		if resting:
+			e += FWConst.ENERGY_REST_PER_SEC * delta
+		else:
+			e -= FWConst.ENERGY_DECAY_PER_SEC * delta
+		acc["energy"] = clampf(e, 0.0, FWConst.ENERGY_MAX)
+
+
 func set_world(actor: String, key: String, value: Variant) -> Dictionary:
 	if not FWConst.is_admin(role_of(actor)):
 		return {"ok": false, "error": "forbidden"}
@@ -560,6 +595,7 @@ static func from_dict(d: Dictionary):
 			"requests": reqs,
 			"job": int(a.get("job", 0)),
 			"work_acc": float(a.get("work_acc", 0.0)),
+			"energy": clampf(float(a.get("energy", FWConst.ENERGY_MAX)), 0.0, FWConst.ENERGY_MAX),
 		}
 	for b in d["buildings"]:
 		if not (b.has("id") and b.has("type") and b.has("owner") and b.has("cx") and b.has("cz")):

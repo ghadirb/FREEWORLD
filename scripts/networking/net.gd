@@ -45,6 +45,18 @@ func c2s_set_world(key: String, value: Variant) -> void:
 
 
 @rpc("any_peer", "call_remote", "reliable")
+func c2s_enter(id: int) -> void:
+	if server:
+		server.on_enter(multiplayer.get_remote_sender_id(), id)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func c2s_leave() -> void:
+	if server:
+		server.on_leave(multiplayer.get_remote_sender_id())
+
+
+@rpc("any_peer", "call_remote", "reliable")
 func c2s_chat(text: String) -> void:
 	if server:
 		server.on_chat(multiplayer.get_remote_sender_id(), text)
@@ -110,6 +122,18 @@ func s2c_job(building_id: int) -> void:
 func s2c_world(settings: Dictionary) -> void:
 	if client:
 		client.on_world(settings)
+
+
+@rpc("authority", "call_remote", "reliable")
+func s2c_inside(building_id: int) -> void:
+	if client:
+		client.on_inside(building_id)
+
+
+@rpc("authority", "call_remote", "reliable")
+func s2c_energy(value: int) -> void:
+	if client:
+		client.on_energy(value)
 
 
 @rpc("authority", "call_remote", "reliable")

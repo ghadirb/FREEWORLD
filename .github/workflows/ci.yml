@@ -76,6 +76,8 @@ jobs:
           xvfb-run -a -s "-screen 0 1280x720x24" godot --path . --rendering-driver opengl3 -- --connect 127.0.0.1:17888 --name viewer1 --shot shots/build.png --shot-delay 7 --shot-mode world --build shop 2>&1 | tee -a render.log
           xvfb-run -a -s "-screen 0 1280x720x24" godot --path . --rendering-driver opengl3 -- --shot shots/menu.png --shot-delay 2 2>&1 | tee -a render.log
           xvfb-run -a -s "-screen 0 1280x720x24" godot --path . --rendering-driver opengl3 -- --solo tester1 --build house --shot shots/solo_build.png --shot-delay 7 2>&1 | tee -a render.log
+          xvfb-run -a -s "-screen 0 1280x720x24" godot --path . --rendering-driver opengl3 -- --solo tester2 --enter house --shot shots/solo_inside.png --shot-delay 9 2>&1 | tee -a render.log
+          test "$(stat -c%s shots/solo_inside.png)" -gt 30000
           test "$(stat -c%s shots/solo_build.png)" -gt 30000
           test -s shots/life.png && test -s shots/world.png && test -s shots/build.png && test -s shots/menu.png
           # منوی خالی (تک‌رنگ) حجم بسیار کم دارد؛ این بررسی جلوی صفحهٔ سفید/خالی را می‌گیرد

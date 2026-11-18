@@ -19,7 +19,7 @@ const SAVE_DEBOUNCE_MSEC := 1000
 const LOCAL_PID := 1
 const LOCAL_METHODS := [
 	"c2s_login", "c2s_move", "c2s_place", "c2s_remove", "c2s_collect",
-	"c2s_chat", "c2s_set_role", "c2s_get_audit", "c2s_job", "c2s_set_world",
+	"c2s_chat", "c2s_set_role", "c2s_get_audit", "c2s_job", "c2s_set_world", "c2s_enter", "c2s_leave",
 ]
 
 var net: Node
@@ -227,6 +227,10 @@ func _work_step(dt: float) -> void:
 		var p: Dictionary = peers[pid]
 		var pos: Vector3 = p["pos"]
 		positions[p["name"]] = Vector2(pos.x, pos.z)
+	var online: Dictionary = {}
+	for pid in _auth_peers():
+		online[peers[pid]["name"]] = int(peers[pid].get("inside", 0))
+	cs.energy_step(dt, online)
 	for ev in cs.work_step(dt, positions):
 		var worker: String = ev["worker"]
 		if int(ev["amount"]) > 0:
@@ -311,7 +315,7 @@ func _players_public() -> Dictionary:
 		var p: Dictionary = peers[pid]
 		var pos: Vector3 = p["pos"]
 		out[p["name"]] = [snappedf(pos.x, 0.01), snappedf(pos.y, 0.01), snappedf(pos.z, 0.01),
-			snappedf(float(p["yaw"]), 0.01), cs.role_of(p["name"])]
+			snappedf(float(p["yaw"]), 0.01), cs.role_of(p["name"]), int(p.get("inside", 0))]
 	return out
 
 
@@ -331,6 +335,12 @@ func _broadcast_stocks() -> void:
 	if stocks != _last_stocks:
 		_last_stocks = stocks
 		_broadcast("s2c_stocks", stocks)
+	for pid in _auth_peers():
+		var pe: Dictionary = peers[pid]
+		var ev: int = int(round(float(cs.accounts[pe["name"]]["energy"])))
+		if ev != int(pe.get("last_energy", -1)):
+			pe["last_energy"] = ev
+			_send(pid, "s2c_energy", ev)
 	var mk: Dictionary = cs.market_public()
 	if mk != _last_market:
 		_last_market = mk
@@ -419,6 +429,8 @@ func on_move(pid: int, x: float, z: float, yaw: float) -> void:
 	var p := _player_of(pid)
 	if p.is_empty():
 		return
+	if int(p.get("inside", 0)) > 0:
+		return  # داخل ساختمان موقعیت بیرونی تغییر نمی‌کند
 	if not (is_finite(x) and is_finite(z) and is_finite(yaw)):
 		return
 	var now := Time.get_ticks_msec()
@@ -548,6 +560,36 @@ func on_set_world(pid: int, key: String, value: Variant) -> void:
 		return
 	_broadcast("s2c_world", res["world"])
 	_dirty = true
+
+
+func on_enter(pid: int, id: int) -> void:
+	var p := _player_of(pid)
+	if p.is_empty():
+		return
+	if not _allow_action(p):
+		_notice(pid, "rate_limited")
+		return
+	if int(p.get("inside", 0)) > 0:
+		_notice(pid, "already_inside")
+		return
+	var pos: Vector3 = p["pos"]
+	var err: String = cs.enter_error(p["name"], id, Vector2(pos.x, pos.z))
+	if err != "":
+		_notice(pid, err)
+		return
+	p["inside"] = id
+	_send(pid, "s2c_inside", id)
+
+
+func on_leave(pid: int) -> void:
+	var p := _player_of(pid)
+	if p.is_empty():
+		return
+	if int(p.get("inside", 0)) == 0:
+		_notice(pid, "not_inside")
+		return
+	p["inside"] = 0
+	_send(pid, "s2c_inside", 0)
 
 
 func on_get_audit(pid: int) -> void:
