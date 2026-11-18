@@ -43,6 +43,7 @@ var _admin_panel: PanelContainer
 var _admin_target: LineEdit
 var _admin_log: RichTextLabel
 var _menu_panel: PanelContainer
+var host_info: String = ""  # آدرس میزبان برای نمایش به بازیکنان دیگر
 var _stat_acc: float = 0.0
 var _chat_lines: Array = []
 var _joy_draw: Control
@@ -326,6 +327,10 @@ func _build_menu_panel() -> void:
 	v.custom_minimum_size = Vector2(440, 0)
 	_menu_panel.add_child(v)
 	v.add_child(_label(Loc.t("menu"), 30, Color("ffd24a")))
+	if host_info != "":
+		var hl := _label(host_info, 22, Color("9be3a0"))
+		hl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		v.add_child(hl)
 	var lang := UiTheme.button(Loc.t("language"), Vector2(0, 60))
 	lang.pressed.connect(func():
 		Loc.lang = "en" if Loc.lang == "fa" else "fa"

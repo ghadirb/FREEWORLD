@@ -35,10 +35,15 @@ jobs:
         run: |
           set -o pipefail
           tests/integration.sh godot 2>&1 | tee integration.log
+      - name: Offline mode tests (solo, restart, host + guest)
+        run: |
+          set -o pipefail
+          godot --headless --path . --script res://tests/local_test.gd 2>&1 | tee local.log
+          grep -q "RESULT: ALL PASSED" local.log
       - name: Publish failure details
         if: failure()
         run: |
-          for f in unit.log integration.log; do
+          for f in unit.log integration.log local.log; do
             [ -f "$f" ] || continue
             msg=$(grep -E "FAIL|Error|ERROR|Parse|INTEGRATION" "$f" | tail -n 30 | sed ':a;N;$!ba;s/\n/%0A/g')
             echo "::error title=$f::$msg"

@@ -56,3 +56,7 @@ tests/integration.sh godot                                       # سرور وا
 **ملاحظه:** ENet رمزنگاری ندارد؛ توکن بدون رمز روی شبکه می‌رود. برای انتشار عمومی باید DTLS یا تونل (مثلاً WireGuard) اضافه شود ([ROADMAP](docs/ROADMAP.md)).
 
 مجوز فونت Vazirmatn: `assets/fonts/OFL.txt`.
+
+
+## حالت آفلاین
+تک‌نفره و چندنفرهٔ محلی (Wi‑Fi/هات‌اسپات) بدون VPS و اینترنت: [docs/OFFLINE_MODE.md](docs/OFFLINE_MODE.md)

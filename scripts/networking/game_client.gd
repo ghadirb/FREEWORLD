@@ -25,6 +25,7 @@ signal teleported(pos: Vector2)
 signal ticked
 
 var net: Node
+var local_server = null  # وقتی تک‌نفره/میزبان است، سرور همین پردازه
 var mirror = null  # نسخهٔ محلی CityState برای پیش‌نمایش و پیش‌بینی حرکت
 var my_name: String = ""
 var token: String = ""
@@ -64,7 +65,28 @@ func connect_to(host: String, port: int, player_name: String, player_token: Stri
 	return OK
 
 
+## اتصال مستقیم به سرور داخل همین برنامه (بدون شبکه).
+func connect_local(server_node: Node, player_name: String, player_token: String) -> void:
+	_pending_name = player_name
+	_pending_token = player_token
+	local_server = server_node
+	local_server.attach_local(self)
+	_tx("c2s_login", [player_name, player_token, FWConst.PROTOCOL_VERSION])
+
+
+func _tx(method: String, args: Array) -> void:
+	if local_server != null:
+		local_server.local_call(method, args.duplicate(true))
+	else:
+		net.callv("rpc_id", [1, method] + args)
+
+
 func disconnect_from_server() -> void:
+	if local_server != null:
+		local_server.detach_local()
+		local_server = null
+		is_logged_in = false
+		return
 	if multiplayer.multiplayer_peer != null:
 		multiplayer.multiplayer_peer.close()
 		multiplayer.multiplayer_peer = null
@@ -73,7 +95,7 @@ func disconnect_from_server() -> void:
 
 func _on_connected() -> void:
 	_connecting = false
-	net.rpc_id(1, "c2s_login", _pending_name, _pending_token, FWConst.PROTOCOL_VERSION)
+	_tx("c2s_login", [_pending_name, _pending_token, FWConst.PROTOCOL_VERSION])
 
 
 func _on_connection_failed() -> void:
@@ -90,37 +112,37 @@ func _on_server_disconnected() -> void:
 
 func send_move(x: float, z: float, yaw: float) -> void:
 	if is_logged_in:
-		net.rpc_id(1, "c2s_move", x, z, yaw)
+		_tx("c2s_move", [x, z, yaw])
 
 
 func place(type: String, cx: int, cz: int) -> void:
 	if is_logged_in:
-		net.rpc_id(1, "c2s_place", randi() % 2147483646 + 1, type, cx, cz)
+		_tx("c2s_place", [randi() % 2147483646 + 1, type, cx, cz])
 
 
 func remove(id: int) -> void:
 	if is_logged_in:
-		net.rpc_id(1, "c2s_remove", id)
+		_tx("c2s_remove", [id])
 
 
 func collect(id: int) -> void:
 	if is_logged_in:
-		net.rpc_id(1, "c2s_collect", id)
+		_tx("c2s_collect", [id])
 
 
 func send_chat(text: String) -> void:
 	if is_logged_in:
-		net.rpc_id(1, "c2s_chat", text)
+		_tx("c2s_chat", [text])
 
 
 func set_role(target: String, new_role: String) -> void:
 	if is_logged_in:
-		net.rpc_id(1, "c2s_set_role", target, new_role)
+		_tx("c2s_set_role", [target, new_role])
 
 
 func request_audit() -> void:
 	if is_logged_in:
-		net.rpc_id(1, "c2s_get_audit")
+		_tx("c2s_get_audit", [])
 
 
 ## خطای پیش‌نمایش محلی برای ساخت (رشتهٔ خالی = مجاز). تصمیم نهایی با سرور است.

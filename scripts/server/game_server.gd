@@ -14,6 +14,12 @@ const TICK_INTERVAL := 0.1
 const STOCK_INTERVAL := 2.0
 const AUTOSAVE_INTERVAL := 10.0  # SIGTERM بدون ذخیره می‌میرد؛ ضرر احتمالی ≤ ۱۰ ثانیه
 const SAVE_DEBOUNCE_MSEC := 1000
+## شناسهٔ بازیکن میزبان (همان گوشی). در ENet شناسهٔ ۱ همیشه خود سرور است و به هیچ کلاینت راه دوری داده نمی‌شود.
+const LOCAL_PID := 1
+const LOCAL_METHODS := [
+	"c2s_login", "c2s_move", "c2s_place", "c2s_remove", "c2s_collect",
+	"c2s_chat", "c2s_set_role", "c2s_get_audit",
+]
 
 var net: Node
 var cs
@@ -21,7 +27,9 @@ var save_path: String = ""
 var peers: Dictionary = {}
 var by_name: Dictionary = {}
 var running: bool = false
+var local_client = null  # GameClient همین پردازه (حالت تک‌نفره یا میزبان)
 
+var _listening: bool = false
 var _name_re := RegEx.new()
 var _dirty: bool = false
 var _last_save_msec: int = 0
@@ -51,23 +59,85 @@ func start(port: int, seed_value: int, data_dir: String, admins: Array) -> int:
 	for a in admins:
 		cs.provision_admin(str(a[0]), str(a[1]))
 	NpcSim.ensure_npcs(cs)
-	var peer := ENetMultiplayerPeer.new()
-	var err: int = peer.create_server(port, FWConst.MAX_PLAYERS + 6)
-	if err != OK:
-		return err
-	multiplayer.multiplayer_peer = peer
-	multiplayer.server_relay = false
-	multiplayer.peer_connected.connect(_on_peer_connected)
-	multiplayer.peer_disconnected.connect(_on_peer_disconnected)
+	if port > 0:
+		var peer := ENetMultiplayerPeer.new()
+		var err: int = peer.create_server(port, FWConst.MAX_PLAYERS + 6)
+		if err != OK:
+			return err
+		multiplayer.multiplayer_peer = peer
+		multiplayer.server_relay = false
+		multiplayer.peer_connected.connect(_on_peer_connected)
+		multiplayer.peer_disconnected.connect(_on_peer_disconnected)
+		_listening = true
+		print("[server] listening on port %d" % port)
+	else:
+		print("[server] offline mode (no network port)")
 	_save()
 	running = true
-	print("[server] listening on port %d" % port)
 	return OK
 
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_WM_CLOSE_REQUEST and running:
 		shutdown()
+	elif what == NOTIFICATION_APPLICATION_PAUSED and running:
+		_save()  # اندروید ممکن است برنامه را در پس‌زمینه ببندد
+
+
+## توقف کامل سرور داخل برنامه (بازگشت به منو). ذخیره می‌کند و پورت را آزاد می‌کند.
+func stop() -> void:
+	if running:
+		shutdown()
+	if _listening:
+		if multiplayer.peer_connected.is_connected(_on_peer_connected):
+			multiplayer.peer_connected.disconnect(_on_peer_connected)
+		if multiplayer.peer_disconnected.is_connected(_on_peer_disconnected):
+			multiplayer.peer_disconnected.disconnect(_on_peer_disconnected)
+		if multiplayer.multiplayer_peer != null:
+			multiplayer.multiplayer_peer.close()
+		multiplayer.multiplayer_peer = null
+		_listening = false
+	local_client = null
+	peers.clear()
+	by_name.clear()
+	if net != null:
+		net.server = null
+
+
+# ---------------- بازیکن محلی (بدون شبکه) ----------------
+
+func attach_local(client_node: Node) -> void:
+	local_client = client_node
+	_on_peer_connected(LOCAL_PID)
+
+
+func detach_local() -> void:
+	if local_client != null:
+		local_client = null
+		_on_peer_disconnected(LOCAL_PID)
+
+
+## درخواست کلاینت محلی؛ همان مسیر RPC اما بدون شبکه. نتیجه همیشه از on_* سرور می‌گذرد.
+func local_call(method: String, args: Array) -> void:
+	if not running or local_client == null or not LOCAL_METHODS.has(method):
+		return
+	callv("on_" + method.substr(4), [LOCAL_PID] + args)
+
+
+func _deliver_local(method: String, args: Array) -> void:
+	if local_client == null:
+		return
+	var copy: Array = []
+	for v in args:
+		copy.append(v.duplicate(true) if (v is Array or v is Dictionary) else v)
+	Callable(local_client, "on_" + method.substr(4)).bindv(copy).call_deferred()
+
+
+func _kick(pid: int) -> void:
+	if pid == LOCAL_PID or not _listening:
+		return
+	if multiplayer.multiplayer_peer != null:
+		_kick(pid)
 
 
 func shutdown() -> void:
@@ -105,7 +175,7 @@ func _process(delta: float) -> void:
 	for pid in peers.keys():
 		var p: Dictionary = peers[pid]
 		if not p["auth"] and now - int(p["connected_at"]) > AUTH_TIMEOUT_MSEC:
-			multiplayer.multiplayer_peer.disconnect_peer(pid)
+			_kick(pid)
 	_tick_acc += dt
 	if _tick_acc >= TICK_INTERVAL:
 		_tick_acc = 0.0
@@ -133,6 +203,19 @@ func _auth_peers() -> Array:
 
 
 func _send(pid: int, method: String, a: Variant = null, b: Variant = null, c: Variant = null, d: Variant = null) -> void:
+	if pid == LOCAL_PID:
+		match method:
+			"s2c_login_result", "s2c_snapshot":
+				_deliver_local(method, [a, b, c])
+			"s2c_tick":
+				_deliver_local(method, [a, b, c, d])
+			"s2c_notice", "s2c_player_joined", "s2c_chat", "s2c_teleport":
+				_deliver_local(method, [a, b])
+			_:
+				_deliver_local(method, [a])
+		return
+	if not _listening:
+		return
 	match method:
 		"s2c_login_result":
 			net.rpc_id(pid, method, a, b, c)
@@ -248,13 +331,13 @@ func on_login(pid: int, player_name: String, token: String, proto: int) -> void:
 		p["failures"] = int(p["failures"]) + 1
 		_send(pid, "s2c_login_result", false, str(res["error"]), {})
 		if int(p["failures"]) >= MAX_LOGIN_FAILURES:
-			multiplayer.multiplayer_peer.disconnect_peer(pid)
+			_kick(pid)
 		return
 	if by_name.has(player_name):
 		var old: int = by_name[player_name]
 		by_name.erase(player_name)
 		peers.erase(old)
-		multiplayer.multiplayer_peer.disconnect_peer(old)
+		_kick(old)
 	var acc: Dictionary = cs.accounts[player_name]
 	var sp: Array = acc["pos"]
 	var pos := Vector3(sp[0], sp[1], sp[2])

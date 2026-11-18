@@ -55,10 +55,12 @@ static func _add_admin(cfg: Dictionary, spec: String) -> void:
 
 ## سرور را زیر گرهٔ والد می‌سازد و برمی‌گرداند. null یعنی شکست.
 static func launch(parent: Node, cfg: Dictionary) -> Node:
-	var net := Node.new()
-	net.set_script(NetScript)
-	net.name = "Net"
-	parent.get_tree().root.add_child(net)
+	var net: Node = parent.get_tree().root.get_node_or_null("Net")
+	if net == null:
+		net = Node.new()
+		net.set_script(NetScript)
+		net.name = "Net"
+		parent.get_tree().root.add_child(net)
 	var server := Node.new()
 	server.set_script(GameServer)
 	server.name = "GameServer"

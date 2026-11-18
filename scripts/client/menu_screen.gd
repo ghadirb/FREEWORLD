@@ -4,9 +4,12 @@ extends Control
 const Loc = preload("res://scripts/client/loc.gd")
 const UiTheme = preload("res://scripts/client/ui_theme.gd")
 const Settings = preload("res://scripts/client/settings.gd")
+const LanDiscovery = preload("res://scripts/networking/lan_discovery.gd")
 
 signal connect_requested(host: String, port: int, player_name: String, secret: String)
 signal language_toggled
+signal solo_requested(player_name: String)
+signal host_requested(player_name: String)
 
 var _name: LineEdit
 var _host: LineEdit
@@ -14,6 +17,8 @@ var _port: LineEdit
 var _secret: LineEdit
 var _status: Label
 var _connect: Button
+var _games_box: VBoxContainer
+var _discovery: Node
 
 
 func _ready() -> void:
@@ -32,8 +37,15 @@ func _ready() -> void:
 	var center := CenterContainer.new()
 	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(center)
+	var scroll := ScrollContainer.new()
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.custom_minimum_size = Vector2(580, 0)
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	center.add_child(scroll)
+	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	var panel := PanelContainer.new()
-	center.add_child(panel)
+	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(panel)
 	var v := VBoxContainer.new()
 	v.custom_minimum_size = Vector2(560, 0)
 	v.add_theme_constant_override("separation", 8)
@@ -56,7 +68,28 @@ func _ready() -> void:
 	sub.modulate = Color(1, 1, 1, 0.6)
 	v.add_child(sub)
 	_name = _field(v, Loc.t("player_name"), str(Settings.get_value("name", "")))
-	_host = _field(v, Loc.t("server"), str(Settings.get_value("host", "127.0.0.1")))
+	var solo := UiTheme.button(Loc.t("solo"), Vector2(0, 66))
+	solo.add_theme_font_size_override("font_size", 28)
+	solo.pressed.connect(func(): _emit_local(solo_requested))
+	v.add_child(solo)
+	var host_btn := UiTheme.button(Loc.t("host"), Vector2(0, 66))
+	host_btn.add_theme_font_size_override("font_size", 26)
+	host_btn.pressed.connect(func(): _emit_local(host_requested))
+	v.add_child(host_btn)
+	var gt := Label.new()
+	gt.text = Loc.t("join_title")
+	gt.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	gt.modulate = Color(1, 1, 1, 0.8)
+	v.add_child(gt)
+	_games_box = VBoxContainer.new()
+	_games_box.add_theme_constant_override("separation", 6)
+	v.add_child(_games_box)
+	var mt := Label.new()
+	mt.text = Loc.t("join_manual")
+	mt.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	mt.modulate = Color(1, 1, 1, 0.8)
+	v.add_child(mt)
+	_host = _field(v, Loc.t("server"), str(Settings.get_value("host", "192.168.")))
 	_port = _field(v, Loc.t("port"), str(Settings.get_value("port", 7777)))
 	_secret = _field(v, Loc.t("secret"), "")
 	_secret.secret = true
@@ -72,6 +105,60 @@ func _ready() -> void:
 	var lang := UiTheme.button(Loc.t("language"), Vector2(0, 50))
 	lang.pressed.connect(func(): language_toggled.emit())
 	v.add_child(lang)
+	_discovery = LanDiscovery.new()
+	add_child(_discovery)
+	_discovery.games_changed.connect(_refresh_games)
+	_discovery.start_listening()
+	_refresh_games()
+
+
+func _exit_tree() -> void:
+	if _discovery != null:
+		_discovery.stop()
+
+
+func _refresh_games() -> void:
+	for c in _games_box.get_children():
+		c.queue_free()
+	if _discovery == null or _discovery.games.is_empty():
+		var l := Label.new()
+		l.text = Loc.t("no_games")
+		l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		l.modulate = Color(1, 1, 1, 0.5)
+		_games_box.add_child(l)
+		return
+	for ip in _discovery.games:
+		var g: Dictionary = _discovery.games[ip]
+		var txt := "%s  —  %s/%s %s" % [g["name"], Loc.digits(str(g["players"])), Loc.digits(str(g["max"])), Loc.t("players_count")]
+		var b := UiTheme.button(txt, Vector2(0, 58))
+		var host_ip: String = ip
+		var host_port: int = int(g["port"])
+		b.pressed.connect(func(): _join_game(host_ip, host_port))
+		_games_box.add_child(b)
+
+
+func _valid_name() -> String:
+	var n := _name.text.strip_edges()
+	if n.length() < 3 or n.length() > 16:
+		set_status(Loc.err("bad_name"), true)
+		return ""
+	Settings.set_value("name", n)
+	return n
+
+
+func _emit_local(sig: Signal) -> void:
+	var n := _valid_name()
+	if n != "":
+		sig.emit(n)
+
+
+func _join_game(ip: String, port: int) -> void:
+	var n := _valid_name()
+	if n == "":
+		return
+	set_status(Loc.t("connecting"))
+	connect_requested.emit(ip, port, n, "")
 
 
 func _field(parent: Control, hint: String, text: String) -> LineEdit:
