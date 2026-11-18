@@ -3,6 +3,7 @@ extends RefCounted
 ## برنامه: ۶ بیدار شدن، ۷ رفتن به کار، ۸ تا ۱۷ کار، ۱۷ بازگشت، ۱۸ تا ۲۱ مغازه، ۲۲ خواب.
 
 const FWConst = preload("res://scripts/core/const.gd")
+const NpcNav = preload("res://scripts/server/npc_nav.gd")
 
 
 static func hour_of(cs) -> float:
@@ -84,6 +85,40 @@ static func _work_building(cs, npc: Dictionary):
 	return job
 
 
+## یک گام حرکت NPC به سمت مقصد با دور زدن موانع. {p: موقعیت جدید, arrived: bool}
+static func _advance(cs, npc: Dictionary, pos: Vector2, target: Vector2, dt: float) -> Dictionary:
+	var goal: Vector2i = NpcNav.cell_of(target)
+	var st = cs.npc_paths.get(npc["id"])
+	if st == null or st["goal"] != goal or st["ver"] != cs.nav_version:
+		var found = cs.nav.find_path(pos, target)
+		st = {"goal": goal, "ver": cs.nav_version, "found": found != null,
+			"pts": found if found != null else []}
+		cs.npc_paths[npc["id"]] = st
+	if not st["found"]:
+		# مسیری وجود ندارد (محاصره‌شده): مثل قبل مستقیم برو تا اقتصاد متوقف نشود.
+		var dist: float = pos.distance_to(target)
+		var nxt: Vector2 = pos + (target - pos).normalized() * minf(FWConst.NPC_SPEED * dt, dist)
+		if cs.world.height_at(nxt.x, nxt.y) >= -0.3:
+			return {"p": nxt, "arrived": false}
+		return {"p": pos, "arrived": false}
+	var pts: Array = st["pts"]
+	if pts.is_empty():
+		return {"p": pos, "arrived": true}
+	var budget: float = FWConst.NPC_SPEED * dt
+	var p: Vector2 = pos
+	while budget > 0.0 and not pts.is_empty():
+		var w: Vector2 = pts[0]
+		var d: float = p.distance_to(w)
+		if d <= budget:
+			p = w
+			budget -= d
+			pts.pop_front()
+		else:
+			p += (w - p).normalized() * budget
+			budget = 0.0
+	return {"p": p, "arrived": false}
+
+
 static func step(cs, dt: float) -> void:
 	var h := hour_of(cs)
 	var day := int(floor(cs.world_time / 86400.0))
@@ -92,13 +127,15 @@ static func step(cs, dt: float) -> void:
 		var target: Vector2 = target_for(cs, npc, activity)
 		var pos := Vector2(npc["x"], npc["z"])
 		var dist: float = pos.distance_to(target)
-		if dist > 1.0:
-			var next: Vector2 = pos + (target - pos).normalized() * minf(FWConst.NPC_SPEED * dt, dist)
-			if cs.world.height_at(next.x, next.y) >= -0.3:
-				npc["x"] = next.x
-				npc["z"] = next.y
-			npc["state"] = "walk"
-		else:
+		var arrived: bool = dist <= 1.0
+		if not arrived:
+			var mv: Dictionary = _advance(cs, npc, pos, target, dt)
+			npc["x"] = mv["p"].x
+			npc["z"] = mv["p"].y
+			arrived = mv["arrived"]
+			if not arrived:
+				npc["state"] = "walk"
+		if arrived:
 			npc["state"] = activity
 			if activity == "work":
 				var b = _work_building(cs, npc)

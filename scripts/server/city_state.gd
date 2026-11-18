@@ -5,6 +5,7 @@ extends RefCounted
 const FWConst = preload("res://scripts/core/const.gd")
 const WorldGen = preload("res://scripts/world/world_generator.gd")
 const Placement = preload("res://scripts/shared/placement.gd")
+const NpcNav = preload("res://scripts/server/npc_nav.gd")
 
 const SAVE_VERSION := 1
 const MAX_REQUEST_MEMORY := 64
@@ -21,12 +22,18 @@ var world_time: float = 8.0 * 3600.0
 var wheat_price: float = FWConst.WHEAT_BASE_PRICE
 var npcs: Array = []
 var _audit_counter: int = 0
+## با هر تغییر در ساختمان‌ها زیاد می‌شود تا شبکهٔ مسیریابی دوباره ساخته شود (ذخیره نمی‌شود).
+var nav_version: int = 0
+var nav
+## مسیر فعلی هر NPC (حافظهٔ موقت؛ ذخیره نمی‌شود): id -> {goal: Vector2i, ver: int, pts: Array}
+var npc_paths: Dictionary = {}
 
 
 func _init(s: int = 12345, id: String = "city_1") -> void:
 	seed_value = s
 	city_id = id
 	world = WorldGen.new(s)
+	nav = NpcNav.new(self)
 
 
 static func hash_token(token: String) -> String:
@@ -120,6 +127,7 @@ func apply_add(b: Dictionary) -> void:
 	buildings[nb["id"]] = nb
 	for c in Placement.footprint(nb["type"], nb["cx"], nb["cz"]):
 		occupied[Placement.cell_key(c.x, c.y)] = nb["id"]
+	nav_version += 1
 
 
 func apply_remove(id: int) -> void:
@@ -129,6 +137,7 @@ func apply_remove(id: int) -> void:
 	for c in Placement.footprint(b["type"], b["cx"], b["cz"]):
 		occupied.erase(Placement.cell_key(c.x, c.y))
 	buildings.erase(id)
+	nav_version += 1
 
 
 func role_of(player_name: String) -> String:
@@ -186,6 +195,7 @@ func place_building(player_name: String, req_id: int, type: String, cx: int, cz:
 	buildings[b["id"]] = b
 	for c in Placement.footprint(type, cx, cz):
 		occupied[Placement.cell_key(c.x, c.y)] = b["id"]
+	nav_version += 1
 	_log(player_name, "place", {"id": b["id"], "type": type, "cx": cx, "cz": cz})
 	return {"ok": true, "building": b, "money": acc["money"]}
 
@@ -201,6 +211,7 @@ func remove_building(player_name: String, id: int) -> Dictionary:
 	for c in Placement.footprint(b["type"], b["cx"], b["cz"]):
 		occupied.erase(Placement.cell_key(c.x, c.y))
 	buildings.erase(id)
+	nav_version += 1
 	var refund := int(int(FWConst.BUILDING_TYPES[b["type"]]["cost"]) * FWConst.REFUND_RATIO)
 	var owner_name: String = b["owner"]
 	if accounts.has(owner_name):

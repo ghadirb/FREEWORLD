@@ -26,6 +26,7 @@ func _init() -> void:
 	test_permissions()
 	test_persistence()
 	test_npc()
+	test_npc_pathfinding()
 	print("\nRESULT: %d passed, %d failed" % [_pass, _fail])
 	quit(1 if _fail > 0 else 0)
 
@@ -208,3 +209,71 @@ func _first_of(cs, type: String) -> Dictionary:
 		if cs.buildings[id]["type"] == type:
 			return cs.buildings[id]
 	return {}
+
+
+func test_npc_pathfinding() -> void:
+	print("[npc pathfinding]")
+	var NpcSim = load("res://scripts/server/npc_sim.gd")
+	var cs = CityState.new(12345)
+	_login(cs, "owner")
+	cs.accounts["owner"]["money"] = 100000
+	cs.accounts["owner"]["role"] = FWConst.ROLE_WORLD_ADMIN
+	# دیواری از خانه‌ها (ستون cx=20..21) که مسیر مستقیم را می‌بندد.
+	var walls := 0
+	for i in range(0, 14):
+		if cs.place_building("owner", 500 + i, "house", 20, 2 + i * 2)["ok"]:
+			walls += 1
+	check(walls >= 8, "wall of houses built (%d)" % walls)
+	var from := Vector2(17.0 * FWConst.CELL_SIZE + 1.0, 14.0 * FWConst.CELL_SIZE + 1.0)
+	var to := Vector2(25.0 * FWConst.CELL_SIZE + 1.0, 14.0 * FWConst.CELL_SIZE + 1.0)
+	check(cs.is_walkable(from.x, from.y) and cs.is_walkable(to.x, to.y), "start and goal are open ground")
+	var path = cs.nav.find_path(from, to)
+	check(path != null and not path.is_empty(), "a path is found around the wall")
+	var straight := from.distance_to(to)
+	var plen := 0.0
+	var prev := from
+	var all_clear := true
+	for w in path:
+		plen += prev.distance_to(w)
+		# هر ۰٫۲۵ واحد از هر پاره‌خط باید قابل عبور باشد.
+		var steps := int(ceil(prev.distance_to(w) / 0.25))
+		for k in range(1, steps + 1):
+			var q := prev.lerp(w, float(k) / float(steps))
+			if not cs.is_walkable(q.x, q.y):
+				all_clear = false
+		prev = w
+	check(all_clear, "path never crosses a building")
+	check(plen > straight * 1.05, "path is a real detour (%.1f vs straight %.1f)" % [plen, straight])
+	# شبیه‌سازی حرکت واقعی NPC تا مقصد.
+	var npc := {"id": 1, "x": from.x, "z": from.y}
+	var reached := false
+	var crossed := false
+	for i in range(4000):
+		var mv: Dictionary = NpcSim._advance(cs, npc, Vector2(npc["x"], npc["z"]), to, 0.2)
+		npc["x"] = mv["p"].x
+		npc["z"] = mv["p"].y
+		if not cs.is_walkable(npc["x"], npc["z"]):
+			crossed = true
+		if mv["arrived"] or Vector2(npc["x"], npc["z"]).distance_to(to) <= 1.0:
+			reached = true
+			break
+	check(reached, "npc walks all the way to the goal")
+	check(not crossed, "npc never steps inside a building while walking")
+	# حذف یک ساختمان دیوار ← مسیر باید دوباره حساب شود و کوتاه‌تر شود.
+	var ver_before: int = cs.nav_version
+	for id in cs.buildings.keys():
+		var b: Dictionary = cs.buildings[id]
+		if b["cz"] <= 14 and b["cz"] + 2 > 14:
+			cs.remove_building("owner", id)
+	check(cs.nav_version > ver_before, "building changes invalidate the nav grid")
+	var path2 = cs.nav.find_path(from, to)
+	var plen2 := 0.0
+	prev = from
+	for w in path2:
+		plen2 += prev.distance_to(w)
+		prev = w
+	check(plen2 < plen, "path shortens after a gap is opened (%.1f < %.1f)" % [plen2, plen])
+	# وقتی مبدأ و مقصد در یک سلول باشند مسیر بی‌اهمیت است.
+	var cs2 = CityState.new(12345)
+	var far = cs2.nav.find_path(Vector2(100.0, 100.0), Vector2(100.0, 100.0))
+	check(far != null and far.size() <= 1, "same-cell goal gives a trivial path (just the exact goal)")
