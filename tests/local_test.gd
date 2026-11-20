@@ -8,6 +8,8 @@ const NetScript = preload("res://scripts/networking/net.gd")
 const GameClient = preload("res://scripts/networking/game_client.gd")
 const ServerMain = preload("res://scripts/server/server_main.gd")
 const Placement = preload("res://scripts/shared/placement.gd")
+const GameViewScript = preload("res://scripts/client/game_view.gd")
+const HudScript = preload("res://scripts/client/hud.gd")
 
 var fails := 0
 var net: Node
@@ -130,6 +132,92 @@ func _run() -> void:
 	ok(await wait_until(func(): return c.energy > 25, 6.0), "energy is restored and reported to the client while resting")
 	c.leave_building()
 	ok(await wait_until(func(): return c.inside_id == 0, 3.0), "leave succeeds")
+	c.disconnect_from_server()
+	server.stop()
+	server.queue_free()
+	c.queue_free()
+	await create_timer(0.3).timeout
+
+	print("== blocks, gathering and trade over the local RPC path ==")
+	var bdir := OS.get_user_data_dir().path_join("local_test_blocks_%d" % Time.get_ticks_msec())
+	server = _start_server(0, bdir)
+	c = _mk_client()
+	c.connect_local(server, "hosty", "secret-secret-1")
+	ok(await wait_until(func(): return c.is_logged_in and not c.inv.is_empty(), 3.0), "login delivers the inventory")
+	var ppos: Vector3 = server.peers[1]["pos"]
+	var bcell := Vector3i(int(floor(ppos.x)) + 3, maxi(0, int(floor(server.cs.world.height_at(ppos.x + 3.5, ppos.z + 0.5)))), int(floor(ppos.z)))
+	var wood0: int = c.item_count("wood")
+	c.place_block(bcell, "wood", 3)
+	ok(await wait_until(func(): return c.mirror.blocks.has(bcell), 3.0), "placed block arrives on the client mirror")
+	ok(c.item_count("wood") == wood0 - 1, "inventory update arrives after placing")
+	ok(server.cs.blocks.has(bcell) and server.cs.blocks[bcell][1] == 3, "server holds the block with its colour")
+	c.paint_block(bcell, 5)
+	ok(await wait_until(func(): return int(c.mirror.blocks[bcell][1]) == 5, 3.0), "paint is broadcast")
+	var far := Vector3i(bcell.x + 60, bcell.y, bcell.z)
+	c.place_block(far, "wood", 0)
+	await create_timer(0.3).timeout
+	ok(not server.cs.blocks.has(far), "blocks out of reach are refused by the server")
+	var money0: int = c.money
+	c.trade("wood", 5, false)
+	ok(await wait_until(func(): return c.money > money0, 3.0), "selling materials pays coins")
+	ok(c.item_count("wood") == wood0 - 1 - 5, "sold materials leave the bag")
+	c.disconnect_from_server()
+	server.stop()
+	server.queue_free()
+	c.queue_free()
+	await create_timer(0.3).timeout
+	server = _start_server(0, bdir)
+	c = _mk_client()
+	c.connect_local(server, "hosty", "secret-secret-1")
+	ok(await wait_until(func(): return c.is_logged_in and c.mirror.blocks.has(bcell), 3.0), "blocks are sent again after a restart")
+	ok(server.cs.blocks.has(bcell), "blocks survive a restart")
+	c.remove_block(bcell)
+	ok(await wait_until(func(): return not c.mirror.blocks.has(bcell), 3.0), "removing a block is applied")
+	c.disconnect_from_server()
+	server.stop()
+	server.queue_free()
+	c.queue_free()
+	await create_timer(0.3).timeout
+
+	print("== tools UI smoke (real GameView + HUD) ==")
+	var udir := OS.get_user_data_dir().path_join("local_test_ui_%d" % Time.get_ticks_msec())
+	server = _start_server(0, udir)
+	c = _mk_client()
+	c.connect_local(server, "hosty", "secret-secret-1")
+	ok(await wait_until(func(): return c.is_logged_in and not c.inv.is_empty(), 3.0), "ui: login")
+	var gv: Node3D = GameViewScript.new()
+	root.add_child(gv)
+	gv.setup(c, 0)
+	var hud_node: Node = HudScript.new()
+	root.add_child(hud_node)
+	hud_node.setup(c, gv)
+	await create_timer(0.3).timeout
+	gv.set_tool("hammer")
+	gv.set_block_type("stone")
+	gv.set_paint_color(4)
+	ok(gv.tool == "hammer" and gv.block_type == "stone", "ui: tool selection works")
+	var gp: Vector3 = gv.my_pos
+	var ucell := Vector3i(int(floor(gp.x)) + 2, maxi(0, int(floor(gv.world.height_at(gp.x + 2.5, gp.z + 0.5)))), int(floor(gp.z)))
+	c.place_block(ucell, "stone", 4)
+	ok(await wait_until(func(): return c.mirror.blocks.has(ucell), 3.0), "ui: block placed")
+	await create_timer(0.5).timeout
+	ok(gv.block_view.get_child_count() > 0, "ui: block mesh is built")
+	var ray: Dictionary = gv.block_view.raycast(Vector3(ucell.x + 0.5, ucell.y + 5.0, ucell.z + 0.5), Vector3.DOWN)
+	ok(ray.get("kind", "") == "block" and ray["hit"] == ucell, "ui: ray hits the block from above")
+	gv.set_tool("pickaxe")
+	gv.set_tool("hand")
+	var node_found := false
+	for rx in range(-40, 40):
+		if node_found:
+			break
+		for rz in range(-40, 40):
+			if not gv.world.resource_in_cell(rx, rz).is_empty():
+				gv.streamer.refresh_resource(rx, rz)
+				node_found = true
+				break
+	ok(node_found, "ui: resource refresh does not crash")
+	hud_node.queue_free()
+	gv.queue_free()
 	c.disconnect_from_server()
 	server.stop()
 	server.queue_free()

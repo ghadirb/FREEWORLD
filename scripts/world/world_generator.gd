@@ -65,6 +65,53 @@ func is_outside_city(x: float, z: float) -> bool:
 	return Vector2(x, z).distance_to(Vector2(half, half)) > 100.0
 
 
+## هش صحیح قطعی (مستقل از پلتفرم) در بازهٔ [0,1).
+func _h01(rx: int, rz: int, salt: int) -> float:
+	var v: int = (rx * 73856093) ^ (rz * 19349663) ^ (salt * 83492791) ^ (seed_value * 2654435761)
+	v = (v ^ (v >> 13)) * 1274126177
+	v = (v ^ (v >> 16)) & 0x7fffffff
+	return float(v % 100000) / 100000.0
+
+
+## گرهٔ منبع قابل برداشت (درخت، سنگ، خاک رس) در خانهٔ ۴×۴ متری (rx, rz). فقط بیرون از شهر.
+## خروجی خالی = چیزی نیست. کاملاً قطعی؛ سرور و کلاینت یک نتیجه می‌گیرند.
+func resource_in_cell(rx: int, rz: int) -> Dictionary:
+	var cs := FWConst.RESOURCE_CELL
+	var x := (float(rx) + 0.15 + _h01(rx, rz, 1) * 0.7) * cs
+	var z := (float(rz) + 0.15 + _h01(rx, rz, 2) * 0.7) * cs
+	if not is_outside_city(x, z):
+		return {}
+	var h := height_at(x, z)
+	if h < 0.2:
+		return {}
+	var biome := biome_from(h, moisture_at(x, z))
+	var roll := _h01(rx, rz, 3)
+	var kind := ""
+	match biome:
+		"forest":
+			if roll < 0.30:
+				kind = "tree"
+			elif roll < 0.33:
+				kind = "rock"
+		"plain":
+			if roll < 0.05:
+				kind = "tree"
+			elif roll < 0.08:
+				kind = "rock"
+		"mountain":
+			if roll < 0.22:
+				kind = "rock"
+		"beach":
+			if roll < 0.12:
+				kind = "clay"
+	if kind == "":
+		return {}
+	var def: Dictionary = FWConst.RESOURCES[kind]
+	var n: int = int(def["min"]) + int(_h01(rx, rz, 4) * float(int(def["max"]) - int(def["min"]) + 1))
+	return {"kind": kind, "x": x, "z": z, "y": h, "n": mini(n, int(def["max"])),
+		"rot": _h01(rx, rz, 5) * TAU, "s": 0.8 + _h01(rx, rz, 6) * 0.7}
+
+
 static func biome_color(biome: String) -> Color:
 	match biome:
 		"water":

@@ -29,6 +29,15 @@ var market: Dictionary = {"wheat": 0.0, "flour": 0.0, "bread": 0.0, "egg": 0.0, 
 ## قیمت کالاهای دامی (تخم‌مرغ و شیر).
 var prices: Dictionary = {"egg": 6.0, "milk": 14.0, "flour": 16.0, "bread": 20.0, "cheese": 34.0}
 var npcs: Array = []
+## ساخت بلوکی: Vector3i -> [نوع, رنگ, مالک]. block_cells شمارندهٔ بلوک در هر خانهٔ ۲×۲ شبکهٔ ساختمان است.
+var blocks: Dictionary = {}
+var block_cells: Dictionary = {}
+var block_owner_count: Dictionary = {}
+## منابع برداشت‌شده: "rx,rz" -> ثانیهٔ باقی‌مانده تا رویش دوباره. respawned را سرور تخلیه می‌کند.
+var depleted: Dictionary = {}
+var respawned: Array = []
+## ضریب قیمت فروش هر ماده (با فروش زیاد کم می‌شود و کم‌کم برمی‌گردد).
+var item_mult: Dictionary = {}
 ## فاصلهٔ پرداخت حقوق (قابل تغییر در تست).
 var wage_interval: float = FWConst.WAGE_INTERVAL
 var _audit_counter: int = 0
@@ -81,6 +90,7 @@ func authenticate(player_name: String, token: String) -> Dictionary:
 		"job": 0,
 		"work_acc": 0.0,
 		"energy": FWConst.ENERGY_MAX,
+		"inv": FWConst.START_ITEMS.duplicate(),
 	}
 	_log(player_name, "account_created", {})
 	return {"ok": true, "token": t}
@@ -103,6 +113,7 @@ func provision_admin(player_name: String, secret: String, role: String = FWConst
 		"job": 0,
 		"work_acc": 0.0,
 		"energy": FWConst.ENERGY_MAX,
+		"inv": FWConst.START_ITEMS.duplicate(),
 	}
 
 
@@ -115,6 +126,7 @@ func count_owned(player_name: String) -> int:
 
 
 ## قابل‌عبور بودن نقطه برای بازیکن و NPC: جاده و چاه آزادند، بقیه ساختمان‌ها مانع‌اند.
+## بلوک‌ها هم مانع‌اند (جز در و جاده)؛ روی یک بلوک تکی می‌شود ایستاد (پله/کف/پل).
 func is_walkable(x: float, z: float) -> bool:
 	var cx := int(floor(x / FWConst.CELL_SIZE))
 	var cz := int(floor(z / FWConst.CELL_SIZE))
@@ -123,7 +135,43 @@ func is_walkable(x: float, z: float) -> bool:
 		var t: String = buildings[occupied[key]]["type"]
 		if t != "road" and t != "well":
 			return false
-	return world.height_at(x, z) >= -0.3
+	var h: float = world.height_at(x, z)
+	if blocks.is_empty():
+		return h >= -0.3
+	return _blocks_walkable(x, z, h)
+
+
+func _blocks_walkable(x: float, z: float, h: float) -> bool:
+	var bx := int(floor(x))
+	var bz := int(floor(z))
+	var lv := maxi(0, int(floor(h)))
+	var b0 = blocks.get(Vector3i(bx, lv, bz))
+	if h < -0.3 and b0 == null:
+		return false
+	var base := lv
+	if b0 != null and not FWConst.block_passable(str(b0[0])):
+		base = lv + 1
+	for k in range(2):
+		var bb = blocks.get(Vector3i(bx, base + k, bz))
+		if bb != null and not FWConst.block_passable(str(bb[0])):
+			return false
+	return true
+
+
+## ارتفاع سطحی که بازیکن روی آن می‌ایستد (زمین یا بالای یک بلوک یا جاده).
+func ground_height(x: float, z: float) -> float:
+	var h: float = world.height_at(x, z)
+	if blocks.is_empty():
+		return h
+	var lv := maxi(0, int(floor(h)))
+	var b = blocks.get(Vector3i(int(floor(x)), lv, int(floor(z))))
+	if b == null:
+		return h
+	if str(b[0]) == "road":
+		return maxf(h, float(lv) + 0.15)
+	if FWConst.block_passable(str(b[0])):
+		return h
+	return float(lv + 1)
 
 
 ## نقطهٔ جلوی در ساختمان (برای فاصلهٔ تعامل و مقصد NPC).
@@ -193,6 +241,8 @@ func place_building(player_name: String, req_id: int, type: String, cx: int, cz:
 	var err := Placement.check(world, occupied, type, cx, cz, acc["role"])
 	if err != "":
 		return {"ok": false, "error": err}
+	if blocks_in_footprint(type, cx, cz):
+		return {"ok": false, "error": "blocks_in_way"}
 	if not FWConst.is_admin(acc["role"]) and count_owned(player_name) >= FWConst.MAX_BUILDINGS_PER_PLAYER:
 		return {"ok": false, "error": "limit"}
 	var cost := int(FWConst.BUILDING_TYPES[type]["cost"])
@@ -442,7 +492,315 @@ func set_role(actor: String, target: String, role: String) -> Dictionary:
 	return {"ok": true}
 
 
+# ---------------- ساخت بلوکی، منابع و فروشگاه ----------------
+
+const NEIGHBORS := [Vector3i(1, 0, 0), Vector3i(-1, 0, 0), Vector3i(0, 1, 0), Vector3i(0, -1, 0), Vector3i(0, 0, 1), Vector3i(0, 0, -1)]
+
+
+func blocks_in_footprint(type: String, cx: int, cz: int) -> bool:
+	if block_cells.is_empty():
+		return false
+	for c in Placement.footprint(type, cx, cz):
+		if block_cells.has(Placement.cell_key(c.x, c.y)):
+			return true
+	return false
+
+
+func _add_block(v: Vector3i, type: String, color: int, owner_name: String) -> void:
+	if blocks.has(v):
+		return
+	blocks[v] = [type, color, owner_name]
+	var k := Placement.cell_key(v.x >> 1, v.z >> 1)
+	block_cells[k] = int(block_cells.get(k, 0)) + 1
+	block_owner_count[owner_name] = int(block_owner_count.get(owner_name, 0)) + 1
+
+
+func _del_block(v: Vector3i) -> void:
+	if not blocks.has(v):
+		return
+	var owner_name: String = str(blocks[v][2])
+	blocks.erase(v)
+	var k := Placement.cell_key(v.x >> 1, v.z >> 1)
+	var left := int(block_cells.get(k, 0)) - 1
+	if left <= 0:
+		block_cells.erase(k)
+	else:
+		block_cells[k] = left
+	block_owner_count[owner_name] = maxi(0, int(block_owner_count.get(owner_name, 0)) - 1)
+
+
+## اعمال تغییر بلوک روی نسخهٔ محلی کلاینت: type_id < 0 یعنی حذف.
+func apply_block(x: int, y: int, z: int, type_id: int, color: int) -> void:
+	var v := Vector3i(x, y, z)
+	if type_id < 0 or type_id >= FWConst.BLOCK_ORDER.size():
+		_del_block(v)
+		return
+	if blocks.has(v):
+		_del_block(v)
+	_add_block(v, str(FWConst.BLOCK_ORDER[type_id]), clampi(color, 0, FWConst.COLOR_COUNT - 1), "")
+
+
+func block_batches() -> Array:
+	var out: Array = []
+	var cur := PackedInt32Array()
+	for v in blocks:
+		var b: Array = blocks[v]
+		cur.append(v.x)
+		cur.append(v.y)
+		cur.append(v.z)
+		cur.append(FWConst.BLOCK_ORDER.find(str(b[0])))
+		cur.append(int(b[1]))
+		if cur.size() >= FWConst.BLOCK_SEND_BATCH * 5:
+			out.append(cur)
+			cur = PackedInt32Array()
+	if cur.size() > 0:
+		out.append(cur)
+	return out
+
+
+func inv_count(inv: Dictionary, item: String) -> int:
+	return int(inv.get(item, 0))
+
+
+func has_items(inv: Dictionary, cost: Dictionary, times: int = 1) -> bool:
+	for item in cost:
+		if int(inv.get(item, 0)) < int(cost[item]) * times:
+			return false
+	return true
+
+
+func _inv_add(acc: Dictionary, item: String, n: int) -> void:
+	var inv: Dictionary = acc["inv"]
+	inv[item] = mini(FWConst.ITEM_CAP, int(inv.get(item, 0)) + n)
+
+
+func sell_price(item: String) -> int:
+	return maxi(1, int(floor(float(FWConst.ITEMS[item]) * float(item_mult.get(item, 1.0)))))
+
+
+static func buy_price(item: String) -> int:
+	return int(ceil(float(FWConst.ITEMS[item]) * FWConst.BUY_MARKUP))
+
+
+func inv_public(player_name: String) -> Dictionary:
+	var sell: Dictionary = {}
+	for item in FWConst.ITEM_ORDER:
+		sell[item] = sell_price(item)
+	var inv: Dictionary = {}
+	if accounts.has(player_name):
+		for item in FWConst.ITEM_ORDER:
+			inv[item] = int(accounts[player_name]["inv"].get(item, 0))
+	return {"inv": inv, "sell": sell}
+
+
+## خطای کد برای قرار دادن یک بلوک (رشتهٔ خالی = مجاز). موجودی و سقف‌ها جداگانه بررسی می‌شوند.
+func check_block(role: String, x: int, y: int, z: int, type: String) -> String:
+	if not FWConst.BLOCK_TYPES.has(type):
+		return "unknown_type"
+	var lo := -int(FWConst.WORLD_LIMIT)
+	var hi := int(FWConst.CITY_SIZE + FWConst.WORLD_LIMIT)
+	if x < lo or z < lo or x >= hi or z >= hi:
+		return "out_of_bounds"
+	var v := Vector3i(x, y, z)
+	if blocks.has(v):
+		return "occupied"
+	if occupied.has(Placement.cell_key(x >> 1, z >> 1)):
+		return "occupied"
+	if not FWConst.is_admin(role):
+		var cx := x >> 1
+		var cz := z >> 1
+		if cx >= FWConst.PLAZA_MIN and cx <= FWConst.PLAZA_MAX and cz >= FWConst.PLAZA_MIN and cz <= FWConst.PLAZA_MAX:
+			return "reserved"
+	var h: float = world.height_at(float(x) + 0.5, float(z) + 0.5)
+	var water := h < 0.2
+	var lv := 0 if water else maxi(0, int(floor(h)))
+	if y < lv:
+		return "underground"
+	if y > lv + FWConst.MAX_BLOCK_HEIGHT:
+		return "too_high"
+	if water or y > lv:
+		var supported := false
+		for d in NEIGHBORS:
+			if blocks.has(v + d):
+				supported = true
+				break
+		# پل: کنار ساحل (خشکی) روی سطح دریا هم تکیه‌گاه حساب می‌شود.
+		if not supported and water and y == 0:
+			for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+				if world.height_at(float(x + d.x) + 0.5, float(z + d.y) + 0.5) >= 0.2:
+					supported = true
+					break
+		if not supported:
+			return "unsupported"
+	return ""
+
+
+func place_block(player_name: String, req_id: int, x: int, y: int, z: int, type: String, color: int) -> Dictionary:
+	if not accounts.has(player_name):
+		return {"ok": false, "error": "no_account"}
+	var acc: Dictionary = accounts[player_name]
+	if req_id != 0 and _remember_request(acc, req_id):
+		return {"ok": false, "error": "duplicate", "silent": true}
+	if color < 0 or color >= FWConst.COLOR_COUNT:
+		return {"ok": false, "error": "bad_request"}
+	var err := check_block(acc["role"], x, y, z, type)
+	if err != "":
+		return {"ok": false, "error": err}
+	if blocks.size() >= FWConst.MAX_BLOCKS_TOTAL:
+		return {"ok": false, "error": "limit"}
+	if not FWConst.is_admin(acc["role"]) and int(block_owner_count.get(player_name, 0)) >= FWConst.MAX_BLOCKS_PER_PLAYER:
+		return {"ok": false, "error": "limit"}
+	var cost: Dictionary = FWConst.BLOCK_TYPES[type]["cost"]
+	if not has_items(acc["inv"], cost):
+		return {"ok": false, "error": "no_items"}
+	for item in cost:
+		acc["inv"][item] = int(acc["inv"][item]) - int(cost[item])
+	_add_block(Vector3i(x, y, z), type, color, player_name)
+	return {"ok": true, "type": type, "color": color}
+
+
+func remove_block(player_name: String, x: int, y: int, z: int) -> Dictionary:
+	if not accounts.has(player_name):
+		return {"ok": false, "error": "no_account"}
+	var v := Vector3i(x, y, z)
+	if not blocks.has(v):
+		return {"ok": false, "error": "no_block"}
+	var b: Array = blocks[v]
+	var owner_name: String = str(b[2])
+	if owner_name != player_name and not FWConst.is_admin(role_of(player_name)):
+		return {"ok": false, "error": "forbidden"}
+	var cost: Dictionary = FWConst.BLOCK_TYPES[str(b[0])]["cost"]
+	if accounts.has(owner_name):
+		for item in cost:
+			_inv_add(accounts[owner_name], str(item), int(cost[item]))
+	if owner_name != player_name:
+		_log(player_name, "admin_remove_block", {"owner": owner_name, "type": str(b[0]), "x": x, "y": y, "z": z})
+	_del_block(v)
+	return {"ok": true, "owner": owner_name}
+
+
+func paint_block(player_name: String, x: int, y: int, z: int, color: int) -> Dictionary:
+	if not accounts.has(player_name):
+		return {"ok": false, "error": "no_account"}
+	var v := Vector3i(x, y, z)
+	if not blocks.has(v):
+		return {"ok": false, "error": "no_block"}
+	if color < 0 or color >= FWConst.COLOR_COUNT:
+		return {"ok": false, "error": "bad_request"}
+	var b: Array = blocks[v]
+	if str(b[2]) != player_name and not FWConst.is_admin(role_of(player_name)):
+		return {"ok": false, "error": "forbidden"}
+	b[1] = color
+	return {"ok": true, "type": str(b[0]), "color": color}
+
+
+## برداشت از درخت/سنگ/خاک رس. pos موقعیت بازیکن است (برای فاصله).
+func gather(player_name: String, rx: int, rz: int, tool: String, pos: Vector2) -> Dictionary:
+	if not accounts.has(player_name):
+		return {"ok": false, "error": "no_account"}
+	var node: Dictionary = world.resource_in_cell(rx, rz)
+	if node.is_empty():
+		return {"ok": false, "error": "no_resource"}
+	var key := "%d,%d" % [rx, rz]
+	if depleted.has(key):
+		return {"ok": false, "error": "depleted"}
+	var def: Dictionary = FWConst.RESOURCES[str(node["kind"])]
+	if tool != str(def["tool"]):
+		return {"ok": false, "error": "wrong_tool", "tool": str(def["tool"])}
+	if pos.distance_to(Vector2(float(node["x"]), float(node["z"]))) > FWConst.GATHER_RANGE:
+		return {"ok": false, "error": "too_far"}
+	var item: String = def["item"]
+	var acc: Dictionary = accounts[player_name]
+	if int(acc["inv"].get(item, 0)) >= FWConst.ITEM_CAP:
+		return {"ok": false, "error": "inv_full"}
+	_inv_add(acc, item, int(node["n"]))
+	depleted[key] = float(def["respawn"])
+	return {"ok": true, "item": item, "count": int(node["n"]), "rx": rx, "rz": rz}
+
+
+## کندن خاک/شن با بیل: ۱ واحد خاک یا (کنار ساحل) شن.
+func dig(player_name: String, x: float, z: float, tool: String, pos: Vector2) -> Dictionary:
+	if not accounts.has(player_name):
+		return {"ok": false, "error": "no_account"}
+	if tool != "shovel":
+		return {"ok": false, "error": "wrong_tool", "tool": "shovel"}
+	if pos.distance_to(Vector2(x, z)) > FWConst.GATHER_RANGE:
+		return {"ok": false, "error": "too_far"}
+	var h: float = world.height_at(x, z)
+	if h < 0.2:
+		return {"ok": false, "error": "no_resource"}
+	var item := "sand" if h < 0.9 else "dirt"
+	var acc: Dictionary = accounts[player_name]
+	if int(acc["inv"].get(item, 0)) >= FWConst.ITEM_CAP:
+		return {"ok": false, "error": "inv_full"}
+	_inv_add(acc, item, 1)
+	return {"ok": true, "item": item, "count": 1}
+
+
+func craft(player_name: String, recipe: String, times: int) -> Dictionary:
+	if not accounts.has(player_name):
+		return {"ok": false, "error": "no_account"}
+	if not FWConst.RECIPES.has(recipe) or times < 1 or times > 50:
+		return {"ok": false, "error": "bad_request"}
+	var r: Dictionary = FWConst.RECIPES[recipe]
+	var acc: Dictionary = accounts[player_name]
+	if not has_items(acc["inv"], r["in"], times):
+		return {"ok": false, "error": "no_items"}
+	for item in r["in"]:
+		acc["inv"][item] = int(acc["inv"][item]) - int(r["in"][item]) * times
+	_inv_add(acc, str(r["out"]), int(r["n"]) * times)
+	return {"ok": true, "item": str(r["out"]), "count": int(r["n"]) * times}
+
+
+## فروش مواد به بازار شهر (درآمد) یا خرید از فروشگاه عمومی.
+func trade(player_name: String, item: String, n: int, buy: bool) -> Dictionary:
+	if not accounts.has(player_name):
+		return {"ok": false, "error": "no_account"}
+	if not FWConst.ITEMS.has(item) or n < 1 or n > 500:
+		return {"ok": false, "error": "bad_request"}
+	var acc: Dictionary = accounts[player_name]
+	var total := 0
+	if buy:
+		if int(acc["inv"].get(item, 0)) + n > FWConst.ITEM_CAP:
+			return {"ok": false, "error": "inv_full"}
+		total = buy_price(item) * n
+		if int(acc["money"]) < total:
+			return {"ok": false, "error": "no_money"}
+		acc["money"] = int(acc["money"]) - total
+		_inv_add(acc, item, n)
+		_log(player_name, "buy_item", {"item": item, "n": n, "cost": total})
+		return {"ok": true, "buy": true, "item": item, "count": n, "total": total, "money": acc["money"]}
+	if int(acc["inv"].get(item, 0)) < n:
+		return {"ok": false, "error": "no_items"}
+	for i in range(n):
+		total += sell_price(item)
+		item_mult[item] = maxf(FWConst.SELL_FLOOR, float(item_mult.get(item, 1.0)) - FWConst.SELL_DROP)
+	acc["inv"][item] = int(acc["inv"][item]) - n
+	acc["money"] = int(acc["money"]) + total
+	return {"ok": true, "buy": false, "item": item, "count": n, "total": total, "money": acc["money"]}
+
+
+func _tick_resources(delta: float) -> void:
+	for key in depleted.keys():
+		depleted[key] = float(depleted[key]) - delta
+		if float(depleted[key]) <= 0.0:
+			depleted.erase(key)
+			respawned.append(key)
+	for item in item_mult.keys():
+		item_mult[item] = minf(1.0, float(item_mult[item]) + FWConst.SELL_RECOVER_PER_SEC * delta)
+
+
+func depleted_flat() -> PackedInt32Array:
+	var out := PackedInt32Array()
+	for key in depleted:
+		var parts: PackedStringArray = str(key).split(",")
+		out.append(int(parts[0]))
+		out.append(int(parts[1]))
+	return out
+
+
 func tick(delta: float) -> void:
+	_tick_resources(delta)
 	world_time = fposmod(world_time + delta * FWConst.TIME_SCALE * time_speed, 86400.0)
 	wheat_price = minf(FWConst.WHEAT_BASE_PRICE, wheat_price + FWConst.WHEAT_RECOVER_PER_SEC * delta)
 	bread_price = move_toward(bread_price, FWConst.BREAD_BASE_PRICE, FWConst.BREAD_RECOVER_PER_SEC * delta)
@@ -572,7 +930,29 @@ func to_dict() -> Dictionary:
 		"buildings": bl,
 		"audit": audit,
 		"npcs": npcs,
+		"blocks": _blocks_to_list(),
+		"depleted": depleted,
+		"item_mult": item_mult,
 	}
+
+
+## حساب‌های قدیمی بدون کیف، مواد اولیه می‌گیرند تا بتوانند فوراً بسازند.
+static func _load_inv(v) -> Dictionary:
+	var out: Dictionary = {}
+	if v is Dictionary:
+		for item in FWConst.ITEM_ORDER:
+			out[item] = clampi(int(v.get(item, 0)), 0, FWConst.ITEM_CAP)
+	else:
+		out = FWConst.START_ITEMS.duplicate()
+	return out
+
+
+func _blocks_to_list() -> Array:
+	var out: Array = []
+	for v in blocks:
+		var b: Array = blocks[v]
+		out.append([v.x, v.y, v.z, str(b[0]), int(b[1]), str(b[2])])
+	return out
 
 
 ## داده‌ی بارگذاری‌شده را اعتبارسنجی می‌کند. در صورت خرابی null برمی‌گرداند.
@@ -619,6 +999,7 @@ static func from_dict(d: Dictionary):
 			"job": int(a.get("job", 0)),
 			"work_acc": float(a.get("work_acc", 0.0)),
 			"energy": clampf(float(a.get("energy", FWConst.ENERGY_MAX)), 0.0, FWConst.ENERGY_MAX),
+			"inv": _load_inv(a.get("inv", null)),
 		}
 	for b in d["buildings"]:
 		if not (b.has("id") and b.has("type") and b.has("owner") and b.has("cx") and b.has("cz")):
@@ -644,6 +1025,20 @@ static func from_dict(d: Dictionary):
 				"bread_day": int(n.get("bread_day", -1)),
 				"goods_day": int(n.get("goods_day", -1)),
 			})
+	var bl = d.get("blocks", [])
+	if bl is Array:
+		for e in bl:
+			if e is Array and e.size() >= 6 and FWConst.BLOCK_TYPES.has(str(e[3])):
+				cs._add_block(Vector3i(int(e[0]), int(e[1]), int(e[2])), str(e[3]), clampi(int(e[4]), 0, FWConst.COLOR_COUNT - 1), str(e[5]))
+	var dp = d.get("depleted", {})
+	if dp is Dictionary:
+		for k in dp:
+			cs.depleted[str(k)] = float(dp[k])
+	var im = d.get("item_mult", {})
+	if im is Dictionary:
+		for k in im:
+			if FWConst.ITEMS.has(str(k)):
+				cs.item_mult[str(k)] = clampf(float(im[k]), FWConst.SELL_FLOOR, 1.0)
 	for e in d.get("audit", []):
 		cs.audit.append(e)
 	cs._audit_counter = cs.audit.size()

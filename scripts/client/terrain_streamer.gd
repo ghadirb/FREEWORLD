@@ -16,7 +16,11 @@ var _queue: Array = []
 var _center := Vector2i(1 << 20, 1 << 20)
 var _terrain_mat: StandardMaterial3D
 var _tree_mesh: ArrayMesh
+var _rock_mesh: ArrayMesh
+var _clay_mesh: ArrayMesh
 var _tree_mat: StandardMaterial3D
+## کلید «rx,rz» ← آیا این منبع هنوز برداشت‌شده است؟ (کلاینت می‌دهد)
+var is_depleted: Callable = func(_k: String) -> bool: return false
 
 
 func setup(world_gen, view_radius: int) -> void:
@@ -29,6 +33,14 @@ func setup(world_gen, view_radius: int) -> void:
 	mb.add_cylinder(Vector3(0, 0.9, 0), 1.25, 0.0, 2.2, 7, Color("2f7a3f"))
 	mb.add_cylinder(Vector3(0, 1.9, 0), 0.95, 0.0, 1.8, 7, Color("3a8f4a"))
 	_tree_mesh = mb.build()
+	var rb := MeshBuilder.new()
+	rb.add_cylinder(Vector3.ZERO, 0.95, 0.55, 0.9, 6, Color("8f9298"))
+	rb.add_cylinder(Vector3(0.5, 0.0, 0.3), 0.5, 0.3, 0.55, 5, Color("7c8086"))
+	_rock_mesh = rb.build()
+	var cb := MeshBuilder.new()
+	cb.add_cylinder(Vector3.ZERO, 1.0, 0.85, 0.22, 8, Color("c2784a"))
+	cb.add_cylinder(Vector3(0.0, 0.2, 0.0), 0.6, 0.45, 0.14, 8, Color("d38b5b"))
+	_clay_mesh = cb.build()
 
 
 func set_radius(r: int) -> void:
@@ -120,44 +132,53 @@ func _build_chunk(c: Vector2i) -> Node3D:
 	mi.material_override = _terrain_mat
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	root.add_child(mi)
-	if trees_enabled:
-		_add_trees(root, c, origin)
+	_add_resources(root, c)
 	return root
 
 
-func _add_trees(root: Node3D, c: Vector2i, origin: Vector2) -> void:
-	var rng := RandomNumberGenerator.new()
-	rng.seed = hash(Vector3i(c.x, c.y, world.seed_value))
-	var xforms: Array = []
-	for i in range(14):
-		var x := origin.x + rng.randf() * FWConst.CHUNK_SIZE
-		var z := origin.y + rng.randf() * FWConst.CHUNK_SIZE
-		var chance := rng.randf()
-		var scale := 0.8 + rng.randf() * 0.7
-		var yaw := rng.randf() * TAU
-		if not world.is_outside_city(x, z):
+## منابع قابل برداشت این چانک (درخت، سنگ، خاک رس). برداشت‌شده‌ها کشیده نمی‌شوند.
+func _add_resources(root: Node3D, c: Vector2i) -> void:
+	var holder := Node3D.new()
+	holder.name = "res"
+	root.add_child(holder)
+	var per := int(FWConst.CHUNK_SIZE / FWConst.RESOURCE_CELL)
+	var lists := {"tree": [], "rock": [], "clay": []}
+	for j in range(per):
+		for i in range(per):
+			var rx := c.x * per + i
+			var rz := c.y * per + j
+			var n: Dictionary = world.resource_in_cell(rx, rz)
+			if n.is_empty() or is_depleted.call("%d,%d" % [rx, rz]):
+				continue
+			var sc: float = float(n["s"])
+			var basis := Basis(Vector3.UP, float(n["rot"])).scaled(Vector3(sc, sc, sc))
+			lists[n["kind"]].append(Transform3D(basis, Vector3(float(n["x"]), float(n["y"]) - 0.1, float(n["z"]))))
+	for kind in lists:
+		var xforms: Array = lists[kind]
+		if xforms.is_empty():
 			continue
-		var h: float = world.height_at(x, z)
-		var biome: String = world.biome_from(h, world.moisture_at(x, z))
-		var p := 0.0
-		if biome == "forest":
-			p = 0.95
-		elif biome == "plain":
-			p = 0.18
-		if chance > p or h < 0.5 or h > 13.0:
-			continue
-		var xf := Transform3D(Basis(Vector3.UP, yaw).scaled(Vector3(scale, scale, scale)), Vector3(x, h - 0.1, z))
-		xforms.append(xf)
-	if xforms.is_empty():
+		var mm := MultiMesh.new()
+		mm.transform_format = MultiMesh.TRANSFORM_3D
+		mm.mesh = _tree_mesh if kind == "tree" else (_rock_mesh if kind == "rock" else _clay_mesh)
+		mm.instance_count = xforms.size()
+		for k in range(xforms.size()):
+			mm.set_instance_transform(k, xforms[k])
+		var mmi := MultiMeshInstance3D.new()
+		mmi.multimesh = mm
+		mmi.material_override = _tree_mat
+		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		holder.add_child(mmi)
+
+
+## پس از برداشت یا رویش دوباره، فقط منابع همان چانک دوباره ساخته می‌شوند.
+func refresh_resource(rx: int, rz: int) -> void:
+	var per := int(FWConst.CHUNK_SIZE / FWConst.RESOURCE_CELL)
+	var key := Vector2i(int(floor(float(rx) / float(per))), int(floor(float(rz) / float(per))))
+	if not _chunks.has(key):
 		return
-	var mm := MultiMesh.new()
-	mm.transform_format = MultiMesh.TRANSFORM_3D
-	mm.mesh = _tree_mesh
-	mm.instance_count = xforms.size()
-	for i in range(xforms.size()):
-		mm.set_instance_transform(i, xforms[i])
-	var mmi := MultiMeshInstance3D.new()
-	mmi.multimesh = mm
-	mmi.material_override = _tree_mat
-	mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	root.add_child(mmi)
+	var root: Node3D = _chunks[key]
+	var old := root.get_node_or_null("res")
+	if old != null:
+		root.remove_child(old)
+		old.queue_free()
+	_add_resources(root, key)

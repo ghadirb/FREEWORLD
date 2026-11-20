@@ -1,7 +1,7 @@
 extends RefCounted
 ## ثابت‌های مشترک بین سرور و کلاینت.
 
-const PROTOCOL_VERSION := 7
+const PROTOCOL_VERSION := 8
 # ترافیک شبکه با DTLS رمز می‌شود (نسخهٔ ۴ به بعد). فقط برای عیب‌یابی خاموش شود.
 const USE_DTLS := true
 const DEFAULT_PORT := 7777
@@ -105,6 +105,59 @@ const NPC_MAX_MONEY := 200
 const NPC_WORK_BONUS := 0.5
 const NPC_NAMES := ["علی", "مریم", "رضا", "زهرا", "حسین", "سارا"]
 
+# ---------------- ساخت بلوکی (مثل ماینکرفت) ----------------
+# هر بلوک یک مکعب ۱×۱×۱ است. مختصات صحیح (x, y, z)؛ y=0 همان سطح دریاست.
+const BLOCK_REACH := 18.0
+const GATHER_RANGE := 7.0
+const MAX_BLOCKS_PER_PLAYER := 2500
+const MAX_BLOCKS_TOTAL := 25000
+const MAX_BLOCK_HEIGHT := 24  # بالاتر از سطح زمین همان ستون
+const BLOCK_SEND_BATCH := 400
+const ITEM_CAP := 999
+const COLOR_COUNT := 12  # ۰ = رنگ طبیعی
+
+# مواد: قیمت پایهٔ فروش. خرید از فروشگاه عمومی ۱٫۸ برابر است.
+const ITEMS := {
+	"wood": 4.0, "stone": 5.0, "clay": 4.0, "dirt": 1.0, "sand": 2.0, "brick": 10.0, "glass": 12.0,
+}
+const ITEM_ORDER := ["wood", "stone", "clay", "dirt", "sand", "brick", "glass"]
+const BUY_MARKUP := 1.8
+const SELL_DROP := 0.04   # نسبت کاهش قیمت با هر فروش
+const SELL_FLOOR := 0.5   # حداقل قیمت نسبت به پایه
+const SELL_RECOVER_PER_SEC := 0.01
+const START_ITEMS := {"wood": 24, "stone": 12, "dirt": 12, "glass": 2, "brick": 4}
+
+# نوع بلوک‌ها. cost = مواد لازم برای هر بلوک. passable = بازیکن می‌تواند از آن عبور کند.
+const BLOCK_ORDER := ["dirt", "wood", "stone", "brick", "glass", "window", "door", "roof", "fence", "road", "lamp"]
+const BLOCK_TYPES := {
+	"dirt": {"cost": {"dirt": 1}},
+	"wood": {"cost": {"wood": 1}},
+	"stone": {"cost": {"stone": 1}},
+	"brick": {"cost": {"brick": 1}},
+	"glass": {"cost": {"glass": 1}},
+	"window": {"cost": {"glass": 1, "wood": 1}},
+	"door": {"cost": {"wood": 2}, "passable": true},
+	"roof": {"cost": {"wood": 1, "clay": 1}},
+	"fence": {"cost": {"wood": 1}},
+	"road": {"cost": {"stone": 1}, "passable": true},
+	"lamp": {"cost": {"glass": 1, "wood": 1}},
+}
+
+# دستورهای ساخت مواد: ورودی ← خروجی
+const RECIPES := {
+	"brick": {"in": {"clay": 2}, "out": "brick", "n": 2},
+	"glass": {"in": {"sand": 2}, "out": "glass", "n": 1},
+}
+
+# گره‌های منبع در جهان و ابزار مناسب هرکدام.
+const RESOURCE_CELL := 4.0
+const RESOURCES := {
+	"tree": {"tool": "axe", "item": "wood", "min": 2, "max": 4, "respawn": 90.0},
+	"rock": {"tool": "pickaxe", "item": "stone", "min": 2, "max": 3, "respawn": 120.0},
+	"clay": {"tool": "shovel", "item": "clay", "min": 2, "max": 3, "respawn": 100.0},
+}
+const TOOLS := ["hand", "axe", "pickaxe", "shovel", "hammer", "brush"]
+
 
 static func role_rank(role: String) -> int:
 	return ROLES.find(role)
@@ -120,3 +173,7 @@ static func is_admin(role: String) -> bool:
 
 static func building_size(type: String) -> Array:
 	return BUILDING_TYPES[type]["size"]
+
+
+static func block_passable(type: String) -> bool:
+	return bool(BLOCK_TYPES.get(type, {}).get("passable", false))

@@ -12,10 +12,12 @@ const BuildingMesh = preload("res://scripts/client/building_mesh.gd")
 const Avatar = preload("res://scripts/client/avatar.gd")
 const CameraRig = preload("res://scripts/client/camera_rig.gd")
 const Streamer = preload("res://scripts/client/terrain_streamer.gd")
+const BlockView = preload("res://scripts/client/block_view.gd")
 
 signal building_tapped(id: int)
 signal ghost_changed(error: String)
 signal mode_changed(new_mode: String)
+signal tool_changed
 
 const HEIGHTS := {"house": 4.4, "shop": 4.0, "farm": 1.3, "road": 0.2, "well": 2.5, "bakery": 4.4, "coop": 2.6, "barn": 4.0}
 
@@ -48,6 +50,11 @@ var build_type: String = ""
 var ghost_cell: Vector2i = Vector2i(-1, -1)
 var ghost_err: String = "not_ready"
 var is_over_ui: Callable = func(_p): return false
+## ابزار دست در حالت زندگی: hand | axe | pickaxe | shovel | hammer | brush
+var tool: String = "hand"
+var block_type: String = "wood"
+var paint_color: int = 0
+var block_view
 var quality: int = 1
 
 var _ghost: MeshInstance3D
@@ -72,13 +79,19 @@ func setup(game_client, quality_level: int) -> void:
 	streamer = Streamer.new()
 	streamer.name = "Terrain"
 	add_child(streamer)
+	streamer.is_depleted = func(k: String) -> bool: return client.mirror.depleted.has(k)
 	streamer.setup(world, _radius_for_quality())
+	block_view = BlockView.new()
+	block_view.name = "Blocks"
+	add_child(block_view)
+	block_view.setup(client)
+	client.resource_changed.connect(func(rx: int, rz: int, _alive: bool): streamer.refresh_resource(rx, rz))
 	cam = CameraRig.new()
 	cam.name = "CameraRig"
 	add_child(cam)
 	cam.setup(world)
 	_setup_water()
-	my_pos = Vector3(client.spawn.x, world.height_at(client.spawn.x, client.spawn.y), client.spawn.y)
+	my_pos = Vector3(client.spawn.x, client.mirror.ground_height(client.spawn.x, client.spawn.y), client.spawn.y)
 	my_avatar = Avatar.new()
 	add_child(my_avatar)
 	my_avatar.setup(client.my_name, Avatar.color_for(client.my_name), false)
@@ -237,6 +250,9 @@ func toggle_mode() -> void:
 
 
 func set_mode(m: String) -> void:
+	if m == "world" and tool != "hand":
+		tool = "hand"
+		tool_changed.emit()
 	if m == mode:
 		return
 	mode = m
@@ -393,6 +409,128 @@ func confirm_build() -> bool:
 	return true
 
 
+# ---------------- ابزارهای دست (تبر، کلنگ، بیل، چکش، قلم‌مو) ----------------
+
+func set_tool(t: String) -> void:
+	if not FWConst.TOOLS.has(t):
+		return
+	tool = t
+	if t != "hand" and build_type != "":
+		set_build_type("")
+	tool_changed.emit()
+
+
+func set_block_type(t: String) -> void:
+	if FWConst.BLOCK_TYPES.has(t):
+		block_type = t
+		tool_changed.emit()
+
+
+func set_paint_color(c: int) -> void:
+	paint_color = clampi(c, 0, FWConst.COLOR_COUNT - 1)
+	tool_changed.emit()
+
+
+func _in_reach(cell: Vector3i) -> bool:
+	var c := Vector3(cell.x + 0.5, cell.y + 0.5, cell.z + 0.5)
+	return Vector3(my_pos.x, my_pos.y + 1.0, my_pos.z).distance_to(c) <= FWConst.BLOCK_REACH
+
+
+func _feedback(code: String) -> void:
+	client.notice.emit(code, {})
+
+
+## نزدیک‌ترین گرهٔ منبع (درخت/سنگ/خاک رس) که پرتو لمس از کنارش می‌گذرد.
+func _pick_resource(o: Vector3, d: Vector3) -> Dictionary:
+	var per := FWConst.RESOURCE_CELL
+	var r0 := int(floor(my_pos.x / per))
+	var r1 := int(floor(my_pos.z / per))
+	var span := int(ceil(FWConst.GATHER_RANGE / per)) + 1
+	var best := {}
+	var best_d := 1.0e9
+	for rz in range(r1 - span, r1 + span + 1):
+		for rx in range(r0 - span, r0 + span + 1):
+			if client.mirror.depleted.has("%d,%d" % [rx, rz]):
+				continue
+			var n: Dictionary = world.resource_in_cell(rx, rz)
+			if n.is_empty():
+				continue
+			var kind: String = n["kind"]
+			var up: float = 1.4 if kind == "tree" else (0.45 if kind == "rock" else 0.15)
+			var radius: float = 1.5 if kind == "tree" else 1.1
+			var p := Vector3(float(n["x"]), float(n["y"]) + up * float(n["s"]), float(n["z"]))
+			var t := (p - o).dot(d)
+			if t < 0.0:
+				continue
+			var miss := (p - (o + d * t)).length()
+			if miss <= radius and miss < best_d:
+				best_d = miss
+				best = {"rx": rx, "rz": rz, "x": float(n["x"]), "z": float(n["z"])}
+	return best
+
+
+func _tool_tap(pos: Vector2) -> void:
+	var o: Vector3 = cam.camera.project_ray_origin(pos)
+	var d: Vector3 = cam.camera.project_ray_normal(pos)
+	match tool:
+		"axe", "pickaxe", "shovel":
+			var res := _pick_resource(o, d)
+			if not res.is_empty():
+				if Vector2(my_pos.x, my_pos.z).distance_to(Vector2(res["x"], res["z"])) > FWConst.GATHER_RANGE:
+					Sfx.play(self, "error")
+					_feedback("too_far")
+					return
+				Sfx.play(self, "click")
+				client.gather(res["rx"], res["rz"], tool)
+				return
+			var hit: Dictionary = block_view.raycast(o, d)
+			if tool == "pickaxe" and hit.get("kind", "") == "block":
+				if not _in_reach(hit["hit"]):
+					Sfx.play(self, "error")
+					_feedback("too_far")
+					return
+				Sfx.play(self, "click")
+				client.remove_block(hit["hit"])
+				return
+			if tool == "shovel" and hit.get("kind", "") == "ground":
+				var pt: Vector3 = hit["point"]
+				if Vector2(my_pos.x, my_pos.z).distance_to(Vector2(pt.x, pt.z)) > FWConst.GATHER_RANGE:
+					Sfx.play(self, "error")
+					_feedback("too_far")
+					return
+				Sfx.play(self, "click")
+				client.dig(pt.x, pt.z)
+				return
+			Sfx.play(self, "error")
+			_feedback("no_target")
+		"hammer":
+			var hit: Dictionary = block_view.raycast(o, d)
+			if hit.is_empty():
+				return
+			var cell: Vector3i = hit["prev"] if hit["kind"] == "block" else hit["cell"]
+			if not _in_reach(cell):
+				Sfx.play(self, "error")
+				_feedback("too_far")
+				return
+			var err: String = client.block_preview_error(cell, block_type)
+			if err != "":
+				Sfx.play(self, "error")
+				_feedback(err)
+				return
+			Sfx.play(self, "place")
+			client.place_block(cell, block_type, paint_color)
+		"brush":
+			var hit: Dictionary = block_view.raycast(o, d)
+			if hit.get("kind", "") != "block":
+				return
+			if not _in_reach(hit["hit"]):
+				Sfx.play(self, "error")
+				_feedback("too_far")
+				return
+			Sfx.play(self, "click")
+			client.paint_block(hit["hit"], paint_color)
+
+
 # ---------------- پیکینگ ----------------
 
 func ground_hit(screen_pos: Vector2) -> Variant:
@@ -443,6 +581,9 @@ func _pick_building(screen_pos: Vector2, max_dist: float) -> int:
 
 func _tap(pos: Vector2) -> void:
 	if inside_id > 0:
+		return
+	if mode == "life" and tool != "hand" and build_type == "":
+		_tool_tap(pos)
 		return
 	var hit = ground_hit(pos)
 	var ground_t := 1.0e9
@@ -646,7 +787,7 @@ func _move_player(dt: float, input: Vector2) -> void:
 		my_pos.z = nz
 	else:
 		return
-	my_pos.y = world.height_at(my_pos.x, my_pos.z)
+	my_pos.y = client.mirror.ground_height(my_pos.x, my_pos.z)
 	my_yaw = atan2(dir.x, dir.z)
 	my_avatar.position = my_pos
 	my_avatar.target = my_pos
@@ -715,7 +856,7 @@ func _exit_interior() -> void:
 func _on_teleported(p: Vector2) -> void:
 	if inside_id > 0:
 		return
-	my_pos = Vector3(p.x, world.height_at(p.x, p.y), p.y)
+	my_pos = Vector3(p.x, client.mirror.ground_height(p.x, p.y), p.y)
 	my_avatar.teleport_to(my_pos)
 	_last_sent = p
 

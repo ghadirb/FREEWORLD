@@ -30,6 +30,10 @@ signal role_changed(role: String)
 signal audit_received(entries: Array)
 signal teleported(pos: Vector2)
 signal ticked
+signal inventory_changed
+signal block_changed(pos: Vector3i, type_id: int, color: int)
+signal blocks_loaded
+signal resource_changed(rx: int, rz: int, alive: bool)
 
 var net: Node
 var local_server = null  # وقتی تک‌نفره/میزبان است، سرور همین پردازه
@@ -54,6 +58,9 @@ var market_stock: Dictionary = {"wheat": 0, "flour": 0, "bread": 0, "egg": 0, "m
 var players: Dictionary = {}  # نام -> {pos: Vector3, yaw: float, role: String}
 var npcs: Array = []
 var spawn: Vector2 = Vector2.ZERO
+## کیف و قیمت فروش مواد (سرور می‌فرستد).
+var inv: Dictionary = {}
+var sell_prices: Dictionary = {}
 var is_logged_in: bool = false
 var last_tick_msec: int = 0
 
@@ -243,6 +250,104 @@ func request_audit() -> void:
 		_tx("c2s_get_audit", [])
 
 
+# ---------------- ساخت بلوکی و منابع ----------------
+
+func place_block(v: Vector3i, type: String, color: int) -> void:
+	if is_logged_in:
+		_tx("c2s_place_block", [randi() % 2147483646 + 1, v.x, v.y, v.z, type, color])
+
+
+func remove_block(v: Vector3i) -> void:
+	if is_logged_in:
+		_tx("c2s_remove_block", [v.x, v.y, v.z])
+
+
+func paint_block(v: Vector3i, color: int) -> void:
+	if is_logged_in:
+		_tx("c2s_paint_block", [v.x, v.y, v.z, color])
+
+
+func gather(rx: int, rz: int, tool: String) -> void:
+	if is_logged_in:
+		_tx("c2s_gather", [rx, rz, tool])
+
+
+func dig(x: float, z: float) -> void:
+	if is_logged_in:
+		_tx("c2s_dig", [x, z, "shovel"])
+
+
+func craft(recipe: String, times: int = 1) -> void:
+	if is_logged_in:
+		_tx("c2s_craft", [recipe, times])
+
+
+func trade(item: String, n: int, buy: bool) -> void:
+	if is_logged_in:
+		_tx("c2s_trade", [item, n, buy])
+
+
+func item_count(item: String) -> int:
+	return int(inv.get(item, 0))
+
+
+## خطای پیش‌نمایش برای قرار دادن بلوک (خالی = مجاز). تصمیم نهایی با سرور است.
+func block_preview_error(v: Vector3i, type: String) -> String:
+	if mirror == null:
+		return "not_ready"
+	var err: String = mirror.check_block(role, v.x, v.y, v.z, type)
+	if err != "":
+		return err
+	if not mirror.has_items(inv, FWConst.BLOCK_TYPES[type]["cost"]):
+		return "no_items"
+	return ""
+
+
+func on_inv(data: Dictionary) -> void:
+	inv = data.get("inv", {})
+	sell_prices = data.get("sell", {})
+	inventory_changed.emit()
+
+
+func on_block(data: PackedInt32Array) -> void:
+	if data.size() < 5 or mirror == null:
+		return
+	mirror.apply_block(data[0], data[1], data[2], data[3], data[4])
+	block_changed.emit(Vector3i(data[0], data[1], data[2]), data[3], data[4])
+
+
+func on_blocks(batch: PackedInt32Array) -> void:
+	if mirror == null:
+		return
+	var i := 0
+	while i + 4 < batch.size():
+		mirror.apply_block(batch[i], batch[i + 1], batch[i + 2], batch[i + 3], batch[i + 4])
+		i += 5
+	blocks_loaded.emit()
+
+
+func on_depleted(flat: PackedInt32Array) -> void:
+	if mirror == null:
+		return
+	mirror.depleted.clear()
+	var i := 0
+	while i + 1 < flat.size():
+		mirror.depleted["%d,%d" % [flat[i], flat[i + 1]]] = 1.0
+		resource_changed.emit(flat[i], flat[i + 1], false)
+		i += 2
+
+
+func on_resource(data: PackedInt32Array) -> void:
+	if data.size() < 3 or mirror == null:
+		return
+	var key := "%d,%d" % [data[0], data[1]]
+	if data[2] == 1:
+		mirror.depleted.erase(key)
+	else:
+		mirror.depleted[key] = 1.0
+	resource_changed.emit(data[0], data[1], data[2] == 1)
+
+
 ## خطای پیش‌نمایش محلی برای ساخت (رشتهٔ خالی = مجاز). تصمیم نهایی با سرور است.
 func preview_error(type: String, cx: int, cz: int) -> String:
 	if mirror == null:
@@ -250,6 +355,8 @@ func preview_error(type: String, cx: int, cz: int) -> String:
 	var err: String = Placement.check(mirror.world, mirror.occupied, type, cx, cz, role)
 	if err != "":
 		return err
+	if mirror.blocks_in_footprint(type, cx, cz):
+		return "blocks_in_way"
 	if money < int(FWConst.BUILDING_TYPES[type]["cost"]):
 		return "no_money"
 	return ""

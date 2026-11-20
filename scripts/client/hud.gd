@@ -4,6 +4,7 @@ extends CanvasLayer
 const FWConst = preload("res://scripts/core/const.gd")
 const Loc = preload("res://scripts/client/loc.gd")
 const Sfx = preload("res://scripts/client/sfx.gd")
+const BlockView = preload("res://scripts/client/block_view.gd")
 const UiTheme = preload("res://scripts/client/ui_theme.gd")
 
 signal disconnect_requested
@@ -46,6 +47,17 @@ var _admin_panel: PanelContainer
 var _admin_target: LineEdit
 var _admin_log: RichTextLabel
 var _menu_panel: PanelContainer
+var _tools_btn: Button
+var _inv_btn: Button
+var _tools_panel: PanelContainer
+var _tool_btns: Dictionary = {}
+var _tool_hint: Label
+var _block_box: VBoxContainer
+var _block_btns: Dictionary = {}
+var _color_row: HBoxContainer
+var _color_btns: Array = []
+var _inv_panel: PanelContainer
+var _inv_rows: Dictionary = {}
 var host_info: String = ""  # آدرس میزبان برای نمایش به بازیکنان دیگر
 var _stat_acc: float = 0.0
 var _chat_lines: Array = []
@@ -86,6 +98,8 @@ func setup(game_client, game_view) -> void:
 	_build_top_bar()
 	_build_side_buttons()
 	_build_palette()
+	_build_tools_panel()
+	_build_inventory_panel()
 	_build_info_panel()
 	_build_leave_button()
 	_build_toasts()
@@ -96,6 +110,10 @@ func setup(game_client, game_view) -> void:
 	view.building_tapped.connect(_on_building_tapped)
 	view.ghost_changed.connect(_on_ghost_changed)
 	view.mode_changed.connect(_on_mode_changed)
+	view.tool_changed.connect(_refresh_tools)
+	client.inventory_changed.connect(func():
+		_refresh_inventory()
+		_refresh_tools())
 	client.money_changed.connect(func(_m): _refresh_stats())
 	client.notice.connect(_on_notice)
 	client.inside_changed.connect(_on_inside_changed)
@@ -110,6 +128,8 @@ func setup(game_client, game_view) -> void:
 	_layout()
 	_refresh_stats()
 	_refresh_role()
+	_refresh_inventory()
+	_refresh_tools()
 
 
 func _layout() -> void:
@@ -186,17 +206,23 @@ func _build_side_buttons() -> void:
 	_place(v, 1.0, 0.5)
 	v.offset_top += 20
 	v.offset_bottom += 20
-	_mode_btn = UiTheme.button("", Vector2(180, 68))
+	_mode_btn = UiTheme.button("", Vector2(180, 58))
 	_mode_btn.pressed.connect(func(): Sfx.play(self, "click"); view.toggle_mode())
-	_build_btn = UiTheme.button(Loc.t("build"), Vector2(180, 68))
+	_build_btn = UiTheme.button(Loc.t("build"), Vector2(180, 58))
 	_build_btn.pressed.connect(_toggle_build)
-	var chat_btn := UiTheme.button(Loc.t("chat"), Vector2(180, 68))
+	_tools_btn = UiTheme.button(Loc.t("tools"), Vector2(180, 58))
+	_tools_btn.pressed.connect(_toggle_tools)
+	_inv_btn = UiTheme.button(Loc.t("inventory"), Vector2(180, 58))
+	_inv_btn.pressed.connect(func():
+		Sfx.play(self, "click")
+		_inv_panel.visible = not _inv_panel.visible)
+	var chat_btn := UiTheme.button(Loc.t("chat"), Vector2(180, 58))
 	chat_btn.pressed.connect(_toggle_chat)
-	_admin_btn = UiTheme.button(Loc.t("admin"), Vector2(180, 68))
+	_admin_btn = UiTheme.button(Loc.t("admin"), Vector2(180, 58))
 	_admin_btn.pressed.connect(func(): _admin_panel.visible = not _admin_panel.visible)
-	var menu_btn := UiTheme.button(Loc.t("menu"), Vector2(180, 68))
+	var menu_btn := UiTheme.button(Loc.t("menu"), Vector2(180, 58))
 	menu_btn.pressed.connect(func(): _menu_panel.visible = not _menu_panel.visible)
-	for b in [_mode_btn, _build_btn, chat_btn, _admin_btn, menu_btn]:
+	for b in [_mode_btn, _build_btn, _tools_btn, _inv_btn, chat_btn, _admin_btn, menu_btn]:
 		v.add_child(b)
 		_interactive.append(b)
 	_update_mode_btn()
@@ -234,6 +260,178 @@ func _build_palette() -> void:
 	cancel.pressed.connect(_toggle_build)
 	row2.add_child(_confirm_btn)
 	row2.add_child(cancel)
+
+
+func _build_tools_panel() -> void:
+	_tools_panel = _panel(0.5, 1.0)
+	_tools_panel.visible = false
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 8)
+	v.custom_minimum_size = Vector2(800, 0)
+	_tools_panel.add_child(v)
+	_tool_hint = _label("", 20, Color("d6e4ff"))
+	_tool_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	v.add_child(_tool_hint)
+	_block_box = VBoxContainer.new()
+	v.add_child(_block_box)
+	var grid := GridContainer.new()
+	grid.columns = 6
+	grid.add_theme_constant_override("h_separation", 6)
+	grid.add_theme_constant_override("v_separation", 6)
+	_block_box.add_child(grid)
+	for t in FWConst.BLOCK_ORDER:
+		var b := UiTheme.button("", Vector2(120, 64))
+		b.add_theme_font_size_override("font_size", 19)
+		b.toggle_mode = true
+		b.pressed.connect(func():
+			Sfx.play(self, "click")
+			view.set_block_type(t))
+		grid.add_child(b)
+		_block_btns[t] = b
+	_color_row = HBoxContainer.new()
+	_color_row.add_theme_constant_override("separation", 6)
+	v.add_child(_color_row)
+	for i in range(FWConst.COLOR_COUNT):
+		var cb := Button.new()
+		cb.custom_minimum_size = Vector2(56, 46)
+		cb.focus_mode = Control.FOCUS_NONE
+		cb.toggle_mode = true
+		var col: Color = BlockView.TINTS[i]
+		if i == 0:
+			cb.text = "∅"
+			col = Color(0.35, 0.38, 0.45)
+		for st in ["normal", "hover", "disabled", "focus"]:
+			cb.add_theme_stylebox_override(st, UiTheme.box(col, 10, Color(1, 1, 1, 0.25), 2))
+		cb.add_theme_stylebox_override("pressed", UiTheme.box(col, 10, UiTheme.ACCENT, 5))
+		cb.pressed.connect(func():
+			Sfx.play(self, "click")
+			view.set_paint_color(i))
+		_color_row.add_child(cb)
+		_color_btns.append(cb)
+	var trow := HBoxContainer.new()
+	trow.add_theme_constant_override("separation", 6)
+	v.add_child(trow)
+	for t in FWConst.TOOLS:
+		var tb := UiTheme.button(Loc.t("tool_" + t), Vector2(118, 62))
+		tb.toggle_mode = true
+		tb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		tb.pressed.connect(func():
+			Sfx.play(self, "click")
+			view.set_tool(t))
+		trow.add_child(tb)
+		_tool_btns[t] = tb
+	var close := UiTheme.button("✕ " + Loc.t("cancel"), Vector2(0, 54))
+	close.pressed.connect(_toggle_tools)
+	v.add_child(close)
+
+
+func _affordable(type: String) -> int:
+	var cost: Dictionary = FWConst.BLOCK_TYPES[type]["cost"]
+	var n := 1 << 30
+	for item in cost:
+		n = mini(n, client.item_count(str(item)) / int(cost[item]))
+	return n
+
+
+func _refresh_tools() -> void:
+	if _tools_panel == null:
+		return
+	for t in _tool_btns:
+		_tool_btns[t].button_pressed = (t == view.tool)
+	var hint := Loc.t("hint_" + view.tool)
+	if view.tool == "hammer":
+		var parts: Array = []
+		var cost: Dictionary = FWConst.BLOCK_TYPES[view.block_type]["cost"]
+		for item in cost:
+			parts.append("%s %s" % [Loc.digits(str(cost[item])), Loc.t("item_" + str(item))])
+		hint += "\n%s: %s" % [Loc.t("block_" + view.block_type), " + ".join(parts)]
+	_tool_hint.text = hint
+	_block_box.visible = view.tool == "hammer"
+	_color_row.visible = view.tool == "hammer" or view.tool == "brush"
+	for t in _block_btns:
+		var b: Button = _block_btns[t]
+		b.text = "%s\n×%s" % [Loc.t("block_" + t), Loc.digits(str(_affordable(t)))]
+		b.button_pressed = (t == view.block_type)
+	for i in range(_color_btns.size()):
+		_color_btns[i].button_pressed = (i == view.paint_color)
+
+
+func _toggle_tools() -> void:
+	if view.inside_id > 0 or view.mode != "life":
+		return
+	Sfx.play(self, "click")
+	var on := not _tools_panel.visible
+	_tools_panel.visible = on
+	if on:
+		_palette.visible = false
+		_info.visible = false
+		view.set_build_type("")
+		view.set_tool("axe")
+	else:
+		view.set_tool("hand")
+	_refresh_tools()
+
+
+func _build_inventory_panel() -> void:
+	_inv_panel = _panel(0.5, 0.5)
+	_inv_panel.visible = false
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 8)
+	v.custom_minimum_size = Vector2(780, 0)
+	_inv_panel.add_child(v)
+	v.add_child(_label(Loc.t("inv_title"), 28, Color("ffd24a")))
+	var sc := ScrollContainer.new()
+	sc.custom_minimum_size = Vector2(0, 300)
+	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	v.add_child(sc)
+	var rows := VBoxContainer.new()
+	rows.add_theme_constant_override("separation", 6)
+	rows.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	sc.add_child(rows)
+	for item in FWConst.ITEM_ORDER:
+		var r := HBoxContainer.new()
+		r.add_theme_constant_override("separation", 8)
+		rows.add_child(r)
+		var nm := _label(Loc.t("item_" + item), 22)
+		nm.custom_minimum_size = Vector2(90, 0)
+		var cnt := _label("", 24, Color("ffd24a"))
+		cnt.custom_minimum_size = Vector2(70, 0)
+		var pr := _label("", 18, Color("c8f08a"))
+		pr.custom_minimum_size = Vector2(190, 0)
+		var s1 := UiTheme.button(Loc.t("sell_one"), Vector2(104, 52))
+		s1.pressed.connect(func(): client.trade(item, 1, false))
+		var sa := UiTheme.button(Loc.t("sell_all"), Vector2(120, 52))
+		sa.pressed.connect(func():
+			var n: int = client.item_count(item)
+			if n > 0:
+				client.trade(item, mini(n, 500), false))
+		var by := UiTheme.button(Loc.t("buy_one"), Vector2(104, 52))
+		by.pressed.connect(func(): client.trade(item, 1, true))
+		for c in [nm, cnt, pr, s1, sa, by]:
+			r.add_child(c)
+		_inv_rows[item] = {"count": cnt, "price": pr}
+	v.add_child(_label(Loc.t("craft_title"), 22, Color("9ad0ff")))
+	var crow := HBoxContainer.new()
+	crow.add_theme_constant_override("separation", 8)
+	v.add_child(crow)
+	for recipe in FWConst.RECIPES:
+		var cb := UiTheme.button(Loc.t("craft_" + recipe), Vector2(0, 56))
+		cb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		cb.add_theme_font_size_override("font_size", 20)
+		cb.pressed.connect(func(): client.craft(recipe, 1))
+		crow.add_child(cb)
+	var close := UiTheme.button(Loc.t("back"), Vector2(0, 56))
+	close.pressed.connect(func(): _inv_panel.visible = false)
+	v.add_child(close)
+
+
+func _refresh_inventory() -> void:
+	if _inv_panel == null:
+		return
+	for item in _inv_rows:
+		var buy_p := int(ceil(float(FWConst.ITEMS[item]) * FWConst.BUY_MARKUP))
+		_inv_rows[item]["count"].text = Loc.digits(str(client.item_count(item)))
+		_inv_rows[item]["price"].text = Loc.fmt("price_fmt", [Loc.digits(str(int(client.sell_prices.get(item, 0)))), Loc.digits(str(buy_p))])
 
 
 func _build_info_panel() -> void:
@@ -281,6 +479,9 @@ func _on_inside_changed(id: int) -> void:
 	_leave_btn.visible = id > 0
 	_info.visible = false
 	if id > 0:
+		_tools_panel.visible = false
+		_inv_panel.visible = false
+		view.set_tool("hand")
 		_palette.visible = false
 		var b: Dictionary = client.mirror.buildings.get(id, {})
 		toast(Loc.fmt("msg_entered", [Loc.t("type_" + str(b.get("type", "house")))]))
@@ -450,6 +651,22 @@ func _on_notice(code: String, args: Dictionary) -> void:
 			toast(Loc.fmt("msg_wage", [Loc.digits(str(args["amount"]))]), Color("c8f08a"))
 		"employer_broke":
 			toast(Loc.fmt("msg_employer_broke", [args["employer"]]), Color("ff9a8a"))
+		"gathered":
+			Sfx.play(self, "coin")
+			toast(Loc.fmt("msg_gathered", [Loc.digits(str(args["count"])), Loc.t("item_" + str(args["item"]))]), Color("c8f08a"))
+		"crafted":
+			Sfx.play(self, "place")
+			toast(Loc.fmt("msg_crafted", [Loc.digits(str(args["count"])), Loc.t("item_" + str(args["item"]))]), Color("c8f08a"))
+		"sold":
+			Sfx.play(self, "coin")
+			toast(Loc.fmt("msg_sold", [Loc.digits(str(args["count"])), Loc.t("item_" + str(args["item"])), Loc.digits(str(args["total"]))]), Color("c8f08a"))
+		"bought":
+			Sfx.play(self, "click")
+			toast(Loc.fmt("msg_bought", [Loc.digits(str(args["count"])), Loc.t("item_" + str(args["item"])), Loc.digits(str(args["total"]))]))
+		"wrong_tool":
+			Sfx.play(self, "error")
+			var need := str(args.get("tool", ""))
+			toast(Loc.fmt("msg_need_tool", [Loc.t("tool_" + need)]) if need != "" else Loc.err(code), Color("ff9a8a"))
 		"role_set":
 			toast(Loc.fmt("msg_role_set", [args["target"], Loc.role_name(str(args["role"]))]))
 		"your_building_removed":
@@ -491,6 +708,9 @@ func _update_mode_btn() -> void:
 
 func _on_mode_changed(_m: String) -> void:
 	_update_mode_btn()
+	_tools_btn.visible = view.mode == "life"
+	if view.mode == "world":
+		_tools_panel.visible = false
 	if view.mode == "world":
 		toast(Loc.t("world_mode"))
 	else:
@@ -505,6 +725,8 @@ func _toggle_build() -> void:
 	_palette.visible = on
 	_info.visible = false
 	if on:
+		_tools_panel.visible = false
+		view.set_tool("hand")
 		_select_type("house")
 	else:
 		view.set_build_type("")

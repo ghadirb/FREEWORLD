@@ -20,6 +20,7 @@ const LOCAL_PID := 1
 const LOCAL_METHODS := [
 	"c2s_login", "c2s_move", "c2s_place", "c2s_remove", "c2s_collect",
 	"c2s_chat", "c2s_set_role", "c2s_get_audit", "c2s_job", "c2s_set_world", "c2s_enter", "c2s_leave",
+	"c2s_place_block", "c2s_remove_block", "c2s_paint_block", "c2s_gather", "c2s_dig", "c2s_craft", "c2s_trade",
 ]
 
 var net: Node
@@ -198,6 +199,12 @@ func _process(delta: float) -> void:
 		return
 	var dt: float = minf(delta, 0.25)
 	cs.tick(dt)
+	if not cs.respawned.is_empty():
+		for key in cs.respawned:
+			var parts: PackedStringArray = str(key).split(",")
+			_broadcast("s2c_resource", PackedInt32Array([int(parts[0]), int(parts[1]), 1]))
+		cs.respawned.clear()
+		_dirty = true
 	NpcSim.step(cs, dt)
 	_work_step(dt)
 	var now := Time.get_ticks_msec()
@@ -341,6 +348,12 @@ func _broadcast_stocks() -> void:
 		if ev != int(pe.get("last_energy", -1)):
 			pe["last_energy"] = ev
 			_send(pid, "s2c_energy", ev)
+	for pid in _auth_peers():
+		var pe2: Dictionary = peers[pid]
+		var inv_now: Dictionary = cs.inv_public(pe2["name"])
+		if inv_now != pe2.get("last_inv", {}):
+			pe2["last_inv"] = inv_now
+			_send(pid, "s2c_inv", inv_now)
 	var mk: Dictionary = cs.market_public()
 	if mk != _last_market:
 		_last_market = mk
@@ -418,6 +431,11 @@ func on_login(pid: int, player_name: String, token: String, proto: int) -> void:
 	}
 	_send(pid, "s2c_login_result", true, "", info)
 	_send(pid, "s2c_snapshot", cs.all_buildings_public(), NpcSim.public_list(cs), _players_public())
+	for batch in cs.block_batches():
+		_send(pid, "s2c_blocks", batch)
+	_send(pid, "s2c_depleted", cs.depleted_flat())
+	p["last_inv"] = cs.inv_public(player_name)
+	_send(pid, "s2c_inv", p["last_inv"])
 	_broadcast("s2c_player_joined", player_name, acc["role"], pid)
 	_dirty = true
 	print("[server] %s joined (%s)" % [player_name, acc["role"]])
@@ -444,7 +462,7 @@ func on_move(pid: int, x: float, z: float, yaw: float) -> void:
 	var valid: bool = d <= float(p["allow"]) + 0.05 and x >= lo and x <= hi and z >= lo and z <= hi and cs.is_walkable(x, z)
 	if valid:
 		p["allow"] = float(p["allow"]) - d
-		p["pos"] = Vector3(x, cs.world.height_at(x, z), z)
+		p["pos"] = Vector3(x, cs.ground_height(x, z), z)
 		p["yaw"] = yaw
 	elif d > 0.001 and now - int(p["last_tp"]) > 500:
 		p["last_tp"] = now
@@ -633,4 +651,163 @@ func on_job(pid: int, id: int) -> void:
 		return
 	_send(pid, "s2c_job", id)
 	_notice(pid, "job_taken", {"employer": cs.buildings[id]["owner"]})
+	_dirty = true
+
+
+# ---------------- ساخت بلوکی و منابع ----------------
+
+func _push_inv(pid: int, name: String) -> void:
+	var inv: Dictionary = cs.inv_public(name)
+	if peers.has(pid):
+		peers[pid]["last_inv"] = inv
+	_send(pid, "s2c_inv", inv)
+
+
+func _near(p: Dictionary, x: float, y: float, z: float, reach: float) -> bool:
+	var pos: Vector3 = p["pos"]
+	return Vector3(pos.x, pos.y + 1.0, pos.z).distance_to(Vector3(x, y, z)) <= reach
+
+
+## بلوک نباید روی خود بازیکنان آنلاین قرار بگیرد (گیر می‌افتند).
+func _player_in_cell(x: int, y: int, z: int) -> bool:
+	for pid in _auth_peers():
+		var pos: Vector3 = peers[pid]["pos"]
+		if int(floor(pos.x)) == x and int(floor(pos.z)) == z and y >= int(floor(pos.y)) - 0 and y <= int(floor(pos.y)) + 1:
+			return true
+	return false
+
+
+func on_place_block(pid: int, req_id: int, x: int, y: int, z: int, type: String, color: int) -> void:
+	var p := _player_of(pid)
+	if p.is_empty():
+		return
+	if not _allow_action(p):
+		_notice(pid, "rate_limited")
+		return
+	if int(p.get("inside", 0)) > 0:
+		return
+	if not _near(p, float(x) + 0.5, float(y) + 0.5, float(z) + 0.5, FWConst.BLOCK_REACH):
+		_notice(pid, "too_far")
+		return
+	if _player_in_cell(x, y, z):
+		_notice(pid, "player_in_way")
+		return
+	var res: Dictionary = cs.place_block(p["name"], req_id, x, y, z, type, color)
+	if not res["ok"]:
+		if not res.get("silent", false):
+			_notice(pid, str(res["error"]))
+		return
+	_broadcast("s2c_block", PackedInt32Array([x, y, z, FWConst.BLOCK_ORDER.find(type), color]))
+	_push_inv(pid, p["name"])
+	_dirty = true
+
+
+func on_remove_block(pid: int, x: int, y: int, z: int) -> void:
+	var p := _player_of(pid)
+	if p.is_empty():
+		return
+	if not _allow_action(p):
+		_notice(pid, "rate_limited")
+		return
+	if not _near(p, float(x) + 0.5, float(y) + 0.5, float(z) + 0.5, FWConst.BLOCK_REACH):
+		_notice(pid, "too_far")
+		return
+	var res: Dictionary = cs.remove_block(p["name"], x, y, z)
+	if not res["ok"]:
+		_notice(pid, str(res["error"]))
+		return
+	_broadcast("s2c_block", PackedInt32Array([x, y, z, -1, 0]))
+	var owner_name: String = res["owner"]
+	if by_name.has(owner_name):
+		_push_inv(by_name[owner_name], owner_name)
+	_dirty = true
+
+
+func on_paint_block(pid: int, x: int, y: int, z: int, color: int) -> void:
+	var p := _player_of(pid)
+	if p.is_empty():
+		return
+	if not _allow_action(p):
+		_notice(pid, "rate_limited")
+		return
+	if not _near(p, float(x) + 0.5, float(y) + 0.5, float(z) + 0.5, FWConst.BLOCK_REACH):
+		_notice(pid, "too_far")
+		return
+	var res: Dictionary = cs.paint_block(p["name"], x, y, z, color)
+	if not res["ok"]:
+		_notice(pid, str(res["error"]))
+		return
+	_broadcast("s2c_block", PackedInt32Array([x, y, z, FWConst.BLOCK_ORDER.find(str(res["type"])), color]))
+	_dirty = true
+
+
+func on_gather(pid: int, rx: int, rz: int, tool: String) -> void:
+	var p := _player_of(pid)
+	if p.is_empty():
+		return
+	if not _allow_action(p):
+		_notice(pid, "rate_limited")
+		return
+	if int(p.get("inside", 0)) > 0:
+		return
+	var pos: Vector3 = p["pos"]
+	var res: Dictionary = cs.gather(p["name"], rx, rz, tool, Vector2(pos.x, pos.z))
+	if not res["ok"]:
+		_notice(pid, str(res["error"]), {"tool": str(res.get("tool", ""))})
+		return
+	_broadcast("s2c_resource", PackedInt32Array([rx, rz, 0]))
+	_push_inv(pid, p["name"])
+	_notice(pid, "gathered", {"item": res["item"], "count": res["count"]})
+	_dirty = true
+
+
+func on_dig(pid: int, x: float, z: float, tool: String) -> void:
+	var p := _player_of(pid)
+	if p.is_empty():
+		return
+	if not _allow_action(p):
+		_notice(pid, "rate_limited")
+		return
+	if int(p.get("inside", 0)) > 0 or not (is_finite(x) and is_finite(z)):
+		return
+	var pos: Vector3 = p["pos"]
+	var res: Dictionary = cs.dig(p["name"], x, z, tool, Vector2(pos.x, pos.z))
+	if not res["ok"]:
+		_notice(pid, str(res["error"]), {"tool": str(res.get("tool", ""))})
+		return
+	_push_inv(pid, p["name"])
+	_notice(pid, "gathered", {"item": res["item"], "count": res["count"]})
+	_dirty = true
+
+
+func on_craft(pid: int, recipe: String, times: int) -> void:
+	var p := _player_of(pid)
+	if p.is_empty():
+		return
+	if not _allow_action(p):
+		_notice(pid, "rate_limited")
+		return
+	var res: Dictionary = cs.craft(p["name"], recipe, times)
+	if not res["ok"]:
+		_notice(pid, str(res["error"]))
+		return
+	_push_inv(pid, p["name"])
+	_notice(pid, "crafted", {"item": res["item"], "count": res["count"]})
+	_dirty = true
+
+
+func on_trade(pid: int, item: String, n: int, buy: bool) -> void:
+	var p := _player_of(pid)
+	if p.is_empty():
+		return
+	if not _allow_action(p):
+		_notice(pid, "rate_limited")
+		return
+	var res: Dictionary = cs.trade(p["name"], item, n, buy)
+	if not res["ok"]:
+		_notice(pid, str(res["error"]))
+		return
+	_send(pid, "s2c_money", int(res["money"]))
+	_push_inv(pid, p["name"])
+	_notice(pid, "bought" if buy else "sold", {"item": item, "count": n, "total": res["total"]})
 	_dirty = true

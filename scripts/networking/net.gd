@@ -80,6 +80,48 @@ func c2s_get_audit() -> void:
 		server.on_get_audit(multiplayer.get_remote_sender_id())
 
 
+@rpc("any_peer", "call_remote", "reliable")
+func c2s_place_block(req_id: int, x: int, y: int, z: int, type: String, color: int) -> void:
+	if server:
+		server.on_place_block(multiplayer.get_remote_sender_id(), req_id, x, y, z, type, color)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func c2s_remove_block(x: int, y: int, z: int) -> void:
+	if server:
+		server.on_remove_block(multiplayer.get_remote_sender_id(), x, y, z)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func c2s_paint_block(x: int, y: int, z: int, color: int) -> void:
+	if server:
+		server.on_paint_block(multiplayer.get_remote_sender_id(), x, y, z, color)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func c2s_gather(rx: int, rz: int, tool: String) -> void:
+	if server:
+		server.on_gather(multiplayer.get_remote_sender_id(), rx, rz, tool)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func c2s_dig(x: float, z: float, tool: String) -> void:
+	if server:
+		server.on_dig(multiplayer.get_remote_sender_id(), x, z, tool)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func c2s_craft(recipe: String, times: int) -> void:
+	if server:
+		server.on_craft(multiplayer.get_remote_sender_id(), recipe, times)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func c2s_trade(item: String, n: int, buy: bool) -> void:
+	if server:
+		server.on_trade(multiplayer.get_remote_sender_id(), item, n, buy)
+
+
 # ---------------- سرور -> کلاینت ----------------
 
 @rpc("authority", "call_remote", "reliable")
@@ -188,6 +230,40 @@ func s2c_audit(entries: Array) -> void:
 func s2c_teleport(x: float, z: float) -> void:
 	if client:
 		client.on_teleport(x, z)
+
+
+@rpc("authority", "call_remote", "reliable")
+func s2c_inv(data: Dictionary) -> void:
+	if client:
+		client.on_inv(data)
+
+
+## [x, y, z, type_id, color] ؛ type_id = -1 یعنی بلوک برداشته شد.
+@rpc("authority", "call_remote", "reliable")
+func s2c_block(data: PackedInt32Array) -> void:
+	if client:
+		client.on_block(data)
+
+
+## دسته‌ای از بلوک‌ها (پنج عدد برای هر بلوک) هنگام ورود.
+@rpc("authority", "call_remote", "reliable")
+func s2c_blocks(batch: PackedInt32Array) -> void:
+	if client:
+		client.on_blocks(batch)
+
+
+## [rx, rz, alive(0/1)]
+@rpc("authority", "call_remote", "reliable")
+func s2c_resource(data: PackedInt32Array) -> void:
+	if client:
+		client.on_resource(data)
+
+
+## فهرست منابع برداشت‌شدهٔ فعلی: جفت‌های rx, rz
+@rpc("authority", "call_remote", "reliable")
+func s2c_depleted(flat: PackedInt32Array) -> void:
+	if client:
+		client.on_depleted(flat)
 
 
 @rpc("authority", "call_remote", "unreliable")

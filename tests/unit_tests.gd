@@ -38,6 +38,7 @@ func _init() -> void:
 	test_livestock()
 	test_world_tools()
 	test_interiors()
+	test_blocks_and_resources()
 	test_world_slots()
 	test_npc_label_fade()
 	test_tls_pinning()
@@ -703,6 +704,168 @@ func test_interiors() -> void:
 	d["accounts"]["owner"].erase("energy")
 	var cs3 = CityState.from_dict(d)
 	check(cs3 != null and float(cs3.accounts["owner"]["energy"]) == FWConst.ENERGY_MAX, "old saves start with full energy")
+
+
+func _land_cell(cs, from_x: int = 50, from_z: int = 50) -> Vector3i:
+	## نزدیک‌ترین ستونی که خشکی است و داخل ساختمان/میدان نیست.
+	for dx in range(0, 30):
+		for dz in range(0, 30):
+			var x := from_x + dx
+			var z := from_z + dz
+			var h: float = cs.world.height_at(x + 0.5, z + 0.5)
+			if h >= 0.5 and h < 6.0 and not cs.occupied.has(Placement.cell_key(x >> 1, z >> 1)) and cs.check_block("player", x, maxi(0, int(floor(h))), z, "wood") == "":
+				return Vector3i(x, maxi(0, int(floor(h))), z)
+	return Vector3i(-999, 0, -999)
+
+
+func test_blocks_and_resources() -> void:
+	print("== blocks, tools, resources, trade ==")
+	var cs = CityState.new(777)
+	_login(cs, "builder")
+	_login(cs, "other")
+	cs.provision_admin("boss", "secret-secret-1")
+	var inv: Dictionary = cs.accounts["builder"]["inv"]
+	check(int(inv["wood"]) == int(FWConst.START_ITEMS["wood"]), "new accounts get starter materials")
+
+	# --- منابع: قطعی و دارای هر سه نوع ---
+	var kinds := {}
+	var first := {}
+	for rx in range(-60, 140):
+		for rz in range(-60, 140):
+			var n: Dictionary = cs.world.resource_in_cell(rx, rz)
+			if not n.is_empty():
+				kinds[n["kind"]] = int(kinds.get(n["kind"], 0)) + 1
+				if not first.has(n["kind"]):
+					first[n["kind"]] = [rx, rz, n]
+	check(kinds.has("tree") and kinds.has("rock"), "world has harvestable trees and rocks (%s)" % str(kinds))
+	var cs_b = CityState.new(777)
+	var again: Dictionary = cs_b.world.resource_in_cell(first["tree"][0], first["tree"][1])
+	check(again["x"] == first["tree"][2]["x"] and again["n"] == first["tree"][2]["n"], "resource nodes are deterministic per seed")
+	check(cs.world.resource_in_cell(32, 32).is_empty(), "no resource nodes inside the city")
+
+	# --- برداشت ---
+	var tn: Array = first["tree"]
+	var node: Dictionary = tn[2]
+	var at := Vector2(float(node["x"]), float(node["z"]))
+	var far := at + Vector2(FWConst.GATHER_RANGE + 2.0, 0)
+	check(cs.gather("builder", tn[0], tn[1], "axe", far)["error"] == "too_far", "gather needs to be close")
+	check(cs.gather("builder", tn[0], tn[1], "pickaxe", at)["error"] == "wrong_tool", "wrong tool is rejected")
+	var wood0: int = int(inv["wood"])
+	var g: Dictionary = cs.gather("builder", tn[0], tn[1], "axe", at)
+	check(g["ok"] and int(inv["wood"]) == wood0 + int(node["n"]), "axe on a tree gives wood")
+	check(cs.gather("builder", tn[0], tn[1], "axe", at)["error"] == "depleted", "a harvested tree is depleted")
+	check(cs.depleted_flat().size() == 2, "depleted list is exported")
+	_tick_for(cs, float(FWConst.RESOURCES["tree"]["respawn"]) + 1.0, 5.0)
+	check(cs.depleted.is_empty() and cs.respawned.size() == 1, "trees grow back after a while")
+	check(cs.gather("builder", tn[0], tn[1], "axe", at)["ok"], "a respawned tree can be harvested again")
+	var hd: Vector2 = Vector2(60, 60)
+	check(cs.dig("builder", 60.0, 60.0, "axe", hd)["error"] == "wrong_tool", "digging needs the shovel")
+	var d: Dictionary = cs.dig("builder", 60.0, 60.0, "shovel", hd)
+	check(d["ok"] and d["item"] == "dirt", "shovel digs dirt on land")
+
+	# --- چیدن بلوک ---
+	var cell: Vector3i = _land_cell(cs)
+	check(cell.x != -999, "found a free land column for tests")
+	var stone0: int = int(inv["stone"])
+	check(cs.place_block("builder", 1, cell.x, cell.y, cell.z, "stone", 0)["ok"], "place a stone block on the ground")
+	check(int(inv["stone"]) == stone0 - 1, "placing consumes the material")
+	check(cs.place_block("builder", 2, cell.x, cell.y, cell.z, "wood", 0)["error"] == "occupied", "cannot place into an occupied cell")
+	check(cs.place_block("builder", 3, cell.x + 2, cell.y + 3, cell.z, "wood", 0)["error"] == "unsupported", "floating blocks are rejected")
+	check(cs.place_block("builder", 4, cell.x, cell.y + 1, cell.z, "wood", 0)["ok"], "stacking on a block is supported")
+	check(cs.place_block("builder", 4, cell.x, cell.y + 2, cell.z, "wood", 0)["error"] == "duplicate", "repeated request id is ignored")
+	check(cs.place_block("builder", 5, cell.x, cell.y + 2, cell.z, "wood", 99)["error"] == "bad_request", "bad colour is rejected")
+	check(cs.place_block("builder", 6, cell.x + 1, cell.y - 1, cell.z, "wood", 0)["error"] in ["underground", "unsupported"], "no digging below the ground")
+	check(cs.check_block("player", -9999, 0, 0, "wood") == "out_of_bounds", "world limits apply to blocks")
+	check(cs.check_block("player", 63, 1, 63, "wood") == "reserved", "plaza is reserved for admins")
+	check(cs.check_block("world_admin", 63, 1, 63, "wood") != "reserved", "admins may build in the plaza")
+	var poor: Dictionary = cs.accounts["other"]["inv"]
+	poor["glass"] = 0
+	check(cs.place_block("other", 7, cell.x + 1, cell.y, cell.z, "glass", 0)["error"] == "no_items", "no material, no block")
+
+	# --- مالکیت و بازپرداخت ---
+	check(cs.remove_block("other", cell.x, cell.y + 1, cell.z)["error"] == "forbidden", "others cannot remove your blocks")
+	check(cs.paint_block("other", cell.x, cell.y + 1, cell.z, 3)["error"] == "forbidden", "others cannot paint your blocks")
+	check(cs.paint_block("builder", cell.x, cell.y + 1, cell.z, 3)["ok"], "owner can paint")
+	var wood1: int = int(inv["wood"])
+	check(cs.remove_block("builder", cell.x, cell.y + 1, cell.z)["ok"] and int(inv["wood"]) == wood1 + 1, "removing refunds the material")
+	cs.place_block("builder", 8, cell.x, cell.y + 1, cell.z, "wood", 0)
+	var wood2: int = int(inv["wood"])
+	check(cs.remove_block("boss", cell.x, cell.y + 1, cell.z)["ok"], "admin can remove any block")
+	check(int(inv["wood"]) == wood2 + 1, "refund goes to the block's owner")
+	check(cs.audit.back()["action"] == "admin_remove_block", "admin removal of others' blocks is audited")
+
+	# --- حرکت: دیوار، در، روی بلوک ایستادن ---
+	var w: Vector3i = _land_cell(cs, cell.x + 4, cell.z + 4)
+	var wx := float(w.x) + 0.5
+	var wz := float(w.z) + 0.5
+	var h0: float = cs.world.height_at(wx, wz)
+	check(cs.is_walkable(wx, wz), "open ground is walkable")
+	cs.place_block("builder", 20, w.x, w.y, w.z, "wood", 0)
+	check(cs.is_walkable(wx, wz) and is_equal_approx(cs.ground_height(wx, wz), float(w.y + 1)), "a single block can be stood on")
+	cs.place_block("builder", 21, w.x, w.y + 1, w.z, "wood", 0)
+	check(not cs.is_walkable(wx, wz), "a two-block wall blocks movement")
+	cs.remove_block("builder", w.x, w.y + 1, w.z)
+	cs.remove_block("builder", w.x, w.y, w.z)
+	cs.place_block("builder", 22, w.x, w.y, w.z, "door", 0)
+	cs.place_block("builder", 23, w.x, w.y + 1, w.z, "door", 0)
+	check(cs.is_walkable(wx, wz), "a two-high doorway can be walked through")
+	cs.place_block("builder", 24, w.x, w.y + 2, w.z, "wood", 0)
+	check(cs.is_walkable(wx, wz), "a lintel above a doorway does not block")
+	check(is_equal_approx(cs.ground_height(wx, wz), h0), "walking through a door keeps the ground height")
+
+	# --- ساختمان روی بلوک‌ها ممنوع ---
+	var bc := Vector2i(cell.x >> 1, cell.z >> 1)
+	check(cs.blocks_in_footprint("road", bc.x, bc.y), "blocks_in_footprint sees blocks under a footprint")
+	var res: Dictionary = cs.place_building("builder", 30, "road", bc.x, bc.y)
+	check(res.get("error", "") == "blocks_in_way", "a building cannot be put on top of blocks")
+
+	# --- اقتصاد: ساخت مواد، فروش، خرید ---
+	cs.accounts["builder"]["inv"]["clay"] = 6
+	check(cs.craft("builder", "brick", 2)["ok"] and int(cs.accounts["builder"]["inv"]["brick"]) == int(FWConst.START_ITEMS["brick"]) + 4, "clay is fired into bricks")
+	check(cs.craft("builder", "glass", 1)["error"] == "no_items", "crafting needs the ingredients")
+	var money0: int = cs.money_of("builder")
+	var p0: int = cs.sell_price("stone")
+	var sold: Dictionary = cs.trade("builder", "stone", 3, false)
+	check(sold["ok"] and cs.money_of("builder") == money0 + int(sold["total"]) and int(sold["total"]) > 0, "selling materials earns coins")
+	check(cs.sell_price("stone") < p0, "selling lowers the price")
+	_tick_for(cs, 120.0, 5.0)
+	check(cs.sell_price("stone") == p0, "the price recovers over time")
+	check(cs.trade("builder", "stone", 400, false)["error"] == "no_items", "cannot sell more than you own")
+	var m1: int = cs.money_of("builder")
+	var bought: Dictionary = cs.trade("builder", "wood", 2, true)
+	check(bought["ok"] and cs.money_of("builder") == m1 - CityState.buy_price("wood") * 2, "buying costs coins")
+	check(CityState.buy_price("wood") > cs.sell_price("wood"), "no buy-and-sell loop for profit")
+	cs.accounts["other"]["money"] = 0
+	check(cs.trade("other", "wood", 1, true)["error"] == "no_money", "buying needs coins")
+
+	# --- ذخیره و بازیابی ---
+	var data: Dictionary = JSON.parse_string(JSON.stringify(cs.to_dict()))
+	var back = CityState.from_dict(data)
+	check(back != null and back.blocks.size() == cs.blocks.size(), "blocks survive save and load (%d)" % cs.blocks.size())
+	check(str(back.blocks[cell][2]) == "builder", "block owner is saved")
+	check(int(back.accounts["builder"]["inv"]["brick"]) == int(cs.accounts["builder"]["inv"]["brick"]), "inventory is saved")
+	check(back.block_cells.size() == cs.block_cells.size() and int(back.block_owner_count["builder"]) == int(cs.block_owner_count["builder"]), "block counters are rebuilt")
+	cs.gather("builder", tn[0], tn[1], "axe", at)
+	var back2 = CityState.from_dict(JSON.parse_string(JSON.stringify(cs.to_dict())))
+	check(back2.depleted.size() == 1, "depleted resources are saved")
+	var old: Dictionary = JSON.parse_string(JSON.stringify(cs.to_dict()))
+	old.erase("blocks")
+	old.erase("depleted")
+	old["accounts"]["builder"].erase("inv")
+	var legacy = CityState.from_dict(old)
+	check(legacy != null and legacy.blocks.is_empty() and int(legacy.accounts["builder"]["inv"]["wood"]) == int(FWConst.START_ITEMS["wood"]), "old saves load and get starter materials")
+
+	# --- بلوک روی کلاینت (آینه) ---
+	var mirror = CityState.new(777)
+	for batch in cs.block_batches():
+		var i := 0
+		while i + 4 < batch.size():
+			mirror.apply_block(batch[i], batch[i + 1], batch[i + 2], batch[i + 3], batch[i + 4])
+			i += 5
+	check(mirror.blocks.size() == cs.blocks.size(), "the client mirror receives every block")
+	check(mirror.is_walkable(wx, wz) == cs.is_walkable(wx, wz), "mirror and server agree on walkability")
+	mirror.apply_block(cell.x, cell.y, cell.z, -1, 0)
+	check(not mirror.blocks.has(cell), "block removal is mirrored")
 
 
 func test_world_slots() -> void:
