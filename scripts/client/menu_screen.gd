@@ -24,6 +24,7 @@ var _worlds: Array = []
 var _world_idx: int = 0
 var _world_label: Label
 var _world_name: LineEdit
+var _creative_check: CheckBox
 var _delete_btn: Button
 var _delete_armed: bool = false
 
@@ -176,6 +177,10 @@ func _build_world_picker(parent: Control) -> void:
 	create.add_theme_font_size_override("font_size", 20)
 	create.pressed.connect(_on_create_world)
 	row2.add_child(create)
+	_creative_check = CheckBox.new()
+	_creative_check.text = Loc.t("world_creative")
+	_creative_check.add_theme_font_size_override("font_size", 18)
+	parent.add_child(_creative_check)
 	_refresh_world_label()
 
 
@@ -189,6 +194,8 @@ func _refresh_world_label() -> void:
 	_world_idx = clampi(_world_idx, 0, _worlds.size() - 1)
 	_world_label.remove_theme_font_size_override("font_size")
 	_world_label.text = "%s %s" % [Loc.t("world_label"), str(_worlds[_world_idx]["name"])]
+	if bool(_worlds[_world_idx].get("creative", false)):
+		_world_label.text += " (%s)" % Loc.t("world_mode_creative")
 	_delete_btn.disabled = false
 	WorldSlots.set_current(str(_worlds[_world_idx]["id"]))
 
@@ -201,7 +208,7 @@ func _select_world(i: int) -> void:
 
 
 func _on_create_world() -> void:
-	var r := WorldSlots.add_world(_worlds, _world_name.text, randi_range(1, 2147483000))
+	var r := WorldSlots.add_world(_worlds, _world_name.text, randi_range(1, 2147483000), _creative_check.button_pressed)
 	if not r["ok"]:
 		set_status(Loc.err(str(r["error"])), true)
 		return

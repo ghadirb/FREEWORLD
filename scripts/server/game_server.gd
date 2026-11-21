@@ -48,7 +48,7 @@ var _cert_sock := PacketPeerUDP.new()  # پاسخ به درخواست گواهی
 
 
 ## مقدار برگشتی: OK یا کد خطا.
-func start(port: int, seed_value: int, data_dir: String, admins: Array, tls_dir: String = "") -> int:
+func start(port: int, seed_value: int, data_dir: String, admins: Array, tls_dir: String = "", creative: bool = false) -> int:
 	_name_re.compile(NAME_PATTERN)
 	save_path = data_dir.path_join("city_1.json")
 	var loaded: Dictionary = Persistence.load_json(save_path)
@@ -57,7 +57,8 @@ func start(port: int, seed_value: int, data_dir: String, admins: Array, tls_dir:
 		return ERR_FILE_CORRUPT
 	if loaded.is_empty():
 		cs = CityState.new(seed_value)
-		print("[server] new city, seed=%d" % seed_value)
+		cs.creative = creative
+		print("[server] new city, seed=%d%s" % [seed_value, " (creative)" if creative else ""])
 	else:
 		cs = CityState.from_dict(loaded)
 		if cs == null:

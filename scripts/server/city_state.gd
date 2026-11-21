@@ -25,6 +25,8 @@ var world_time: float = 8.0 * 3600.0
 var wheat_price: float = FWConst.WHEAT_BASE_PRICE
 ## ابزارهای World Mode: ضریب سرعت گذر زمان و آب‌وهوا (هر دو ذخیره می‌شوند).
 var time_speed: float = 1.0
+## حالت خلاقانه: ساخت و ابزار رایگان و نامحدود، بدون سکه و بدون افت انرژی. هنگام ساخت جهان تعیین و ذخیره می‌شود.
+var creative: bool = false
 var day_count: int = 0
 var god: Dictionary = {}
 var next_god_id: int = 1
@@ -297,9 +299,9 @@ func place_building(player_name: String, req_id: int, type: String, cx: int, cz:
 		return {"ok": false, "error": err}
 	if blocks_in_footprint(type, cx, cz):
 		return {"ok": false, "error": "blocks_in_way"}
-	if not FWConst.is_admin(acc["role"]) and count_owned(player_name) >= FWConst.MAX_BUILDINGS_PER_PLAYER:
+	if not creative and not FWConst.is_admin(acc["role"]) and count_owned(player_name) >= FWConst.MAX_BUILDINGS_PER_PLAYER:
 		return {"ok": false, "error": "limit"}
-	var cost := int(FWConst.BUILDING_TYPES[type]["cost"])
+	var cost := 0 if creative else int(FWConst.BUILDING_TYPES[type]["cost"])
 	if int(acc["money"]) < cost:
 		return {"ok": false, "error": "no_money"}
 	acc["money"] = int(acc["money"]) - cost
@@ -503,6 +505,9 @@ func energy_step(delta: float, online: Dictionary) -> void:
 		if not accounts.has(name):
 			continue
 		var acc: Dictionary = accounts[name]
+		if creative:
+			acc["energy"] = FWConst.ENERGY_MAX
+			continue
 		var e: float = float(acc.get("energy", FWConst.ENERGY_MAX))
 		var bid: int = int(online[name])
 		var resting: bool = bid > 0 and buildings.has(bid) and str(buildings[bid]["type"]) == "house" and buildings[bid]["owner"] == name
@@ -566,7 +571,7 @@ func disaster_public() -> Dictionary:
 
 
 func world_public() -> Dictionary:
-	return {"time_speed": time_speed, "weather": weather}
+	return {"time_speed": time_speed, "weather": weather, "creative": creative}
 
 
 func set_role(actor: String, target: String, role: String) -> Dictionary:
@@ -774,9 +779,9 @@ func place_block(player_name: String, req_id: int, x: int, y: int, z: int, type:
 		return {"ok": false, "error": err}
 	if blocks.size() >= FWConst.MAX_BLOCKS_TOTAL:
 		return {"ok": false, "error": "limit"}
-	if not FWConst.is_admin(acc["role"]) and int(block_owner_count.get(player_name, 0)) >= FWConst.MAX_BLOCKS_PER_PLAYER:
+	if not creative and not FWConst.is_admin(acc["role"]) and int(block_owner_count.get(player_name, 0)) >= FWConst.MAX_BLOCKS_PER_PLAYER:
 		return {"ok": false, "error": "limit"}
-	var cost: Dictionary = FWConst.BLOCK_TYPES[type]["cost"]
+	var cost: Dictionary = {} if creative else FWConst.BLOCK_TYPES[type]["cost"]
 	if not has_items(acc["inv"], cost):
 		return {"ok": false, "error": "no_items"}
 	for item in cost:
@@ -795,7 +800,7 @@ func remove_block(player_name: String, x: int, y: int, z: int) -> Dictionary:
 	var owner_name: String = str(b[2])
 	if owner_name != player_name and not FWConst.is_admin(role_of(player_name)):
 		return {"ok": false, "error": "forbidden"}
-	var cost: Dictionary = FWConst.BLOCK_TYPES[str(b[0])]["cost"]
+	var cost: Dictionary = {} if creative else FWConst.BLOCK_TYPES[str(b[0])]["cost"]
 	if accounts.has(owner_name):
 		for item in cost:
 			_inv_add(accounts[owner_name], str(item), int(cost[item]))
@@ -822,6 +827,8 @@ func paint_block(player_name: String, x: int, y: int, z: int, color: int) -> Dic
 
 ## برداشت از درخت/سنگ/خاک رس. pos موقعیت بازیکن است (برای فاصله).
 func tool_tier(acc: Dictionary, tool: String) -> int:
+	if creative:
+		return 2
 	var t: Variant = acc.get("tools", {})
 	return 2 if (t is Dictionary and bool(t.get(tool, false))) else 1
 
@@ -1218,11 +1225,11 @@ func _terraform(player_name: String, x: float, z: float, tool: String, pos: Vect
 	var acc: Dictionary = accounts[player_name]
 	var item := "sand" if h < 0.9 else "dirt"
 	if sign < 0:
-		if int(acc["inv"].get(item, 0)) >= FWConst.ITEM_CAP:
+		if not creative and int(acc["inv"].get(item, 0)) >= FWConst.ITEM_CAP:
 			return {"ok": false, "error": "inv_full"}
 	else:
 		item = "dirt" if inv_count(acc["inv"], "dirt") > 0 else "sand"
-		if inv_count(acc["inv"], item) < 1:
+		if not creative and inv_count(acc["inv"], item) < 1:
 			return {"ok": false, "error": "no_material"}
 	var fresh := 0
 	for dx in range(-rad, rad + 1):
@@ -1235,7 +1242,9 @@ func _terraform(player_name: String, x: float, z: float, tool: String, pos: Vect
 	if changed.is_empty():
 		return {"ok": false, "error": "terrain_limit"}
 	var n: int = (2 if tool_tier(acc, "shovel") >= 2 else 1) if sign < 0 else 1
-	if sign < 0:
+	if creative:
+		pass  # مادهٔ نامحدود: موجودی دست نمی‌خورد
+	elif sign < 0:
 		_inv_add(acc, item, n)
 	else:
 		_inv_add(acc, item, -1)
@@ -1274,10 +1283,11 @@ func craft(player_name: String, recipe: String, times: int) -> Dictionary:
 		acc["tools"][tl] = true
 		_log(player_name, "tool_upgrade", {"tool": tl})
 		return {"ok": true, "upgrade": tl}
-	if not has_items(acc["inv"], r["in"], times):
+	if not creative and not has_items(acc["inv"], r["in"], times):
 		return {"ok": false, "error": "no_items"}
-	for item in r["in"]:
-		acc["inv"][item] = int(acc["inv"][item]) - int(r["in"][item]) * times
+	if not creative:
+		for item in r["in"]:
+			acc["inv"][item] = int(acc["inv"][item]) - int(r["in"][item]) * times
 	_inv_add(acc, str(r["out"]), int(r["n"]) * times)
 	return {"ok": true, "item": str(r["out"]), "count": int(r["n"]) * times}
 
@@ -1512,6 +1522,7 @@ func to_dict() -> Dictionary:
 		"next_god_id": next_god_id,
 		"wheat_price": wheat_price,
 		"time_speed": time_speed,
+		"creative": creative,
 		"weather": weather,
 		"bread_price": bread_price,
 		"market": market,
@@ -1585,6 +1596,7 @@ static func from_dict(d: Dictionary):
 	var cs = load("res://scripts/server/city_state.gd").new(int(d["seed"]), str(d["city_id"]))
 	cs.world_time = float(d.get("world_time", 8.0 * 3600.0))
 	cs.day_count = int(d.get("day_count", 0))
+	cs.creative = bool(d.get("creative", false))
 	cs.next_god_id = maxi(1, int(d.get("next_god_id", 1)))
 	var gl = d.get("god", [])
 	if gl is Array:

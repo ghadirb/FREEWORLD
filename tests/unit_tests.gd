@@ -54,6 +54,7 @@ func _init() -> void:
 	test_npc_label_fade()
 	test_terrain()
 	test_mines()
+	test_creative()
 	test_tls_pinning()
 	print("\nRESULT: %d passed, %d failed" % [_pass, _fail])
 	quit(1 if _fail > 0 else 0)
@@ -1803,3 +1804,33 @@ func test_tls_pinning() -> void:
 			d.remove(f)
 		DirAccess.remove_absolute(dir)
 	Settings.clear_pins()
+
+
+func test_creative() -> void:
+	print("[creative]")
+	var sv = CityState.new(12345)
+	var cr = CityState.new(12345)
+	cr.creative = true
+	_login(sv, "sam")
+	_login(cr, "cora")
+	for c in [sv, cr]:
+		var nm := "sam" if c == sv else "cora"
+		c.accounts[nm]["money"] = 0
+		c.accounts[nm]["inv"] = {}
+	check(sv.place_building("sam", 1, "house", 10, 10)["error"] == "no_money", "survival: no money, no house")
+	var rb: Dictionary = cr.place_building("cora", 1, "house", 10, 10)
+	check(rb["ok"] and int(cr.accounts["cora"]["money"]) == 0, "creative: house is free")
+	var cell := Vector3i(40, 0, 40)
+	var h: float = cr.world.height_at(40.5, 40.5)
+	cell.y = maxi(0, int(floor(h)))
+	check(not sv.place_block("sam", 2, cell.x, cell.y, cell.z, "stone", 0)["ok"], "survival: block needs materials")
+	check(cr.place_block("cora", 2, cell.x, cell.y, cell.z, "stone", 0)["ok"], "creative: block needs no materials")
+	check(cr.tool_tier(cr.accounts["cora"], "pickaxe") == 2 and sv.tool_tier(sv.accounts["sam"], "pickaxe") == 1, "creative: every tool is upgraded")
+	var rc: Dictionary = cr.craft("cora", "plank", 1) if FWConst.RECIPES.has("plank") else {"ok": true}
+	check(rc["ok"], "creative: crafting is free")
+	cr.accounts["cora"]["energy"] = 5.0
+	cr.energy_step(100.0, {"cora": 0})
+	check(float(cr.accounts["cora"]["energy"]) == FWConst.ENERGY_MAX, "creative: energy never drains")
+	check(bool(cr.world_public()["creative"]) and not bool(sv.world_public()["creative"]), "welcome info carries the mode")
+	var back = CityState.from_dict(JSON.parse_string(JSON.stringify(cr.to_dict())))
+	check(back != null and back.creative and not CityState.from_dict(JSON.parse_string(JSON.stringify(sv.to_dict()))).creative, "mode survives save and load")

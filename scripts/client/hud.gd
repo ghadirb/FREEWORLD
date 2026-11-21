@@ -401,6 +401,8 @@ func _set_tools_visible(on: bool) -> void:
 
 func _affordable(type: String) -> int:
 	var cost: Dictionary = FWConst.BLOCK_TYPES[type]["cost"]
+	if client.creative:
+		return 999
 	var n := 1 << 30
 	for item in cost:
 		n = mini(n, client.item_count(str(item)) / int(cost[item]))
@@ -1170,7 +1172,7 @@ func _on_notice(code: String, args: Dictionary) -> void:
 
 
 func _refresh_stats() -> void:
-	_money.text = "%s %s" % [Loc.digits(str(client.money)), Loc.t("coins")]
+	_money.text = Loc.t("creative_badge") if client.creative else "%s %s" % [Loc.digits(str(client.money)), Loc.t("coins")]
 	_clock.text = "%s   %s: %s" % [Loc.clock(client.world_time), Loc.t("energy"), Loc.digits(str(client.energy))]
 	_price.text = "%s: %s  |  %s: %s" % [Loc.t("wheat_price"), Loc.digits("%.1f" % client.wheat_price),
 		Loc.t("bread_price"), Loc.digits("%.1f" % client.bread_price)]

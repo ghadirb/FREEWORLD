@@ -19,7 +19,7 @@ static func clean_name(raw: String) -> String:
 
 
 ## جهان جدید به فهرست اضافه می‌شود. خروجی: {ok, id} یا {ok:false, error}.
-static func add_world(worlds: Array, raw_name: String, seed_value: int) -> Dictionary:
+static func add_world(worlds: Array, raw_name: String, seed_value: int, creative: bool = false) -> Dictionary:
 	var n := clean_name(raw_name)
 	if n.length() < NAME_MIN:
 		return {"ok": false, "error": "bad_world_name"}
@@ -29,7 +29,7 @@ static func add_world(worlds: Array, raw_name: String, seed_value: int) -> Dicti
 		if str(w["name"]).to_lower() == n.to_lower():
 			return {"ok": false, "error": "world_name_taken"}
 	var id := _new_id(worlds)
-	worlds.append({"id": id, "name": n, "seed": seed_value})
+	worlds.append({"id": id, "name": n, "seed": seed_value, "creative": creative})
 	return {"ok": true, "id": id}
 
 

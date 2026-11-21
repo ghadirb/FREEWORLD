@@ -44,6 +44,7 @@ signal mine_changed(mine_id: String)
 signal mine_node_changed(idx: int, alive: bool)
 
 var net: Node
+var creative: bool = false  # حالت خلاقانهٔ جهان (از سرور)
 var local_server = null  # وقتی تک‌نفره/میزبان است، سرور همین پردازه
 var mirror = null  # نسخهٔ محلی CityState برای پیش‌نمایش و پیش‌بینی حرکت
 var my_name: String = ""
@@ -578,6 +579,7 @@ func _apply_market(mk: Dictionary) -> void:
 
 
 func _apply_world(w: Dictionary) -> void:
+	creative = bool(w.get("creative", creative))
 	time_speed = float(w.get("time_speed", time_speed))
 	weather = str(w.get("weather", weather))
 

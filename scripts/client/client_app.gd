@@ -157,7 +157,7 @@ func _start_local(player_name: String, hosted: bool) -> void:
 	WorldSlots.set_current(str(world["id"]))
 	var seed_value := int(world["seed"])
 	var cfg := {
-		"port": FWConst.DEFAULT_PORT if hosted else 0, "seed": seed_value,
+		"port": FWConst.DEFAULT_PORT if hosted else 0, "seed": seed_value, "creative": bool(world.get("creative", false)),
 		"data_dir": WorldSlots.data_dir(world), "tls_dir": "user://tls", "admins": [[player_name, admin_secret]], "max_seconds": 0.0,
 	}
 	_hosted_server = ServerMain.launch(self, cfg)

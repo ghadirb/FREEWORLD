@@ -1,6 +1,7 @@
 extends RefCounted
 ## راه‌اندازی سرور اختصاصی از خط فرمان:
-##   godot --headless --path . -- --server --port 7777 --seed 12345 --data-dir /data --admin نام:رمز
+##   godot --headless --path . -- --server --port 7777 --seed 12345 --data-dir /data --admin نام:رمز [--creative]
+##   (--creative فقط برای جهان تازه اثر دارد: ساخت و ابزار رایگان، بدون سکه)
 ## رمز مدیر را ترجیحاً با متغیر محیطی FREEWORLD_ADMIN=نام:رمز بدهید تا در فهرست پردازه‌ها دیده نشود.
 
 const FWConst = preload("res://scripts/core/const.gd")
@@ -34,6 +35,8 @@ static func parse_args(args: PackedStringArray) -> Dictionary:
 				if has_val:
 					_add_admin(cfg, args[i + 1])
 					i += 1
+			"--creative":
+				cfg["creative"] = true
 			"--max-seconds":
 				if has_val:
 					cfg["max_seconds"] = float(args[i + 1])
@@ -67,7 +70,7 @@ static func launch(parent: Node, cfg: Dictionary) -> Node:
 	parent.get_tree().root.add_child(server)
 	server.net = net
 	net.server = server
-	var err: int = server.start(int(cfg["port"]), int(cfg["seed"]), str(cfg["data_dir"]), cfg["admins"], str(cfg.get("tls_dir", "")))
+	var err: int = server.start(int(cfg["port"]), int(cfg["seed"]), str(cfg["data_dir"]), cfg["admins"], str(cfg.get("tls_dir", "")), bool(cfg.get("creative", false)))
 	if err != OK:
 		push_error("server failed to start: error %d" % err)
 		return null
