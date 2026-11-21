@@ -43,6 +43,9 @@ var npc_avatars: Dictionary = {}
 var god_kind: String = ""
 var god_nodes: Dictionary = {}
 var coin_nodes: Array = []
+var race_nodes: Array = []
+var _race_mesh_next: ArrayMesh
+var _race_mesh_other: ArrayMesh
 var _flash: float = 0.0   # برق طوفان؛ سریع محو می‌شود
 var _coin_mesh: ArrayMesh
 var _god_meshes: Dictionary = {}
@@ -99,6 +102,7 @@ func setup(game_client, quality_level: int) -> void:
 	client.resource_changed.connect(func(rx: int, rz: int, _alive: bool): streamer.refresh_resource(rx, rz))
 	client.god_changed.connect(_sync_god)
 	client.minigame_changed.connect(_sync_coins)
+	client.race_changed.connect(_sync_race)
 	cam = CameraRig.new()
 	cam.name = "CameraRig"
 	add_child(cam)
@@ -881,7 +885,7 @@ func _move_player(dt: float, input: Vector2) -> void:
 		my_avatar.target_yaw = my_yaw
 		return
 	var dir: Vector3 = (cam.right_flat() * input.x + cam.forward_flat() * (-input.y)).normalized()
-	var step := dir * FWConst.PLAYER_SPEED * len * dt
+	var step := dir * FWConst.PLAYER_SPEED * (FWConst.RACE_SPEED_MULT if client.race_active() else 1.0) * len * dt
 	var nx := my_pos.x + step.x
 	var nz := my_pos.z + step.z
 	var lo := -FWConst.WORLD_LIMIT
@@ -1061,6 +1065,41 @@ func _sync_coins() -> void:
 		node.position = Vector3(float(c[0]), world.height_at(float(c[0]), float(c[1])), float(c[1]))
 		add_child(node)
 		coin_nodes.append(node)
+
+
+func _sync_race() -> void:
+	for n in race_nodes:
+		n.queue_free()
+	race_nodes.clear()
+	if not client.race_active():
+		return
+	if _race_mesh_next == null:
+		var a := MeshBuilder.new()
+		a.add_box(Vector3(-1.2, 2.0, 0), Vector3(0.3, 4.0, 0.3), Color("ffd24a"))
+		a.add_box(Vector3(1.2, 2.0, 0), Vector3(0.3, 4.0, 0.3), Color("ffd24a"))
+		a.add_box(Vector3(0, 4.0, 0), Vector3(2.7, 0.35, 0.3), Color("ffd24a"))
+		_race_mesh_next = a.build()
+		var b := MeshBuilder.new()
+		b.add_box(Vector3(-1.2, 1.5, 0), Vector3(0.25, 3.0, 0.25), Color("6f8fb8"))
+		b.add_box(Vector3(1.2, 1.5, 0), Vector3(0.25, 3.0, 0.25), Color("6f8fb8"))
+		b.add_box(Vector3(0, 3.0, 0), Vector3(2.65, 0.3, 0.25), Color("6f8fb8"))
+		_race_mesh_other = b.build()
+	if _god_mat == null:
+		_god_mat = MeshBuilder.material()
+	var nxt: int = int(client.race.get("next", 0))
+	var pts: Array = client.race.get("pts", [])
+	for i in range(nxt, pts.size()):
+		var node := MeshInstance3D.new()
+		node.mesh = _race_mesh_next if i == nxt else _race_mesh_other
+		node.material_override = _god_mat
+		node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		var gx := float(pts[i][0])
+		var gz := float(pts[i][1])
+		node.position = Vector3(gx, world.height_at(gx, gz), gz)
+		var prev: Vector2 = Vector2(float(pts[i - 1][0]), float(pts[i - 1][1])) if i > 0 else Vector2(my_pos.x, my_pos.z)
+		node.rotation.y = atan2(gx - prev.x, gz - prev.y)
+		add_child(node)
+		race_nodes.append(node)
 
 
 func _update_disaster(dt: float) -> void:

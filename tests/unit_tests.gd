@@ -45,6 +45,7 @@ func _init() -> void:
 	test_npc_sell()
 	test_minigame()
 	test_disasters()
+	test_race()
 	test_god_tools()
 	test_stairs_and_floors()
 	test_p2p_trade()
@@ -950,6 +951,100 @@ func _mg_land_pos(cs) -> Vector2:
 	# نقطه‌ای روی خشکی که برای چیدن سکه‌ها جا دارد
 	var c: float = FWConst.CITY_SIZE * 0.5
 	return Vector2(c, c)
+
+
+func _race_run(cs, who: String, order: Array, others: Dictionary = {}) -> Array:
+	var evs: Array = []
+	for g in order:
+		var pos: Dictionary = others.duplicate()
+		pos[who] = g
+		evs.append_array(cs.race_step(0.2, pos))
+	return evs
+
+
+func test_race() -> void:
+	print("== Gate race ==")
+	var cs = CityState.new(4246)
+	_login(cs, "racer")
+	_login(cs, "other")
+	var at := _mg_land_pos(cs)
+	check(cs.race_start("ghost", at)["error"] == "no_account", "unknown player cannot race")
+	check(cs.race_start("racer", at)["ok"], "a race starts")
+	check(cs.race_start("racer", at)["error"] == "mg_running", "only one race at a time")
+	check(cs.minigame_start("racer", at)["error"] == "mg_running", "no coin game during a race")
+	var st: Dictionary = cs.race.public_state("racer")
+	check(st["active"] and st["pts"].size() == FWConst.RACE_GATES and st["next"] == 0, "the track has all gates")
+	var gates: Array = []
+	for g in st["pts"]:
+		gates.append(Vector2(float(g[0]), float(g[1])))
+	var cs_b = CityState.new(4246)
+	_login(cs_b, "racer")
+	cs_b.race_start("racer", at)
+	check(cs_b.race.public_state("racer")["pts"] == st["pts"], "the track is deterministic")
+	# ترتیب: ایستگاه دوم را زودتر زدن چیزی ثبت نمی‌کند
+	cs.race_step(0.1, {"racer": gates[1], "other": at})
+	check(int(cs.race.public_state("racer")["next"]) == 0, "gates must be passed in order")
+	var m0: int = int(cs.accounts["racer"]["money"])
+	var evs: Array = _race_run(cs, "racer", gates, {"other": at})
+	var end_ev: Dictionary = {}
+	for ev in evs:
+		if ev["kind"] == "end":
+			end_ev = ev
+	check(not end_ev.is_empty() and end_ev["finished"], "passing every gate in order finishes")
+	check(int(end_ev["reward"]) == FWConst.RACE_REWARD and int(cs.accounts["racer"]["money"]) == m0 + FWConst.RACE_REWARD, "finishing pays the reward")
+	check(int(end_ev["time"]) > 0 and end_ev["new_best"] and cs.race.board()[0][0] == "racer", "the time enters the leaderboard")
+	# زمان‌سنجی: دور کند بدتر است و رکورد را عوض نمی‌کند
+	var best0: int = int(cs.race.best["racer"])
+	cs.race_start("racer", at)
+	var slow_gates: Array = []
+	for g in cs.race.public_state("racer")["pts"]:
+		slow_gates.append(Vector2(float(g[0]), float(g[1])))
+	var slow: Array = []
+	for g in slow_gates:
+		for k in 5:
+			cs.race_step(1.0, {"racer": at + Vector2(900, 900), "other": at})
+		slow.append_array(cs.race_step(0.2, {"racer": g, "other": at}))
+	var slow_end: Dictionary = {}
+	for ev in slow:
+		if ev["kind"] == "end":
+			slow_end = ev
+	check(not slow_end.is_empty() and not slow_end["new_best"] and int(cs.race.best["racer"]) == best0, "a slower run keeps the old record")
+	# مهلت
+	cs.race_start("other", at)
+	var guard := 0
+	var fail_ev: Dictionary = {}
+	while cs.race.is_running("other") and guard < 200:
+		guard += 1
+		for ev in cs.race_step(1.0, {"racer": at, "other": at + Vector2(900, 900)}):
+			if ev["kind"] == "end":
+				fail_ev = ev
+	check(not fail_ev.is_empty() and not fail_ev["finished"] and int(fail_ev["reward"]) == 0, "timing out fails without reward")
+	check(not cs.race.best.has("other"), "a failed run records no time")
+	# محدودیت جایزهٔ روزانه
+	cs.race.plays["racer"] = {"day": cs.day_count, "n": FWConst.RACE_REWARDED_RUNS}
+	cs.race_start("racer", at)
+	var gl: Array = []
+	for g in cs.race.public_state("racer")["pts"]:
+		gl.append(Vector2(float(g[0]), float(g[1])))
+	var capped: Array = _race_run(cs, "racer", gl, {"other": at})
+	var capped_end: Dictionary = {}
+	for ev in capped:
+		if ev["kind"] == "end":
+			capped_end = ev
+	check(not capped_end.is_empty() and int(capped_end["reward"]) == 0, "no reward after the daily limit")
+	# خروج بازیکن
+	cs.race_start("other", at)
+	cs.race_step(0.1, {"racer": at})
+	check(not cs.race.is_running("other"), "leaving cancels the race")
+	# جدول: کمترین زمان بالاتر
+	cs.race.best["other"] = 100
+	check(cs.race.board()[0][0] == "other", "the leaderboard sorts by lowest time")
+	var cs2 = CityState.from_dict(cs.to_dict())
+	check(cs2 != null and cs2.race.best == cs.race.best and cs2.race.plays.has("racer"), "records survive save/load")
+	check(not cs2.race.is_running("racer"), "an unfinished race is not saved")
+	var old: Dictionary = cs.to_dict()
+	old.erase("race")
+	check(CityState.from_dict(old) != null, "old saves without race data still load")
 
 
 func test_disasters() -> void:

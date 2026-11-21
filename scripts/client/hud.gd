@@ -69,6 +69,11 @@ var _mg_board: Label
 var _mg_best: Label
 var _mg_bar: Label
 var _was_disaster: bool = false
+var _race_btn: Button
+var _race_panel: PanelContainer
+var _race_best: Label
+var _race_board: Label
+var _race_bar: Label
 var _god_btns: Dictionary = {}
 var _npc_panel: PanelContainer
 var _npc_title: Label
@@ -129,6 +134,7 @@ func setup(game_client, game_view) -> void:
 	_build_npc_panel()
 	_build_god_panel()
 	_build_minigame()
+	_build_race()
 	_build_leave_button()
 	_build_toasts()
 	_build_chat()
@@ -264,7 +270,9 @@ func _build_side_buttons() -> void:
 	_god_btn.pressed.connect(_toggle_god)
 	_mg_btn = UiTheme.button(Loc.t("minigame"), Vector2(180, 58))
 	_mg_btn.pressed.connect(func(): Sfx.play(self, "click"); _mg_panel.visible = not _mg_panel.visible; _refresh_minigame())
-	for b in [_mode_btn, _view_btn, _build_btn, _tools_btn, _inv_btn, chat_btn, _admin_btn, _god_btn, _mg_btn, menu_btn]:
+	_race_btn = UiTheme.button(Loc.t("race"), Vector2(180, 58))
+	_race_btn.pressed.connect(func(): Sfx.play(self, "click"); _race_panel.visible = not _race_panel.visible; _refresh_race())
+	for b in [_mode_btn, _view_btn, _build_btn, _tools_btn, _inv_btn, chat_btn, _admin_btn, _god_btn, _mg_btn, _race_btn, menu_btn]:
 		v.add_child(b)
 		_interactive.append(b)
 	_update_mode_btn()
@@ -711,6 +719,63 @@ func _build_minigame() -> void:
 	client.disaster_changed.connect(_on_disaster_changed)
 
 
+func _build_race() -> void:
+	_race_panel = _panel(0.5, 1.0)
+	_race_panel.visible = false
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 8)
+	_race_panel.add_child(v)
+	v.add_child(_label(Loc.t("race_title"), 28, Color("ffd24a")))
+	_race_best = _label("", 22)
+	_race_board = _label("", 20)
+	v.add_child(_race_best)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	v.add_child(row)
+	var start := UiTheme.button(Loc.t("race_start"), Vector2(0, 64))
+	start.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	start.pressed.connect(func(): client.race_start(); _race_panel.visible = false)
+	var close := UiTheme.button("✕", Vector2(64, 64))
+	close.pressed.connect(func(): _race_panel.visible = false)
+	row.add_child(start)
+	row.add_child(close)
+	v.add_child(_label(Loc.t("race_board"), 22, Color("c8f08a")))
+	v.add_child(_race_board)
+	_race_bar = _label("", 30, Color("ffd24a"))
+	root.add_child(_race_bar)
+	_place(_race_bar, 0.5, 0.0, 0.0, 90.0)
+	_race_bar.visible = false
+	client.race_changed.connect(_refresh_race)
+
+
+static func race_time_text(cs: int) -> String:
+	return Loc.digits("%.2f" % (float(cs) / 100.0))
+
+
+func _refresh_race() -> void:
+	if _race_panel == null:
+		return
+	var r: Dictionary = client.race
+	var b: int = int(r.get("best", 0))
+	_race_best.text = Loc.fmt("race_best", [race_time_text(b)]) if b > 0 else Loc.t("race_none")
+	var lines: Array = []
+	var rank := 1
+	for row in r.get("board", []):
+		lines.append("%s. %s — %s" % [Loc.digits(str(rank)), str(row[0]), race_time_text(int(row[1]))])
+		rank += 1
+	_race_board.text = "\n".join(lines) if not lines.is_empty() else "—"
+	_update_race_bar()
+
+
+func _update_race_bar() -> void:
+	if _race_bar == null:
+		return
+	var active: bool = client.race_active()
+	_race_bar.visible = active
+	if active:
+		_race_bar.text = Loc.fmt("race_status", [Loc.digits(str(int(client.race.get("next", 0)) + 1)), Loc.digits(str(FWConst.RACE_GATES)), Loc.digits("%.1f" % client.race_elapsed())])
+
+
 func _on_disaster_changed() -> void:
 	var k: String = client.disaster_kind()
 	if k != "":
@@ -1019,6 +1084,18 @@ func _on_notice(code: String, args: Dictionary) -> void:
 			if bool(args["new_best"]):
 				txt += " " + Loc.t("msg_mg_new_best")
 			toast(txt, Color("ffd84a"))
+		"race_end":
+			var rtxt: String
+			if bool(args["finished"]):
+				Sfx.play(self, "coin")
+				var tt: String = race_time_text(int(args["time"]))
+				rtxt = Loc.fmt("msg_race_end_reward", [tt, Loc.digits(str(args["reward"]))]) if int(args["reward"]) > 0 else Loc.fmt("msg_race_end", [tt])
+				if bool(args["new_best"]):
+					rtxt += " " + Loc.t("msg_race_new_best")
+			else:
+				Sfx.play(self, "error")
+				rtxt = Loc.t("msg_race_fail")
+			toast(rtxt, Color("ffd84a"))
 		"npc_gift":
 			Sfx.play(self, "coin")
 			toast(Loc.fmt("msg_npc_gift", [str(args["npc"]), Loc.t("item_" + str(args["item"]))]), Color("ffd84a"))
@@ -1085,6 +1162,8 @@ func _process(delta: float) -> void:
 		_stat_acc = 0.0
 		_refresh_stats()
 	_update_mg_bar()
+	_update_race_bar()
+	_update_race_bar()
 
 
 func _update_mode_btn() -> void:
@@ -1101,6 +1180,7 @@ func _on_mode_changed(_m: String) -> void:
 	_update_view_btn()
 	_tools_btn.visible = view.mode == "life"
 	_mg_btn.visible = view.mode == "life"
+	_race_btn.visible = view.mode == "life"
 	_refresh_role()
 	if view.mode == "world":
 		_set_tools_visible(false)

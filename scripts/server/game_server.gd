@@ -20,7 +20,7 @@ const LOCAL_PID := 1
 const LOCAL_METHODS := [
 	"c2s_login", "c2s_move", "c2s_place", "c2s_remove", "c2s_collect",
 	"c2s_chat", "c2s_set_role", "c2s_get_audit", "c2s_job", "c2s_set_world", "c2s_enter", "c2s_leave",
-	"c2s_place_block", "c2s_remove_block", "c2s_paint_block", "c2s_gather", "c2s_dig", "c2s_craft", "c2s_trade", "c2s_offer", "c2s_offer_answer", "c2s_npc", "c2s_npc_sell", "c2s_minigame_start", "c2s_disaster", "c2s_god",
+	"c2s_place_block", "c2s_remove_block", "c2s_paint_block", "c2s_gather", "c2s_dig", "c2s_craft", "c2s_trade", "c2s_offer", "c2s_offer_answer", "c2s_npc", "c2s_npc_sell", "c2s_minigame_start", "c2s_race_start", "c2s_disaster", "c2s_god",
 ]
 
 var net: Node
@@ -215,6 +215,7 @@ func _process(delta: float) -> void:
 			_broadcast("s2c_god", cs.god_public())
 	_work_step(dt)
 	_minigame_step(dt)
+	_race_step(dt)
 	if cs.disaster_step(dt):
 		_broadcast("s2c_disaster", cs.disaster_public())
 	var now := Time.get_ticks_msec()
@@ -272,6 +273,43 @@ func on_disaster(pid: int, kind: String) -> void:
 		return
 	_broadcast("s2c_disaster", res["disaster"])
 	_dirty = true
+
+
+func _race_step(dt: float) -> void:
+	if cs.race.runs.is_empty():
+		return
+	var positions: Dictionary = {}
+	for pid in _auth_peers():
+		var pos: Vector3 = peers[pid]["pos"]
+		positions[peers[pid]["name"]] = Vector2(pos.x, pos.z)
+	for ev in cs.race_step(dt, positions):
+		var nm: String = ev["name"]
+		if not by_name.has(nm):
+			continue
+		var pid: int = by_name[nm]
+		_send(pid, "s2c_race", cs.race.public_state(nm))
+		if ev["kind"] == "end":
+			if int(ev["reward"]) > 0:
+				_send(pid, "s2c_money", int(ev["money"]))
+			_notice(pid, "race_end", {"finished": ev["finished"], "time": ev["time"], "best": ev["best"], "new_best": ev["new_best"], "reward": ev["reward"]})
+			_dirty = true
+
+
+func on_race_start(pid: int) -> void:
+	var p := _player_of(pid)
+	if p.is_empty():
+		return
+	if not _allow_action(p):
+		_notice(pid, "rate_limited")
+		return
+	if int(p.get("inside", 0)) > 0:
+		return
+	var pos: Vector3 = p["pos"]
+	var res: Dictionary = cs.race_start(p["name"], Vector2(pos.x, pos.z))
+	if not res["ok"]:
+		_notice(pid, str(res["error"]))
+		return
+	_send(pid, "s2c_race", cs.race.public_state(p["name"]))
 
 
 func on_minigame_start(pid: int) -> void:
@@ -500,6 +538,7 @@ func on_login(pid: int, player_name: String, token: String, proto: int) -> void:
 	_send(pid, "s2c_god", cs.god_public())
 	_send(pid, "s2c_minigame", cs.minigame.public_state(player_name))
 	_send(pid, "s2c_disaster", cs.disaster_public())
+	_send(pid, "s2c_race", cs.race.public_state(player_name))
 	p["last_inv"] = cs.inv_public(player_name)
 	_send(pid, "s2c_inv", p["last_inv"])
 	_broadcast("s2c_player_joined", player_name, acc["role"], pid)
@@ -520,7 +559,8 @@ func on_move(pid: int, x: float, z: float, yaw: float) -> void:
 	var now := Time.get_ticks_msec()
 	var dt: float = clampf(float(now - int(p["last_move"])) / 1000.0, 0.0, 0.5)
 	p["last_move"] = now
-	p["allow"] = minf(float(p["allow"]) + FWConst.PLAYER_SPEED * 1.3 * dt, 6.0)
+	var speed_mult: float = FWConst.RACE_SPEED_MULT if cs.race.is_running(str(p["name"])) else 1.0
+	p["allow"] = minf(float(p["allow"]) + FWConst.PLAYER_SPEED * 1.3 * speed_mult * dt, 6.0 * speed_mult)
 	var cur: Vector3 = p["pos"]
 	var d: float = Vector2(x, z).distance_to(Vector2(cur.x, cur.z))
 	var lo: float = -FWConst.WORLD_LIMIT

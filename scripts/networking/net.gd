@@ -141,6 +141,18 @@ func s2c_minigame(data: Dictionary) -> void:
 
 
 @rpc("any_peer", "call_remote", "reliable")
+func c2s_race_start() -> void:
+	if server:
+		server.on_race_start(multiplayer.get_remote_sender_id())
+
+
+@rpc("authority", "call_remote", "reliable")
+func s2c_race(data: Dictionary) -> void:
+	if client:
+		client.on_race(data)
+
+
+@rpc("any_peer", "call_remote", "reliable")
 func c2s_disaster(kind: String) -> void:
 	if server:
 		server.on_disaster(multiplayer.get_remote_sender_id(), kind)

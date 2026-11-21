@@ -33,6 +33,7 @@ signal ticked
 signal god_changed
 signal minigame_changed
 signal disaster_changed
+signal race_changed
 signal inventory_changed
 signal offer_received(data: Dictionary)
 signal block_changed(pos: Vector3i, type_id: int, color: int)
@@ -69,6 +70,8 @@ var god_list: Array = []
 var minigame: Dictionary = {"active": false, "t": 0.0, "score": 0, "coins": [], "best": 0, "board": []}
 var disaster: Dictionary = {"kind": "", "t": 0.0}
 var disaster_stamp: float = 0.0
+var race: Dictionary = {"active": false, "t": 0.0, "next": 0, "pts": [], "best": 0, "board": []}
+var race_stamp: float = 0.0
 var minigame_stamp: float = 0.0   # لحظهٔ دریافت وضعیت؛ برای شمارش معکوس محلی
 var sell_prices: Dictionary = {}
 var is_logged_in: bool = false
@@ -321,6 +324,29 @@ func start_disaster(kind: String) -> void:
 
 func disaster_kind() -> String:
 	return str(disaster.get("kind", ""))
+
+
+func on_race(data: Dictionary) -> void:
+	race = data
+	race_stamp = Time.get_ticks_msec() / 1000.0
+	race_changed.emit()
+
+
+func race_start() -> void:
+	if is_logged_in:
+		_tx("c2s_race_start", [])
+
+
+func race_active() -> bool:
+	return bool(race.get("active", false))
+
+
+## زمان سپری‌شدهٔ مسابقه (ثانیه)، شمارش محلی از آخرین وضعیت سرور.
+func race_elapsed() -> float:
+	if not race_active():
+		return 0.0
+	var left: float = maxf(0.0, float(race.get("t", 0.0)) - (Time.get_ticks_msec() / 1000.0 - race_stamp))
+	return FWConst.RACE_TIME - left
 
 
 func minigame_start() -> void:

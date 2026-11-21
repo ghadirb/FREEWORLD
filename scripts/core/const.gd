@@ -1,7 +1,7 @@
 extends RefCounted
 ## ثابت‌های مشترک بین سرور و کلاینت.
 
-const PROTOCOL_VERSION := 14
+const PROTOCOL_VERSION := 15
 # ترافیک شبکه با DTLS رمز می‌شود (نسخهٔ ۴ به بعد). فقط برای عیب‌یابی خاموش شود.
 const USE_DTLS := true
 const DEFAULT_PORT := 7777
@@ -201,6 +201,14 @@ const MINIGAME_REWARD_PER_COIN := 2
 const MINIGAME_FULL_BONUS := 10
 const MINIGAME_REWARDED_RUNS := 3
 const MINIGAME_BOARD_SIZE := 10
+# مسابقهٔ ایستگاه‌ها: ۶ ایستگاه به ترتیب روی حلقه، سقف زمان ۹۰ ثانیه، سرعت مجاز در طول مسابقه ۱٫۶ برابر.
+const RACE_GATES := 6
+const RACE_TIME := 90.0
+const RACE_RADIUS := 22.0
+const RACE_GATE_RANGE := 3.0
+const RACE_SPEED_MULT := 1.6
+const RACE_REWARD := 30
+const RACE_REWARDED_RUNS := 3
 # ابزارهای خلقت (World Mode، فقط مدیران): درخت، سنگ و حیوانات آرام. وضعیتشان با شهر ذخیره می‌شود.
 const GOD_STATIC := ["tree", "rock"]
 const GOD_ANIMALS := {"sheep": 1.0, "deer": 2.2, "rabbit": 1.7}   # سرعت راه رفتن
