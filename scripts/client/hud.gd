@@ -50,6 +50,7 @@ var _menu_panel: PanelContainer
 var _tools_btn: Button
 var _inv_btn: Button
 var _tools_panel: PanelContainer
+var _hint_panel: PanelContainer
 var _tool_btns: Dictionary = {}
 var _tool_hint: Label
 var _block_box: VBoxContainer
@@ -263,66 +264,87 @@ func _build_palette() -> void:
 
 
 func _build_tools_panel() -> void:
-	_tools_panel = _panel(0.5, 1.0)
+	# ستون کوچک ابزارها و رنگ‌ها در لبهٔ چپ (زمین بازی دیده می‌شود)
+	_tools_panel = _panel(0.0, 0.34)
 	_tools_panel.visible = false
+	_tools_panel.modulate = Color(1, 1, 1, 0.94)
+	var hb := HBoxContainer.new()
+	hb.add_theme_constant_override("separation", 6)
+	_tools_panel.add_child(hb)
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 4)
+	hb.add_child(col)
+	for t in FWConst.TOOLS:
+		var tb := UiTheme.button(Loc.t("tool_" + t), Vector2(92, 46))
+		tb.add_theme_font_size_override("font_size", 19)
+		tb.toggle_mode = true
+		tb.pressed.connect(func():
+			Sfx.play(self, "click")
+			view.set_tool(t))
+		col.add_child(tb)
+		_tool_btns[t] = tb
+	var close := UiTheme.button("✕", Vector2(92, 40))
+	close.pressed.connect(_toggle_tools)
+	col.add_child(close)
+	_color_row = HBoxContainer.new()
+	hb.add_child(_color_row)
+	var cg := GridContainer.new()
+	cg.columns = 2
+	cg.add_theme_constant_override("h_separation", 4)
+	cg.add_theme_constant_override("v_separation", 4)
+	_color_row.add_child(cg)
+	for i in range(FWConst.COLOR_COUNT):
+		var cb := Button.new()
+		cb.custom_minimum_size = Vector2(40, 34)
+		cb.focus_mode = Control.FOCUS_NONE
+		cb.toggle_mode = true
+		var c: Color = BlockView.TINTS[i]
+		if i == 0:
+			cb.text = "∅"
+			c = Color(0.35, 0.38, 0.45)
+		for st in ["normal", "hover", "disabled", "focus"]:
+			cb.add_theme_stylebox_override(st, UiTheme.box(c, 8, Color(1, 1, 1, 0.25), 2))
+		cb.add_theme_stylebox_override("pressed", UiTheme.box(c, 8, UiTheme.ACCENT, 4))
+		cb.pressed.connect(func():
+			Sfx.play(self, "click")
+			view.set_paint_color(i))
+		cg.add_child(cb)
+		_color_btns.append(cb)
+
+	# نوار کوچک پایین: راهنما + انتخاب بلوک (قابل اسکرول افقی)
+	_hint_panel = _panel(0.5, 1.0)
+	_hint_panel.visible = false
+	_hint_panel.modulate = Color(1, 1, 1, 0.94)
 	var v := VBoxContainer.new()
-	v.add_theme_constant_override("separation", 8)
-	v.custom_minimum_size = Vector2(800, 0)
-	_tools_panel.add_child(v)
-	_tool_hint = _label("", 20, Color("d6e4ff"))
+	v.add_theme_constant_override("separation", 4)
+	_hint_panel.add_child(v)
+	_tool_hint = _label("", 17, Color("d6e4ff"))
 	_tool_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_tool_hint.custom_minimum_size = Vector2(620, 0)
 	v.add_child(_tool_hint)
 	_block_box = VBoxContainer.new()
 	v.add_child(_block_box)
-	var grid := GridContainer.new()
-	grid.columns = 6
-	grid.add_theme_constant_override("h_separation", 6)
-	grid.add_theme_constant_override("v_separation", 6)
-	_block_box.add_child(grid)
+	var sc := ScrollContainer.new()
+	sc.custom_minimum_size = Vector2(620, 66)
+	sc.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_block_box.add_child(sc)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 5)
+	sc.add_child(row)
 	for t in FWConst.BLOCK_ORDER:
-		var b := UiTheme.button("", Vector2(120, 64))
-		b.add_theme_font_size_override("font_size", 19)
+		var b := UiTheme.button("", Vector2(86, 56))
+		b.add_theme_font_size_override("font_size", 16)
 		b.toggle_mode = true
 		b.pressed.connect(func():
 			Sfx.play(self, "click")
 			view.set_block_type(t))
-		grid.add_child(b)
+		row.add_child(b)
 		_block_btns[t] = b
-	_color_row = HBoxContainer.new()
-	_color_row.add_theme_constant_override("separation", 6)
-	v.add_child(_color_row)
-	for i in range(FWConst.COLOR_COUNT):
-		var cb := Button.new()
-		cb.custom_minimum_size = Vector2(56, 46)
-		cb.focus_mode = Control.FOCUS_NONE
-		cb.toggle_mode = true
-		var col: Color = BlockView.TINTS[i]
-		if i == 0:
-			cb.text = "∅"
-			col = Color(0.35, 0.38, 0.45)
-		for st in ["normal", "hover", "disabled", "focus"]:
-			cb.add_theme_stylebox_override(st, UiTheme.box(col, 10, Color(1, 1, 1, 0.25), 2))
-		cb.add_theme_stylebox_override("pressed", UiTheme.box(col, 10, UiTheme.ACCENT, 5))
-		cb.pressed.connect(func():
-			Sfx.play(self, "click")
-			view.set_paint_color(i))
-		_color_row.add_child(cb)
-		_color_btns.append(cb)
-	var trow := HBoxContainer.new()
-	trow.add_theme_constant_override("separation", 6)
-	v.add_child(trow)
-	for t in FWConst.TOOLS:
-		var tb := UiTheme.button(Loc.t("tool_" + t), Vector2(118, 62))
-		tb.toggle_mode = true
-		tb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		tb.pressed.connect(func():
-			Sfx.play(self, "click")
-			view.set_tool(t))
-		trow.add_child(tb)
-		_tool_btns[t] = tb
-	var close := UiTheme.button("✕ " + Loc.t("cancel"), Vector2(0, 54))
-	close.pressed.connect(_toggle_tools)
-	v.add_child(close)
+
+
+func _set_tools_visible(on: bool) -> void:
+	_tools_panel.visible = on
+	_hint_panel.visible = on
 
 
 func _affordable(type: String) -> int:
@@ -344,8 +366,9 @@ func _refresh_tools() -> void:
 		var cost: Dictionary = FWConst.BLOCK_TYPES[view.block_type]["cost"]
 		for item in cost:
 			parts.append("%s %s" % [Loc.digits(str(cost[item])), Loc.t("item_" + str(item))])
-		hint += "\n%s: %s" % [Loc.t("block_" + view.block_type), " + ".join(parts)]
+		hint = "%s: %s  |  %s" % [Loc.t("block_" + view.block_type), " + ".join(parts), Loc.t("hold_remove")]
 	_tool_hint.text = hint
+	_hint_panel.visible = _tools_panel.visible
 	_block_box.visible = view.tool == "hammer"
 	_color_row.visible = view.tool == "hammer" or view.tool == "brush"
 	for t in _block_btns:
@@ -361,7 +384,7 @@ func _toggle_tools() -> void:
 		return
 	Sfx.play(self, "click")
 	var on := not _tools_panel.visible
-	_tools_panel.visible = on
+	_set_tools_visible(on)
 	if on:
 		_palette.visible = false
 		_info.visible = false
@@ -479,7 +502,7 @@ func _on_inside_changed(id: int) -> void:
 	_leave_btn.visible = id > 0
 	_info.visible = false
 	if id > 0:
-		_tools_panel.visible = false
+		_set_tools_visible(false)
 		_inv_panel.visible = false
 		view.set_tool("hand")
 		_palette.visible = false
@@ -710,7 +733,7 @@ func _on_mode_changed(_m: String) -> void:
 	_update_mode_btn()
 	_tools_btn.visible = view.mode == "life"
 	if view.mode == "world":
-		_tools_panel.visible = false
+		_set_tools_visible(false)
 	if view.mode == "world":
 		toast(Loc.t("world_mode"))
 	else:
@@ -725,7 +748,7 @@ func _toggle_build() -> void:
 	_palette.visible = on
 	_info.visible = false
 	if on:
-		_tools_panel.visible = false
+		_set_tools_visible(false)
 		view.set_tool("hand")
 		_select_type("house")
 	else:

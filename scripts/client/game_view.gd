@@ -51,6 +51,7 @@ var ghost_cell: Vector2i = Vector2i(-1, -1)
 var ghost_err: String = "not_ready"
 var is_over_ui: Callable = func(_p): return false
 ## ابزار دست در حالت زندگی: hand | axe | pickaxe | shovel | hammer | brush
+const LONG_PRESS_MS := 450
 var tool: String = "hand"
 var block_type: String = "wood"
 var paint_color: int = 0
@@ -633,7 +634,7 @@ func _on_touch(e: InputEventScreenTouch) -> void:
 			_joy_touch = e.index
 			joy_origin = e.position
 			joy_active = true
-		_touches[e.index] = {"start": e.position, "pos": e.position, "t0": Time.get_ticks_msec(), "role": role, "moved": 0.0}
+		_touches[e.index] = {"start": e.position, "pos": e.position, "t0": Time.get_ticks_msec(), "role": role, "moved": 0.0, "fired": false}
 		_pinch_dist = 0.0
 	elif _touches.has(e.index):
 		var t: Dictionary = _touches[e.index]
@@ -641,7 +642,7 @@ func _on_touch(e: InputEventScreenTouch) -> void:
 			_joy_touch = -1
 			joy = Vector2.ZERO
 			joy_active = false
-		elif _touches.size() == 1 and float(t["moved"]) < 24.0 and Time.get_ticks_msec() - int(t["t0"]) < 400:
+		elif _touches.size() == 1 and not bool(t.get("fired", false)) and float(t["moved"]) < 24.0 and Time.get_ticks_msec() - int(t["t0"]) < 400:
 			_tap(e.position)
 		_touches.erase(e.index)
 		_pinch_dist = 0.0
@@ -683,9 +684,9 @@ func _on_mouse_button(e: InputEventMouseButton) -> void:
 		if e.pressed:
 			if is_over_ui.call(e.position):
 				return
-			_mouse_left = {"t0": Time.get_ticks_msec(), "moved": 0.0}
+			_mouse_left = {"t0": Time.get_ticks_msec(), "moved": 0.0, "pos": e.position, "fired": false}
 		elif not _mouse_left.is_empty():
-			if float(_mouse_left["moved"]) < 8.0 and Time.get_ticks_msec() - int(_mouse_left["t0"]) < 500:
+			if not bool(_mouse_left.get("fired", false)) and float(_mouse_left["moved"]) < 8.0 and Time.get_ticks_msec() - int(_mouse_left["t0"]) < 500:
 				_tap(e.position)
 			_mouse_left = {}
 
@@ -726,9 +727,39 @@ func _keyboard_vector() -> Vector2:
 	return v
 
 
+func _check_long_press() -> void:
+	var now := Time.get_ticks_msec()
+	if _touches.size() == 1:
+		for k in _touches:
+			var t: Dictionary = _touches[k]
+			if t["role"] == "cam" and not bool(t.get("fired", false)) and float(t["moved"]) < 24.0 and now - int(t["t0"]) >= LONG_PRESS_MS:
+				t["fired"] = true
+				_long_press(t["pos"])
+	if not _mouse_left.is_empty() and not bool(_mouse_left.get("fired", false)) and float(_mouse_left["moved"]) < 8.0 and now - int(_mouse_left["t0"]) >= LONG_PRESS_MS:
+		_mouse_left["fired"] = true
+		_long_press(_mouse_left["pos"])
+
+
+## نگه داشتن روی یک بلوک (با چکش، کلنگ یا قلم‌مو) آن را برمی‌دارد و موادش برمی‌گردد.
+func _long_press(pos: Vector2) -> void:
+	if mode != "life" or inside_id > 0 or not (tool == "hammer" or tool == "pickaxe" or tool == "brush"):
+		return
+	var hit: Dictionary = block_view.raycast(cam.camera.project_ray_origin(pos), cam.camera.project_ray_normal(pos))
+	if hit.get("kind", "") != "block":
+		return
+	if not _in_reach(hit["hit"]):
+		Sfx.play(self, "error")
+		_feedback("too_far")
+		return
+	Input.vibrate_handheld(35)
+	Sfx.play(self, "click")
+	client.remove_block(hit["hit"])
+
+
 func _process(delta: float) -> void:
 	if client == null or not client.is_logged_in:
 		return
+	_check_long_press()
 	var dt := minf(delta, 0.1)
 	var kb := _keyboard_vector()
 	if not (get_viewport().gui_get_focus_owner() is LineEdit):

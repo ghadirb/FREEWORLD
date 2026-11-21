@@ -205,6 +205,9 @@ func _run() -> void:
 	var ray: Dictionary = gv.block_view.raycast(Vector3(ucell.x + 0.5, ucell.y + 5.0, ucell.z + 0.5), Vector3.DOWN)
 	ok(ray.get("kind", "") == "block" and ray["hit"] == ucell, "ui: ray hits the block from above")
 	gv.set_tool("pickaxe")
+	gv._long_press(Vector2(640, 360))
+	gv._check_long_press()
+	ok(true, "ui: long press and hold check do not crash")
 	gv.set_tool("hand")
 	var node_found := false
 	for rx in range(-40, 40):
