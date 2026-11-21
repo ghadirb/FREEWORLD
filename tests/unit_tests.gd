@@ -41,6 +41,7 @@ func _init() -> void:
 	test_interiors()
 	test_blocks_and_resources()
 	test_stairs_and_floors()
+	test_p2p_trade()
 	test_world_slots()
 	test_npc_label_fade()
 	test_tls_pinning()
@@ -958,6 +959,42 @@ func test_stairs_and_floors() -> void:
 			mirror.apply_block(batch[i], batch[i + 1], batch[i + 2], batch[i + 3], batch[i + 4])
 			i += 5
 	check(is_equal_approx(mirror.surface_at(fx, float(z0) + 1.5, b + 1.0), cs.surface_at(fx, float(z0) + 1.5, b + 1.0)), "client mirror computes the same stair height")
+
+
+func test_p2p_trade() -> void:
+	print("== direct player trade ==")
+	var cs = CityState.new(777)
+	_login(cs, "seller")
+	_login(cs, "buyer")
+	var s_inv: Dictionary = cs.accounts["seller"]["inv"]
+	var b_inv: Dictionary = cs.accounts["buyer"]["inv"]
+	check(cs.make_offer("seller", "seller", "wood", 1, 1)["error"] == "bad_request", "no offers to yourself")
+	check(cs.make_offer("seller", "buyer", "wood", 9999, 1)["error"] == "bad_request", "absurd amounts are rejected")
+	check(cs.make_offer("seller", "buyer", "wood", 400, 1)["error"] == "no_items", "you must own what you offer")
+	var r: Dictionary = cs.make_offer("seller", "buyer", "wood", 10, 50)
+	check(r["ok"], "a valid offer is created")
+	var wood0: int = int(s_inv["wood"])
+	check(cs.answer_offer("seller", r["id"], true)["error"] == "no_offer", "only the addressed player can answer")
+	cs.accounts["buyer"]["money"] = 10
+	check(cs.answer_offer("buyer", r["id"], true)["error"] == "no_money", "buyer needs the coins")
+	check(not cs.offers.has(r["id"]), "an answered offer is consumed")
+	var r2: Dictionary = cs.make_offer("seller", "buyer", "wood", 10, 50)
+	cs.accounts["buyer"]["money"] = 200
+	var sm: int = cs.money_of("seller")
+	var res: Dictionary = cs.answer_offer("buyer", r2["id"], true)
+	check(res["ok"] and res["accepted"], "buyer accepts")
+	check(int(s_inv["wood"]) == wood0 - 10 and int(b_inv["wood"]) == int(FWConst.START_ITEMS["wood"]) + 10, "materials move to the buyer")
+	check(cs.money_of("buyer") == 150 and cs.money_of("seller") == sm + 50, "coins move to the seller")
+	var r3: Dictionary = cs.make_offer("seller", "buyer", "stone", 5, 10)
+	check(cs.answer_offer("buyer", r3["id"], false)["accepted"] == false, "an offer can be declined")
+	var r4: Dictionary = cs.make_offer("seller", "buyer", "stone", 5, 10)
+	s_inv["stone"] = 0
+	check(cs.answer_offer("buyer", r4["id"], true)["error"] == "offer_invalid", "an offer is re-checked when accepted")
+	for i in range(FWConst.OFFER_MAX_PENDING):
+		cs.make_offer("seller", "buyer", "dirt", 1, 1)
+	check(cs.make_offer("seller", "buyer", "dirt", 1, 1)["error"] == "limit", "pending offers per player are limited")
+	cs.tick(FWConst.OFFER_TTL + 1.0)
+	check(cs.offers.is_empty(), "offers expire")
 
 
 func test_world_slots() -> void:

@@ -122,6 +122,18 @@ func c2s_trade(item: String, n: int, buy: bool) -> void:
 		server.on_trade(multiplayer.get_remote_sender_id(), item, n, buy)
 
 
+@rpc("any_peer", "call_remote", "reliable")
+func c2s_offer(to_name: String, item: String, n: int, price: int) -> void:
+	if server:
+		server.on_offer(multiplayer.get_remote_sender_id(), to_name, item, n, price)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func c2s_offer_answer(id: int, accept: bool) -> void:
+	if server:
+		server.on_offer_answer(multiplayer.get_remote_sender_id(), id, accept)
+
+
 # ---------------- سرور -> کلاینت ----------------
 
 @rpc("authority", "call_remote", "reliable")
@@ -230,6 +242,12 @@ func s2c_audit(entries: Array) -> void:
 func s2c_teleport(x: float, z: float) -> void:
 	if client:
 		client.on_teleport(x, z)
+
+
+@rpc("authority", "call_remote", "reliable")
+func s2c_offer(data: Dictionary) -> void:
+	if client:
+		client.on_offer(data)
 
 
 @rpc("authority", "call_remote", "reliable")

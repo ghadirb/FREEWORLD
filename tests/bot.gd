@@ -12,6 +12,7 @@ var net
 var cfg: Dictionary = {}
 var notices: Array = []
 var chats: Array = []
+var offers: Array = []
 var teleports: int = 0
 var login_error: String = ""
 var failed: bool = false
@@ -76,6 +77,7 @@ func _main() -> void:
 	root.add_child(client)
 	client.setup(net)
 	client.notice.connect(func(code, _args): notices.append(code))
+	client.offer_received.connect(func(d): offers.append(d))
 	client.chat_received.connect(func(from_name, text): chats.append([from_name, text]))
 	client.teleported.connect(func(_p): teleports += 1)
 	client.login_failed.connect(func(e): login_error = e)
@@ -158,6 +160,9 @@ func _builder() -> void:
 	var rej: bool = await wait_until(func(): return "reserved" in notices, 3.0)
 	expect(rej, "player cannot build in the reserved plaza")
 	client.send_chat("salam")
+	client.offer("bob", "wood", 5, 0)
+	var sent: bool = await wait_until(func(): return "offer_sent" in notices, 3.0)
+	expect(sent, "my trade offer to bob was sent")
 	await create_timer(6.0).timeout
 
 
@@ -186,6 +191,13 @@ func _observer() -> void:
 	client.set_role("alice", "world_admin")
 	await create_timer(0.5).timeout
 	expect("forbidden" in notices and notices.count("forbidden") >= 2, "a player cannot grant roles")
+	var got: bool = await wait_until(func(): return offers.size() > 0, 10.0)
+	expect(got and offers[0]["from"] == "alice" and offers[0]["item"] == "wood", "I received alice's trade offer")
+	if got:
+		var wood0: int = client.item_count("wood")
+		client.answer_offer(int(offers[0]["id"]), true)
+		var moved: bool = await wait_until(func(): return client.item_count("wood") == wood0 + 5, 4.0)
+		expect(moved, "accepted trade moved the materials to me (wood=%d)" % client.item_count("wood"))
 
 
 func _persist() -> void:

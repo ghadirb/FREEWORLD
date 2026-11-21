@@ -38,6 +38,9 @@ var depleted: Dictionary = {}
 var respawned: Array = []
 ## ضریب قیمت فروش هر ماده (با فروش زیاد کم می‌شود و کم‌کم برمی‌گردد).
 var item_mult: Dictionary = {}
+## پیشنهادهای معامله بین بازیکنان (ذخیره نمی‌شوند): id -> {from, to, item, n, price, ttl}
+var offers: Dictionary = {}
+var _next_offer: int = 1
 ## فاصلهٔ پرداخت حقوق (قابل تغییر در تست).
 var wage_interval: float = FWConst.WAGE_INTERVAL
 var _audit_counter: int = 0
@@ -847,7 +850,54 @@ func trade(player_name: String, item: String, n: int, buy: bool) -> Dictionary:
 	return {"ok": true, "buy": false, "item": item, "count": n, "total": total, "money": acc["money"]}
 
 
+## پیشنهاد فروش مستقیم: from به to، n واحد item را به قیمت کل price می‌فروشد. مواد تا پذیرش نزد فروشنده می‌مانند.
+func make_offer(from_name: String, to_name: String, item: String, n: int, price: int) -> Dictionary:
+	if not accounts.has(from_name) or not accounts.has(to_name) or from_name == to_name:
+		return {"ok": false, "error": "bad_request"}
+	if not FWConst.ITEMS.has(item) or n < 1 or n > 500 or price < 0 or price > FWConst.OFFER_MAX_PRICE:
+		return {"ok": false, "error": "bad_request"}
+	if int(accounts[from_name]["inv"].get(item, 0)) < n:
+		return {"ok": false, "error": "no_items"}
+	var pending := 0
+	for id in offers:
+		if offers[id]["from"] == from_name:
+			pending += 1
+	if pending >= FWConst.OFFER_MAX_PENDING:
+		return {"ok": false, "error": "limit"}
+	var id := _next_offer
+	_next_offer += 1
+	offers[id] = {"from": from_name, "to": to_name, "item": item, "n": n, "price": price, "ttl": FWConst.OFFER_TTL}
+	return {"ok": true, "id": id, "offer": offers[id]}
+
+
+func answer_offer(player_name: String, id: int, accept: bool) -> Dictionary:
+	if not offers.has(id) or offers[id]["to"] != player_name:
+		return {"ok": false, "error": "no_offer"}
+	var o: Dictionary = offers[id]
+	offers.erase(id)
+	if not accept:
+		return {"ok": true, "accepted": false, "offer": o}
+	var seller: Dictionary = accounts[o["from"]]
+	var buyer: Dictionary = accounts[o["to"]]
+	if int(seller["inv"].get(o["item"], 0)) < int(o["n"]):
+		return {"ok": false, "error": "offer_invalid", "offer": o}
+	if int(buyer["money"]) < int(o["price"]):
+		return {"ok": false, "error": "no_money", "offer": o}
+	if int(buyer["inv"].get(o["item"], 0)) + int(o["n"]) > FWConst.ITEM_CAP:
+		return {"ok": false, "error": "inv_full", "offer": o}
+	seller["inv"][o["item"]] = int(seller["inv"][o["item"]]) - int(o["n"])
+	_inv_add(buyer, str(o["item"]), int(o["n"]))
+	buyer["money"] = int(buyer["money"]) - int(o["price"])
+	seller["money"] = int(seller["money"]) + int(o["price"])
+	_log(o["from"], "p2p_trade", {"to": o["to"], "item": o["item"], "n": o["n"], "price": o["price"]})
+	return {"ok": true, "accepted": true, "offer": o}
+
+
 func _tick_resources(delta: float) -> void:
+	for oid in offers.keys():
+		offers[oid]["ttl"] = float(offers[oid]["ttl"]) - delta
+		if float(offers[oid]["ttl"]) <= 0.0:
+			offers.erase(oid)
 	for key in depleted.keys():
 		depleted[key] = float(depleted[key]) - delta
 		if float(depleted[key]) <= 0.0:

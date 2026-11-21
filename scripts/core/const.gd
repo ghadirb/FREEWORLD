@@ -160,6 +160,10 @@ const RESOURCES := {
 	"rock": {"tool": "pickaxe", "item": "stone", "min": 2, "max": 3, "respawn": 120.0},
 	"clay": {"tool": "shovel", "item": "clay", "min": 2, "max": 3, "respawn": 100.0},
 }
+# معامله مستقیم بین بازیکنان
+const OFFER_TTL := 60.0
+const OFFER_MAX_PENDING := 5
+const OFFER_MAX_PRICE := 100000
 const TOOLS := ["hand", "axe", "pickaxe", "shovel", "hammer", "brush"]
 
 

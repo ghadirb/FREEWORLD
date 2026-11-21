@@ -20,7 +20,7 @@ const LOCAL_PID := 1
 const LOCAL_METHODS := [
 	"c2s_login", "c2s_move", "c2s_place", "c2s_remove", "c2s_collect",
 	"c2s_chat", "c2s_set_role", "c2s_get_audit", "c2s_job", "c2s_set_world", "c2s_enter", "c2s_leave",
-	"c2s_place_block", "c2s_remove_block", "c2s_paint_block", "c2s_gather", "c2s_dig", "c2s_craft", "c2s_trade",
+	"c2s_place_block", "c2s_remove_block", "c2s_paint_block", "c2s_gather", "c2s_dig", "c2s_craft", "c2s_trade", "c2s_offer", "c2s_offer_answer",
 ]
 
 var net: Node
@@ -810,4 +810,48 @@ func on_trade(pid: int, item: String, n: int, buy: bool) -> void:
 	_send(pid, "s2c_money", int(res["money"]))
 	_push_inv(pid, p["name"])
 	_notice(pid, "bought" if buy else "sold", {"item": item, "count": n, "total": res["total"]})
+	_dirty = true
+
+
+func on_offer(pid: int, to_name: String, item: String, n: int, price: int) -> void:
+	var p := _player_of(pid)
+	if p.is_empty():
+		return
+	if not _allow_action(p):
+		_notice(pid, "rate_limited")
+		return
+	if not by_name.has(to_name):
+		_notice(pid, "offer_offline")
+		return
+	var res: Dictionary = cs.make_offer(p["name"], to_name, item, n, price)
+	if not res["ok"]:
+		_notice(pid, str(res["error"]))
+		return
+	var o: Dictionary = res["offer"]
+	_send(by_name[to_name], "s2c_offer", {"id": res["id"], "from": o["from"], "item": item, "n": n, "price": price})
+	_notice(pid, "offer_sent", {"to": to_name})
+
+
+func on_offer_answer(pid: int, id: int, accept: bool) -> void:
+	var p := _player_of(pid)
+	if p.is_empty():
+		return
+	var res: Dictionary = cs.answer_offer(p["name"], id, accept)
+	if not res["ok"]:
+		_notice(pid, str(res["error"]))
+		return
+	var o: Dictionary = res["offer"]
+	var seller_pid: int = by_name.get(o["from"], -1)
+	if not res["accepted"]:
+		if seller_pid >= 0:
+			_notice(seller_pid, "offer_declined", {"to": o["to"]})
+		return
+	for who in [o["from"], o["to"]]:
+		if by_name.has(who):
+			var wp: int = by_name[who]
+			_send(wp, "s2c_money", cs.money_of(who))
+			_push_inv(wp, who)
+	_notice(pid, "offer_done", {"item": o["item"], "count": o["n"], "price": o["price"]})
+	if seller_pid >= 0:
+		_notice(seller_pid, "offer_done", {"item": o["item"], "count": o["n"], "price": o["price"]})
 	_dirty = true

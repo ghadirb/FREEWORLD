@@ -31,6 +31,7 @@ signal audit_received(entries: Array)
 signal teleported(pos: Vector2)
 signal ticked
 signal inventory_changed
+signal offer_received(data: Dictionary)
 signal block_changed(pos: Vector3i, type_id: int, color: int)
 signal blocks_loaded
 signal resource_changed(rx: int, rz: int, alive: bool)
@@ -285,6 +286,20 @@ func craft(recipe: String, times: int = 1) -> void:
 func trade(item: String, n: int, buy: bool) -> void:
 	if is_logged_in:
 		_tx("c2s_trade", [item, n, buy])
+
+
+func offer(to_name: String, item: String, n: int, price: int) -> void:
+	if is_logged_in:
+		_tx("c2s_offer", [to_name, item, n, price])
+
+
+func answer_offer(id: int, accept: bool) -> void:
+	if is_logged_in:
+		_tx("c2s_offer_answer", [id, accept])
+
+
+func on_offer(data: Dictionary) -> void:
+	offer_received.emit(data)
 
 
 func item_count(item: String) -> int:

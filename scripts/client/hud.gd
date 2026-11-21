@@ -60,6 +60,13 @@ var _color_row: HBoxContainer
 var _color_btns: Array = []
 var _inv_panel: PanelContainer
 var _inv_rows: Dictionary = {}
+var _offer_panel: PanelContainer
+var _offer_label: Label
+var _offer_queue: Array = []
+var _offer_player: OptionButton
+var _offer_item: OptionButton
+var _offer_count: SpinBox
+var _offer_price: SpinBox
 var host_info: String = ""  # آدرس میزبان برای نمایش به بازیکنان دیگر
 var _stat_acc: float = 0.0
 var _chat_lines: Array = []
@@ -102,6 +109,7 @@ func setup(game_client, game_view) -> void:
 	_build_palette()
 	_build_tools_panel()
 	_build_inventory_panel()
+	_build_offer_panel()
 	_build_info_panel()
 	_build_leave_button()
 	_build_toasts()
@@ -115,6 +123,7 @@ func setup(game_client, game_view) -> void:
 	view.tool_changed.connect(_refresh_tools)
 	view.perspective_changed.connect(_update_view_btn)
 	_update_view_btn()
+	client.offer_received.connect(_on_offer)
 	client.inventory_changed.connect(func():
 		_refresh_inventory()
 		_refresh_tools())
@@ -223,7 +232,8 @@ func _build_side_buttons() -> void:
 	_inv_btn = UiTheme.button(Loc.t("inventory"), Vector2(180, 58))
 	_inv_btn.pressed.connect(func():
 		Sfx.play(self, "click")
-		_inv_panel.visible = not _inv_panel.visible)
+		_inv_panel.visible = not _inv_panel.visible
+		_refresh_offer_players())
 	var chat_btn := UiTheme.button(Loc.t("chat"), Vector2(180, 58))
 	chat_btn.pressed.connect(_toggle_chat)
 	_admin_btn = UiTheme.button(Loc.t("admin"), Vector2(180, 58))
@@ -411,7 +421,7 @@ func _build_inventory_panel() -> void:
 	_inv_panel.add_child(v)
 	v.add_child(_label(Loc.t("inv_title"), 28, Color("ffd24a")))
 	var sc := ScrollContainer.new()
-	sc.custom_minimum_size = Vector2(0, 300)
+	sc.custom_minimum_size = Vector2(0, 210)
 	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	v.add_child(sc)
 	var rows := VBoxContainer.new()
@@ -450,6 +460,30 @@ func _build_inventory_panel() -> void:
 		cb.add_theme_font_size_override("font_size", 20)
 		cb.pressed.connect(func(): client.craft(recipe, 1))
 		crow.add_child(cb)
+	v.add_child(_label(Loc.t("offer_title"), 22, Color("9ad0ff")))
+	var orow := HBoxContainer.new()
+	orow.add_theme_constant_override("separation", 6)
+	v.add_child(orow)
+	_offer_player = OptionButton.new()
+	_offer_player.custom_minimum_size = Vector2(170, 48)
+	_offer_item = OptionButton.new()
+	_offer_item.custom_minimum_size = Vector2(110, 48)
+	for it in FWConst.ITEM_ORDER:
+		_offer_item.add_item(Loc.t("item_" + it))
+	_offer_count = SpinBox.new()
+	_offer_count.min_value = 1
+	_offer_count.max_value = 500
+	_offer_count.value = 1
+	_offer_count.prefix = Loc.t("offer_count") + " "
+	_offer_price = SpinBox.new()
+	_offer_price.min_value = 0
+	_offer_price.max_value = FWConst.OFFER_MAX_PRICE
+	_offer_price.value = 10
+	_offer_price.prefix = Loc.t("offer_price") + " "
+	var osend := UiTheme.button(Loc.t("offer_send"), Vector2(150, 48))
+	osend.pressed.connect(_send_offer)
+	for c in [_offer_player, _offer_item, _offer_count, _offer_price, osend]:
+		orow.add_child(c)
 	var close := UiTheme.button(Loc.t("back"), Vector2(0, 56))
 	close.pressed.connect(func(): _inv_panel.visible = false)
 	v.add_child(close)
@@ -462,6 +496,84 @@ func _refresh_inventory() -> void:
 		var buy_p := int(ceil(float(FWConst.ITEMS[item]) * FWConst.BUY_MARKUP))
 		_inv_rows[item]["count"].text = Loc.digits(str(client.item_count(item)))
 		_inv_rows[item]["price"].text = Loc.fmt("price_fmt", [Loc.digits(str(int(client.sell_prices.get(item, 0)))), Loc.digits(str(buy_p))])
+
+
+func _refresh_offer_players() -> void:
+	var keep: String = _offer_player.get_item_text(_offer_player.selected) if _offer_player.item_count > 0 and _offer_player.selected >= 0 else ""
+	_offer_player.clear()
+	for n in client.players:
+		if n != client.my_name:
+			_offer_player.add_item(str(n))
+	if _offer_player.item_count == 0:
+		_offer_player.add_item(Loc.t("offer_no_players"))
+		_offer_player.disabled = true
+	else:
+		_offer_player.disabled = false
+		for i in range(_offer_player.item_count):
+			if _offer_player.get_item_text(i) == keep:
+				_offer_player.select(i)
+
+
+func _send_offer() -> void:
+	if _offer_player.disabled or _offer_player.item_count == 0:
+		return
+	Sfx.play(self, "click")
+	client.offer(_offer_player.get_item_text(_offer_player.selected), str(FWConst.ITEM_ORDER[_offer_item.selected]), int(_offer_count.value), int(_offer_price.value))
+
+
+func _build_offer_panel() -> void:
+	_offer_panel = _panel(0.5, 0.0)
+	_offer_panel.visible = false
+	_offer_panel.offset_top = 84
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 8)
+	_offer_panel.add_child(v)
+	_offer_label = _label("", 22, Color("ffe9a6"))
+	_offer_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_offer_label.custom_minimum_size = Vector2(560, 0)
+	v.add_child(_offer_label)
+	var h := HBoxContainer.new()
+	h.add_theme_constant_override("separation", 8)
+	v.add_child(h)
+	var yes := UiTheme.button(Loc.t("offer_accept"), Vector2(0, 54))
+	yes.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	yes.pressed.connect(func(): _answer_offer(true))
+	var no := UiTheme.button(Loc.t("offer_decline"), Vector2(0, 54))
+	no.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	no.pressed.connect(func(): _answer_offer(false))
+	h.add_child(yes)
+	h.add_child(no)
+
+
+func _on_offer(data: Dictionary) -> void:
+	_offer_queue.append(data)
+	Sfx.play(self, "notify")
+	_show_offer()
+	var id: int = int(data["id"])
+	get_tree().create_timer(FWConst.OFFER_TTL).timeout.connect(func():
+		for i in range(_offer_queue.size()):
+			if int(_offer_queue[i]["id"]) == id:
+				_offer_queue.remove_at(i)
+				break
+		_show_offer())
+
+
+func _show_offer() -> void:
+	if _offer_queue.is_empty():
+		_offer_panel.visible = false
+		return
+	var o: Dictionary = _offer_queue[0]
+	_offer_label.text = Loc.fmt("offer_incoming", [str(o["from"]), Loc.digits(str(o["n"])), Loc.t("item_" + str(o["item"])), Loc.digits(str(o["price"]))])
+	_offer_panel.visible = true
+
+
+func _answer_offer(accept: bool) -> void:
+	if _offer_queue.is_empty():
+		return
+	Sfx.play(self, "click")
+	var o: Dictionary = _offer_queue.pop_front()
+	client.answer_offer(int(o["id"]), accept)
+	_show_offer()
 
 
 func _build_info_panel() -> void:
@@ -693,6 +805,13 @@ func _on_notice(code: String, args: Dictionary) -> void:
 		"bought":
 			Sfx.play(self, "click")
 			toast(Loc.fmt("msg_bought", [Loc.digits(str(args["count"])), Loc.t("item_" + str(args["item"])), Loc.digits(str(args["total"]))]))
+		"offer_sent":
+			toast(Loc.fmt("msg_offer_sent", [str(args["to"])]))
+		"offer_declined":
+			toast(Loc.fmt("msg_offer_declined", [str(args["to"])]), Color("ff9a8a"))
+		"offer_done":
+			Sfx.play(self, "coin")
+			toast(Loc.fmt("msg_offer_done", [Loc.digits(str(args["count"])), Loc.t("item_" + str(args["item"])), Loc.digits(str(args["price"]))]), Color("c8f08a"))
 		"wrong_tool":
 			Sfx.play(self, "error")
 			var need := str(args.get("tool", ""))
