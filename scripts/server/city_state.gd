@@ -28,6 +28,8 @@ var god: Dictionary = {}
 var next_god_id: int = 1
 var _god_rng := RandomNumberGenerator.new()
 var weather: String = "clear"
+var disaster: Dictionary = {"kind": "", "t": 0.0}   # حادثهٔ جاری؛ موقت و ذخیره‌نشده
+var disaster_cooldown: float = 0.0
 var bread_price: float = FWConst.BREAD_BASE_PRICE
 ## موجودی بازار مشترک شهر: کالایی که کشاورزان فروخته‌اند و هنوز مصرف نشده.
 var market: Dictionary = {"wheat": 0.0, "flour": 0.0, "bread": 0.0, "egg": 0.0, "milk": 0.0, "cheese": 0.0}
@@ -501,7 +503,8 @@ func energy_step(delta: float, online: Dictionary) -> void:
 		if resting:
 			e += FWConst.ENERGY_REST_PER_SEC * delta
 		else:
-			e -= FWConst.ENERGY_DECAY_PER_SEC * delta
+			var mult: float = FWConst.STORM_ENERGY_MULT if (str(disaster["kind"]) == "storm" and bid == 0) else 1.0
+			e -= FWConst.ENERGY_DECAY_PER_SEC * delta * mult
 		acc["energy"] = clampf(e, 0.0, FWConst.ENERGY_MAX)
 
 
@@ -522,6 +525,38 @@ func set_world(actor: String, key: String, value: Variant) -> Dictionary:
 			return {"ok": false, "error": "bad_request"}
 	_log(actor, "set_world", {"key": key, "value": value})
 	return {"ok": true, "world": world_public()}
+
+
+## آغاز حادثهٔ طبیعی توسط مدیر. همزمان فقط یکی و بین دو حادثه وقفه هست.
+func start_disaster(actor: String, kind: String) -> Dictionary:
+	if not FWConst.is_admin(role_of(actor)):
+		return {"ok": false, "error": "forbidden"}
+	if not FWConst.DISASTERS.has(kind):
+		return {"ok": false, "error": "bad_request"}
+	if str(disaster["kind"]) != "":
+		return {"ok": false, "error": "disaster_active"}
+	if disaster_cooldown > 0.0:
+		return {"ok": false, "error": "disaster_cooldown"}
+	disaster = {"kind": kind, "t": float(FWConst.DISASTERS[kind])}
+	_log(actor, "disaster", {"kind": kind})
+	return {"ok": true, "disaster": disaster_public()}
+
+
+## true یعنی حادثه همین حالا تمام شد (برای اعلام به کلاینت‌ها).
+func disaster_step(delta: float) -> bool:
+	disaster_cooldown = maxf(0.0, disaster_cooldown - delta)
+	if str(disaster["kind"]) == "":
+		return false
+	disaster["t"] = float(disaster["t"]) - delta
+	if float(disaster["t"]) > 0.0:
+		return false
+	disaster = {"kind": "", "t": 0.0}
+	disaster_cooldown = FWConst.DISASTER_COOLDOWN
+	return true
+
+
+func disaster_public() -> Dictionary:
+	return {"kind": str(disaster["kind"]), "t": snappedf(float(disaster["t"]), 0.1)}
 
 
 func world_public() -> Dictionary:
@@ -1167,7 +1202,8 @@ func tick(delta: float) -> void:
 		var b: Dictionary = buildings[id]
 		match str(b["type"]):
 			"farm":
-				b["stock"] = minf(FWConst.FARM_MAX_STOCK, float(b["stock"]) + delta / FWConst.FARM_SECONDS_PER_WHEAT)
+				var grow: float = FWConst.STORM_FARM_MULT if str(disaster["kind"]) == "storm" else 1.0
+				b["stock"] = minf(FWConst.FARM_MAX_STOCK, float(b["stock"]) + delta * grow / FWConst.FARM_SECONDS_PER_WHEAT)
 			"bakery", "mill", "dairy":
 				_tick_processor(b, delta)
 			"coop", "barn":

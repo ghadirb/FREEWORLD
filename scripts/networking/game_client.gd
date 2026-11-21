@@ -32,6 +32,7 @@ signal teleported(pos: Vector2)
 signal ticked
 signal god_changed
 signal minigame_changed
+signal disaster_changed
 signal inventory_changed
 signal offer_received(data: Dictionary)
 signal block_changed(pos: Vector3i, type_id: int, color: int)
@@ -66,6 +67,8 @@ var inv: Dictionary = {}
 var friends: Dictionary = {}
 var god_list: Array = []
 var minigame: Dictionary = {"active": false, "t": 0.0, "score": 0, "coins": [], "best": 0, "board": []}
+var disaster: Dictionary = {"kind": "", "t": 0.0}
+var disaster_stamp: float = 0.0
 var minigame_stamp: float = 0.0   # لحظهٔ دریافت وضعیت؛ برای شمارش معکوس محلی
 var sell_prices: Dictionary = {}
 var is_logged_in: bool = false
@@ -303,6 +306,21 @@ func on_minigame(data: Dictionary) -> void:
 	minigame = data
 	minigame_stamp = Time.get_ticks_msec() / 1000.0
 	minigame_changed.emit()
+
+
+func on_disaster(data: Dictionary) -> void:
+	disaster = data
+	disaster_stamp = Time.get_ticks_msec() / 1000.0
+	disaster_changed.emit()
+
+
+func start_disaster(kind: String) -> void:
+	if is_logged_in:
+		_tx("c2s_disaster", [kind])
+
+
+func disaster_kind() -> String:
+	return str(disaster.get("kind", ""))
 
 
 func minigame_start() -> void:

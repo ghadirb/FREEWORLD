@@ -43,6 +43,7 @@ var npc_avatars: Dictionary = {}
 var god_kind: String = ""
 var god_nodes: Dictionary = {}
 var coin_nodes: Array = []
+var _flash: float = 0.0   # برق طوفان؛ سریع محو می‌شود
 var _coin_mesh: ArrayMesh
 var _god_meshes: Dictionary = {}
 var _god_mat: StandardMaterial3D
@@ -155,6 +156,8 @@ func _on_snapshot() -> void:
 
 
 func _weather_fog() -> float:
+	if client.disaster_kind() == "storm":
+		return 3.0
 	match client.weather:
 		"rain":
 			return 2.0
@@ -164,6 +167,8 @@ func _weather_fog() -> float:
 
 
 func _weather_light() -> float:
+	if client.disaster_kind() == "storm":
+		return 0.4 + _flash * 2.0
 	match client.weather:
 		"rain":
 			return 0.55
@@ -196,7 +201,7 @@ func _update_rain() -> void:
 		qm.material = mat
 		_rain.mesh = qm
 		add_child(_rain)
-	_rain.emitting = client.weather == "rain"
+	_rain.emitting = client.weather == "rain" or client.disaster_kind() == "storm"
 	_rain.position = cam.focus + Vector3(0, 18, 0)
 
 
@@ -1058,7 +1063,16 @@ func _sync_coins() -> void:
 		coin_nodes.append(node)
 
 
+func _update_disaster(dt: float) -> void:
+	var kind: String = client.disaster_kind()
+	_flash = maxf(0.0, _flash - dt * 4.0)
+	if kind == "storm" and randf() < dt * 0.3:
+		_flash = 1.0
+	cam.shake = 0.12 if kind == "quake" else 0.0
+
+
 func _update_god(dt: float) -> void:
+	_update_disaster(dt)
 	for n in coin_nodes:
 		n.rotation.y += dt * 3.0
 	for node in god_nodes.values():

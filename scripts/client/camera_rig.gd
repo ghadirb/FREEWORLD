@@ -86,11 +86,20 @@ func right_flat() -> Vector3:
 	return Vector3(cos(yaw), 0, -sin(yaw))
 
 
+var shake: float = 0.0   # قدرت لرزش (زلزله)؛ هر فریم کم می‌شود مگر بیرون تنظیم شود
+
+
+func _shake_camera() -> void:
+	if shake > 0.001:
+		camera.global_position += Vector3(randf() - 0.5, randf() - 0.5, randf() - 0.5) * shake
+
+
 func _process(delta: float) -> void:
 	if first_person and mode == "life":
 		_cur_focus = focus
 		_cur_yaw = yaw
 		_apply()
+		_shake_camera()
 		return
 	var k := 1.0 - exp(-9.0 * delta)
 	var target_pitch := (LIFE_PITCH + life_pitch_offset) if mode == "life" else (WORLD_PITCH + world_pitch_offset)
@@ -100,6 +109,7 @@ func _process(delta: float) -> void:
 	_cur_pitch = lerpf(_cur_pitch, target_pitch, k)
 	_cur_dist = lerpf(_cur_dist, target_dist, k)
 	_apply()
+	_shake_camera()
 
 
 func _apply() -> void:

@@ -20,7 +20,7 @@ const LOCAL_PID := 1
 const LOCAL_METHODS := [
 	"c2s_login", "c2s_move", "c2s_place", "c2s_remove", "c2s_collect",
 	"c2s_chat", "c2s_set_role", "c2s_get_audit", "c2s_job", "c2s_set_world", "c2s_enter", "c2s_leave",
-	"c2s_place_block", "c2s_remove_block", "c2s_paint_block", "c2s_gather", "c2s_dig", "c2s_craft", "c2s_trade", "c2s_offer", "c2s_offer_answer", "c2s_npc", "c2s_npc_sell", "c2s_minigame_start", "c2s_god",
+	"c2s_place_block", "c2s_remove_block", "c2s_paint_block", "c2s_gather", "c2s_dig", "c2s_craft", "c2s_trade", "c2s_offer", "c2s_offer_answer", "c2s_npc", "c2s_npc_sell", "c2s_minigame_start", "c2s_disaster", "c2s_god",
 ]
 
 var net: Node
@@ -215,6 +215,8 @@ func _process(delta: float) -> void:
 			_broadcast("s2c_god", cs.god_public())
 	_work_step(dt)
 	_minigame_step(dt)
+	if cs.disaster_step(dt):
+		_broadcast("s2c_disaster", cs.disaster_public())
 	var now := Time.get_ticks_msec()
 	for pid in peers.keys():
 		var p: Dictionary = peers[pid]
@@ -255,6 +257,21 @@ func _minigame_step(dt: float) -> void:
 			_notice(pid, "minigame_end", {"score": ev["score"], "best": ev["best"], "new_best": ev["new_best"], "reward": ev["reward"]})
 			_dirty = true
 	# بازیکنی که خارج شد و دورش لغو شد، در حالت‌های بعدی وضعیت تازه می‌گیرد؛ نیازی به ارسال نیست.
+
+
+func on_disaster(pid: int, kind: String) -> void:
+	var p := _player_of(pid)
+	if p.is_empty():
+		return
+	if not _allow_action(p):
+		_notice(pid, "rate_limited")
+		return
+	var res: Dictionary = cs.start_disaster(p["name"], kind)
+	if not res["ok"]:
+		_notice(pid, str(res["error"]))
+		return
+	_broadcast("s2c_disaster", res["disaster"])
+	_dirty = true
 
 
 func on_minigame_start(pid: int) -> void:
@@ -482,6 +499,7 @@ func on_login(pid: int, player_name: String, token: String, proto: int) -> void:
 	_send(pid, "s2c_depleted", cs.depleted_flat())
 	_send(pid, "s2c_god", cs.god_public())
 	_send(pid, "s2c_minigame", cs.minigame.public_state(player_name))
+	_send(pid, "s2c_disaster", cs.disaster_public())
 	p["last_inv"] = cs.inv_public(player_name)
 	_send(pid, "s2c_inv", p["last_inv"])
 	_broadcast("s2c_player_joined", player_name, acc["role"], pid)

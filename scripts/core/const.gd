@@ -1,7 +1,7 @@
 extends RefCounted
 ## ثابت‌های مشترک بین سرور و کلاینت.
 
-const PROTOCOL_VERSION := 13
+const PROTOCOL_VERSION := 14
 # ترافیک شبکه با DTLS رمز می‌شود (نسخهٔ ۴ به بعد). فقط برای عیب‌یابی خاموش شود.
 const USE_DTLS := true
 const DEFAULT_PORT := 7777
@@ -91,6 +91,12 @@ const TIME_SCALE := 60.0
 # ابزارهای World Mode (فقط مدیران): ضریب سرعت زمان و آب‌وهوا.
 const TIME_SPEEDS := [0.0, 1.0, 4.0, 10.0]
 const WEATHERS := ["clear", "rain", "fog"]
+# حوادث طبیعی (فقط مدیران آغاز می‌کنند؛ موقت، ذخیره نمی‌شوند، در گزارش مدیریتی ثبت می‌شوند).
+# طوفان: بیرون از ساختمان انرژی دو برابر سریع‌تر تمام می‌شود و مزارع ۵۰٪ سریع‌تر محصول می‌دهند. زلزله: فقط لرزش (بدون خسارت به دارایی).
+const DISASTERS := {"storm": 60.0, "quake": 10.0}
+const DISASTER_COOLDOWN := 30.0
+const STORM_ENERGY_MULT := 2.0
+const STORM_FARM_MULT := 1.5
 
 const MAX_BUILDINGS_PER_PLAYER := 40
 const MAX_ACCOUNTS := 500

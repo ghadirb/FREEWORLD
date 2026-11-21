@@ -68,6 +68,7 @@ var _mg_status: Label
 var _mg_board: Label
 var _mg_best: Label
 var _mg_bar: Label
+var _was_disaster: bool = false
 var _god_btns: Dictionary = {}
 var _npc_panel: PanelContainer
 var _npc_title: Label
@@ -707,6 +708,17 @@ func _build_minigame() -> void:
 	_place(_mg_bar, 0.5, 0.0, 0.0, 90.0)
 	_mg_bar.visible = false
 	client.minigame_changed.connect(_refresh_minigame)
+	client.disaster_changed.connect(_on_disaster_changed)
+
+
+func _on_disaster_changed() -> void:
+	var k: String = client.disaster_kind()
+	if k != "":
+		Sfx.play(self, "error")
+		toast(Loc.t("msg_disaster_" + k), Color("ff9a8a"))
+	elif _was_disaster:
+		toast(Loc.t("msg_disaster_over"), Color("c8f08a"))
+	_was_disaster = k != ""
 
 
 func _refresh_minigame() -> void:
@@ -897,6 +909,15 @@ func _build_admin_panel() -> void:
 		wb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		wb.pressed.connect(func(): client.set_world("weather", w))
 		wrow.add_child(wb)
+	v.add_child(_label(Loc.t("disasters"), 22, Color("c8f08a")))
+	var drow := HBoxContainer.new()
+	drow.add_theme_constant_override("separation", 8)
+	v.add_child(drow)
+	for dk in FWConst.DISASTERS:
+		var db := UiTheme.button(Loc.t("disaster_" + str(dk)), Vector2(0, 56))
+		db.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		db.pressed.connect(func(): client.start_disaster(str(dk)))
+		drow.add_child(db)
 	var audit := UiTheme.button(Loc.t("audit"), Vector2(0, 60))
 	audit.pressed.connect(func(): client.request_audit())
 	v.add_child(audit)

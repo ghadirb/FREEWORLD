@@ -44,6 +44,7 @@ func _init() -> void:
 	test_npc_friendship()
 	test_npc_sell()
 	test_minigame()
+	test_disasters()
 	test_god_tools()
 	test_stairs_and_floors()
 	test_p2p_trade()
@@ -949,6 +950,45 @@ func _mg_land_pos(cs) -> Vector2:
 	# نقطه‌ای روی خشکی که برای چیدن سکه‌ها جا دارد
 	var c: float = FWConst.CITY_SIZE * 0.5
 	return Vector2(c, c)
+
+
+func test_disasters() -> void:
+	print("== Natural disasters ==")
+	var cs = CityState.new(4245)
+	cs.provision_admin("root", "secret")
+	_login(cs, "pal")
+	_login(cs, "mayor")
+	check(cs.set_role("root", "mayor", "city_admin")["ok"], "mayor role set up")
+	check(cs.start_disaster("pal", "storm")["error"] == "forbidden", "players cannot start disasters")
+	check(cs.start_disaster("mayor", "meteor")["error"] == "bad_request", "unknown disaster is rejected")
+	check(str(cs.disaster_public()["kind"]) == "", "no disaster at first")
+	var r: Dictionary = cs.start_disaster("mayor", "storm")
+	check(r["ok"] and r["disaster"]["kind"] == "storm" and r["disaster"]["t"] == FWConst.DISASTERS["storm"], "an admin starts a storm")
+	check(cs.start_disaster("root", "quake")["error"] == "disaster_active", "only one disaster at a time")
+	# اثر طوفان: انرژی بیرون دو برابر سریع‌تر کم می‌شود، داخل ساختمان تغییری ندارد
+	cs.accounts["pal"]["energy"] = FWConst.ENERGY_MAX
+	cs.energy_step(10.0, {"pal": 0})
+	var drop_storm: float = FWConst.ENERGY_MAX - float(cs.accounts["pal"]["energy"])
+	cs.disaster = {"kind": "", "t": 0.0}
+	cs.accounts["pal"]["energy"] = FWConst.ENERGY_MAX
+	cs.energy_step(10.0, {"pal": 0})
+	var drop_calm: float = FWConst.ENERGY_MAX - float(cs.accounts["pal"]["energy"])
+	check(is_equal_approx(drop_storm, drop_calm * FWConst.STORM_ENERGY_MULT), "storm drains energy faster outdoors")
+	# پایان خودکار و وقفه
+	cs.disaster = {"kind": "quake", "t": 2.0}
+	check(not cs.disaster_step(1.0), "a disaster lasts its duration")
+	check(cs.disaster_step(1.5) and str(cs.disaster_public()["kind"]) == "", "it ends on time")
+	check(cs.start_disaster("mayor", "storm")["error"] == "disaster_cooldown", "a cooldown follows every disaster")
+	cs.disaster_step(FWConst.DISASTER_COOLDOWN + 1.0)
+	check(cs.start_disaster("mayor", "quake")["ok"], "a new one can start after the cooldown")
+	# ثبت در گزارش و ذخیره‌نشدن
+	var logged := false
+	for e in cs.audit:
+		if str(e["action"]) == "disaster":
+			logged = true
+	check(logged, "disasters are written to the admin audit log")
+	var cs2 = CityState.from_dict(cs.to_dict())
+	check(cs2 != null and str(cs2.disaster["kind"]) == "", "an ongoing disaster is not saved")
 
 
 func test_minigame() -> void:
