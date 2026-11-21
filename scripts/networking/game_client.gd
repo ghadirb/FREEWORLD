@@ -301,6 +301,11 @@ func npc_interact(npc_id: int, item: String = "") -> void:
 		_tx("c2s_npc", [npc_id, item])
 
 
+func npc_sell(npc_id: int, item: String, n: int) -> void:
+	if is_logged_in:
+		_tx("c2s_npc_sell", [npc_id, item, n])
+
+
 func trade(item: String, n: int, buy: bool) -> void:
 	if is_logged_in:
 		_tx("c2s_trade", [item, n, buy])

@@ -1,7 +1,7 @@
 extends RefCounted
 ## ثابت‌های مشترک بین سرور و کلاینت.
 
-const PROTOCOL_VERSION := 11
+const PROTOCOL_VERSION := 12
 # ترافیک شبکه با DTLS رمز می‌شود (نسخهٔ ۴ به بعد). فقط برای عیب‌یابی خاموش شود.
 const USE_DTLS := true
 const DEFAULT_PORT := 7777
@@ -181,6 +181,9 @@ const FRIEND_MAX := 100
 const FRIEND_LEVELS := [25, 70]          # آستانهٔ «دوست» و «دوست صمیمی»
 const FRIEND_TALK_POINTS := 2
 const FRIEND_REWARD := [0, 10, 25]       # پاداش روزانهٔ صحبت (از پول خود NPC پرداخت می‌شود)
+# فروش کالا به NPC: قیمت بازار + پاداش دوستی، از پول خود NPC پرداخت می‌شود (قیمت بازار را پایین نمی‌آورد)
+const NPC_TRADE_BONUS := [0.0, 0.10, 0.25]
+const NPC_TRADE_MAX := 50
 # ابزارهای خلقت (World Mode، فقط مدیران): درخت، سنگ و حیوانات آرام. وضعیتشان با شهر ذخیره می‌شود.
 const GOD_STATIC := ["tree", "rock"]
 const GOD_ANIMALS := {"sheep": 1.0, "deer": 2.2, "rabbit": 1.7}   # سرعت راه رفتن

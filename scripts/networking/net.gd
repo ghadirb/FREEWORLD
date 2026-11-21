@@ -123,6 +123,12 @@ func c2s_npc(npc_id: int, item: String) -> void:
 
 
 @rpc("any_peer", "call_remote", "reliable")
+func c2s_npc_sell(npc_id: int, item: String, n: int) -> void:
+	if server:
+		server.on_npc_sell(multiplayer.get_remote_sender_id(), npc_id, item, n)
+
+
+@rpc("any_peer", "call_remote", "reliable")
 func c2s_god(action: String, kind: String, x: float, z: float) -> void:
 	if server:
 		server.on_god(multiplayer.get_remote_sender_id(), action, kind, x, z)

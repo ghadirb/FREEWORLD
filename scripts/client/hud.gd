@@ -699,6 +699,14 @@ func _build_npc_panel() -> void:
 	gift.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	gift.pressed.connect(func(): client.npc_interact(_npc_id, str(FWConst.ITEM_ORDER[_npc_item.selected])))
 	grow.add_child(gift)
+	var srow := HBoxContainer.new()
+	srow.add_theme_constant_override("separation", 8)
+	v.add_child(srow)
+	for amount in [1, 10]:
+		var sb := UiTheme.button(Loc.t("npc_sell%d" % amount), Vector2(0, 56))
+		sb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		sb.pressed.connect(func(): client.npc_sell(_npc_id, str(FWConst.ITEM_ORDER[_npc_item.selected]), amount))
+		srow.add_child(sb)
 
 
 func _on_npc_tapped(id: int) -> void:
@@ -721,7 +729,8 @@ func _fill_npc() -> void:
 	for t in FWConst.FRIEND_LEVELS:
 		if pts >= int(t):
 			lv += 1
-	_npc_body.text = "%s: %s (%s/%s)" % [Loc.t("npc_friendship"), Loc.t("npc_level_%d" % lv), Loc.digits(str(pts)), Loc.digits(str(FWConst.FRIEND_MAX))]
+	_npc_body.text = "%s: %s (%s/%s)\n%s" % [Loc.t("npc_friendship"), Loc.t("npc_level_%d" % lv), Loc.digits(str(pts)), Loc.digits(str(FWConst.FRIEND_MAX)),
+		Loc.fmt("npc_bonus", [Loc.digits(str(int(round(float(FWConst.NPC_TRADE_BONUS[lv]) * 100.0))))])]
 
 
 func _build_leave_button() -> void:
@@ -915,6 +924,9 @@ func _on_notice(code: String, args: Dictionary) -> void:
 		"npc_talk":
 			Sfx.play(self, "coin" if int(args["reward"]) > 0 else "click")
 			toast(Loc.fmt("msg_npc_talk", [str(args["npc"]), Loc.digits(str(args["reward"]))]) if int(args["reward"]) > 0 else Loc.fmt("msg_npc_talk0", [str(args["npc"])]), Color("c8f08a"))
+		"npc_bought":
+			Sfx.play(self, "coin")
+			toast(Loc.fmt("msg_npc_bought", [str(args["npc"]), Loc.digits(str(args["count"])), Loc.t("item_" + str(args["item"])), Loc.digits(str(args["total"]))]), Color("c8f08a"))
 		"npc_gift":
 			Sfx.play(self, "coin")
 			toast(Loc.fmt("msg_npc_gift", [str(args["npc"]), Loc.t("item_" + str(args["item"]))]), Color("ffd84a"))

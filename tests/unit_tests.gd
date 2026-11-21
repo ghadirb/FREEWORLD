@@ -42,6 +42,7 @@ func _init() -> void:
 	test_blocks_and_resources()
 	test_exploration()
 	test_npc_friendship()
+	test_npc_sell()
 	test_god_tools()
 	test_stairs_and_floors()
 	test_p2p_trade()
@@ -941,6 +942,44 @@ func test_exploration() -> void:
 	check(cs.tool_tier(acc, "axe") == 1 and cs.inv_public("digger")["tools"]["pickaxe"] == 2, "tiers are reported per tool")
 	var cs3 = CityState.from_dict(cs.to_dict())
 	check(cs3 != null and cs3.tool_tier(cs3.accounts["digger"], "pickaxe") == 2, "tool upgrades survive a save/load")
+
+
+func test_npc_sell() -> void:
+	print("== Selling to NPCs ==")
+	var NpcSim = load("res://scripts/server/npc_sim.gd")
+	var cs = CityState.new(4243)
+	_login(cs, "trader")
+	NpcSim.ensure_npcs(cs)
+	var npc: Dictionary = cs.npcs[0]
+	var id: int = int(npc["id"])
+	var at := Vector2(float(npc["x"]), float(npc["z"]))
+	var acc: Dictionary = cs.accounts["trader"]
+	acc["inv"]["wood"] = 20
+	npc["money"] = 1000
+	check(cs.npc_sell("trader", 99, "wood", 1, at)["error"] == "no_npc", "selling to an unknown NPC is rejected")
+	check(cs.npc_sell("trader", id, "wood", 1, at + Vector2(FWConst.NPC_TALK_RANGE + 2.0, 0))["error"] == "too_far", "selling needs closeness")
+	check(cs.npc_sell("trader", id, "wood", 0, at)["error"] == "bad_request", "zero amount is rejected")
+	check(cs.npc_sell("trader", id, "wood", FWConst.NPC_TRADE_MAX + 1, at)["error"] == "bad_request", "huge amount is rejected")
+	check(cs.npc_sell("trader", id, "wood", 21, at)["error"] == "no_items", "cannot sell more than you own")
+	var mult0: float = float(cs.item_mult.get("wood", 1.0))
+	var m0: int = int(acc["money"])
+	var r: Dictionary = cs.npc_sell("trader", id, "wood", 5, at)
+	var unit: int = cs.sell_price("wood")
+	check(r["ok"] and r["count"] == 5 and r["total"] == unit * 5, "a stranger pays the market price")
+	check(int(acc["money"]) == m0 + unit * 5 and int(acc["inv"]["wood"]) == 15, "money and items move")
+	check(int(npc["money"]) == 1000 - unit * 5, "the NPC pays from their own money")
+	check(float(cs.item_mult.get("wood", 1.0)) == mult0, "selling to an NPC does not move the market price")
+	acc["friends"] = {str(id): FWConst.FRIEND_LEVELS[1]}
+	var r2: Dictionary = cs.npc_sell("trader", id, "wood", 1, at)
+	check(r2["ok"] and r2["total"] > unit, "a best friend pays more than the market")
+	var unit2: int = r2["total"]
+	npc["money"] = unit2 * 2 + 1
+	var r3: Dictionary = cs.npc_sell("trader", id, "wood", 10, at)
+	check(r3["ok"] and r3["count"] == 2 and int(npc["money"]) == 1, "a poor NPC only buys what they can afford")
+	npc["money"] = 0
+	check(cs.npc_sell("trader", id, "wood", 1, at)["error"] == "npc_broke", "a broke NPC cannot buy")
+	var cs2 = CityState.from_dict(cs.to_dict())
+	check(cs2 != null and int(cs2.accounts["trader"]["money"]) == int(acc["money"]), "trade results survive save/load")
 
 
 func test_npc_friendship() -> void:

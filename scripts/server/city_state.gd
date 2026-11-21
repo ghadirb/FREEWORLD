@@ -922,6 +922,39 @@ func npc_interact(player_name: String, npc_id: int, item: String, pos: Vector2) 
 		"reward": reward, "item": item, "money": int(acc["money"])}
 
 
+## فروش n واحد کالا به NPC نزدیک. قیمت هر واحد = قیمت فعلی بازار + پاداش دوستی؛ پول از کیف خود NPC می‌رود،
+## پس اگر NPC پول کم داشته باشد فقط به اندازهٔ توانش می‌خرد. بازار مشترک را تکان نمی‌دهد.
+func npc_sell(player_name: String, npc_id: int, item: String, n: int, pos: Vector2) -> Dictionary:
+	if not accounts.has(player_name):
+		return {"ok": false, "error": "no_account"}
+	if not FWConst.ITEMS.has(item) or n < 1 or n > FWConst.NPC_TRADE_MAX:
+		return {"ok": false, "error": "bad_request"}
+	var npc: Dictionary = {}
+	for nn in npcs:
+		if int(nn["id"]) == npc_id:
+			npc = nn
+			break
+	if npc.is_empty():
+		return {"ok": false, "error": "no_npc"}
+	if pos.distance_to(Vector2(float(npc["x"]), float(npc["z"]))) > FWConst.NPC_TALK_RANGE:
+		return {"ok": false, "error": "too_far"}
+	var acc: Dictionary = accounts[player_name]
+	if int(acc["inv"].get(item, 0)) < n:
+		return {"ok": false, "error": "no_items"}
+	var lv := friend_level(friendship_of(acc, npc_id))
+	var unit := maxi(1, int(floor(float(sell_price(item)) * (1.0 + float(FWConst.NPC_TRADE_BONUS[lv])))))
+	var afford := int(npc["money"]) / unit
+	var count := mini(n, afford)
+	if count < 1:
+		return {"ok": false, "error": "npc_broke"}
+	var total := unit * count
+	npc["money"] = int(npc["money"]) - total
+	acc["inv"][item] = int(acc["inv"][item]) - count
+	acc["money"] = int(acc["money"]) + total
+	_log(player_name, "npc_sell", {"npc": npc_id, "item": item, "n": count, "total": total})
+	return {"ok": true, "npc": str(npc["name"]), "item": item, "count": count, "total": total, "money": int(acc["money"])}
+
+
 func gather(player_name: String, rx: int, rz: int, tool: String, pos: Vector2) -> Dictionary:
 	if not accounts.has(player_name):
 		return {"ok": false, "error": "no_account"}
