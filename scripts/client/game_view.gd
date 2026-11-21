@@ -469,7 +469,7 @@ func _feedback(code: String) -> void:
 
 
 ## نزدیک‌ترین گرهٔ منبع (درخت/سنگ/خاک رس) که پرتو لمس از کنارش می‌گذرد.
-func _pick_resource(o: Vector3, d: Vector3) -> Dictionary:
+func _pick_resource(o: Vector3, d: Vector3, only_kind: String = "") -> Dictionary:
 	var per := FWConst.RESOURCE_CELL
 	var r0 := int(floor(my_pos.x / per))
 	var r1 := int(floor(my_pos.z / per))
@@ -484,7 +484,9 @@ func _pick_resource(o: Vector3, d: Vector3) -> Dictionary:
 			if n.is_empty():
 				continue
 			var kind: String = n["kind"]
-			var up: float = 1.4 if kind == "tree" else (0.45 if kind == "rock" else 0.15)
+			if only_kind != "" and kind != only_kind:
+				continue
+			var up: float = 1.4 if kind == "tree" else (0.45 if kind in ["rock", "iron_ore", "gold_ore", "chest"] else 0.15)
 			var radius: float = 1.5 if kind == "tree" else 1.1
 			var p := Vector3(float(n["x"]), float(n["y"]) + up * float(n["s"]), float(n["z"]))
 			var t := (p - o).dot(d)
@@ -613,6 +615,16 @@ func _tap(pos: Vector2) -> void:
 	if mode == "life" and tool != "hand" and build_type == "":
 		_tool_tap(pos)
 		return
+	if mode == "life" and tool == "hand" and build_type == "":
+		var chest := _pick_resource(cam.camera.project_ray_origin(pos), cam.camera.project_ray_normal(pos), "chest")
+		if not chest.is_empty():
+			if Vector2(my_pos.x, my_pos.z).distance_to(Vector2(chest["x"], chest["z"])) > FWConst.GATHER_RANGE:
+				Sfx.play(self, "error")
+				_feedback("too_far")
+				return
+			Sfx.play(self, "click")
+			client.gather(chest["rx"], chest["rz"], "hand")
+			return
 	var hit = ground_hit(pos)
 	var ground_t := 1.0e9
 	if hit != null:

@@ -18,6 +18,9 @@ var _terrain_mat: StandardMaterial3D
 var _tree_mesh: ArrayMesh
 var _rock_mesh: ArrayMesh
 var _clay_mesh: ArrayMesh
+var _iron_mesh: ArrayMesh
+var _gold_mesh: ArrayMesh
+var _chest_mesh: ArrayMesh
 var _tree_mat: StandardMaterial3D
 ## کلید «rx,rz» ← آیا این منبع هنوز برداشت‌شده است؟ (کلاینت می‌دهد)
 var is_depleted: Callable = func(_k: String) -> bool: return false
@@ -41,6 +44,21 @@ func setup(world_gen, view_radius: int) -> void:
 	cb.add_cylinder(Vector3.ZERO, 1.0, 0.85, 0.22, 8, Color("c2784a"))
 	cb.add_cylinder(Vector3(0.0, 0.2, 0.0), 0.6, 0.45, 0.14, 8, Color("d38b5b"))
 	_clay_mesh = cb.build()
+	var ib := MeshBuilder.new()
+	ib.add_cylinder(Vector3.ZERO, 0.95, 0.55, 0.9, 6, Color("8f9298"))
+	ib.add_cylinder(Vector3(0.35, 0.35, 0.2), 0.32, 0.2, 0.5, 5, Color("b5643c"))
+	ib.add_cylinder(Vector3(-0.3, 0.3, -0.25), 0.26, 0.16, 0.45, 5, Color("c4764a"))
+	_iron_mesh = ib.build()
+	var gb := MeshBuilder.new()
+	gb.add_cylinder(Vector3.ZERO, 0.95, 0.55, 0.9, 6, Color("7c8086"))
+	gb.add_cylinder(Vector3(0.35, 0.35, 0.2), 0.32, 0.2, 0.5, 5, Color("f2c230"))
+	gb.add_cylinder(Vector3(-0.3, 0.3, -0.25), 0.26, 0.16, 0.45, 5, Color("ffd84a"))
+	_gold_mesh = gb.build()
+	var xb := MeshBuilder.new()
+	xb.add_cylinder(Vector3.ZERO, 0.7, 0.7, 0.55, 4, Color("7a4a24"))
+	xb.add_cylinder(Vector3(0, 0.5, 0), 0.62, 0.45, 0.22, 4, Color("8f5a2c"))
+	xb.add_cylinder(Vector3(0, 0.3, 0), 0.74, 0.74, 0.1, 4, Color("e0b030"))
+	_chest_mesh = xb.build()
 
 
 func set_radius(r: int) -> void:
@@ -142,7 +160,7 @@ func _add_resources(root: Node3D, c: Vector2i) -> void:
 	holder.name = "res"
 	root.add_child(holder)
 	var per := int(FWConst.CHUNK_SIZE / FWConst.RESOURCE_CELL)
-	var lists := {"tree": [], "rock": [], "clay": []}
+	var lists := {"tree": [], "rock": [], "clay": [], "iron_ore": [], "gold_ore": [], "chest": []}
 	for j in range(per):
 		for i in range(per):
 			var rx := c.x * per + i
@@ -159,7 +177,13 @@ func _add_resources(root: Node3D, c: Vector2i) -> void:
 			continue
 		var mm := MultiMesh.new()
 		mm.transform_format = MultiMesh.TRANSFORM_3D
-		mm.mesh = _tree_mesh if kind == "tree" else (_rock_mesh if kind == "rock" else _clay_mesh)
+		match kind:
+			"tree": mm.mesh = _tree_mesh
+			"rock": mm.mesh = _rock_mesh
+			"iron_ore": mm.mesh = _iron_mesh
+			"gold_ore": mm.mesh = _gold_mesh
+			"chest": mm.mesh = _chest_mesh
+			_: mm.mesh = _clay_mesh
 		mm.instance_count = xforms.size()
 		for k in range(xforms.size()):
 			mm.set_instance_transform(k, xforms[k])

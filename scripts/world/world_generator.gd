@@ -101,9 +101,16 @@ func resource_in_cell(rx: int, rz: int) -> Dictionary:
 		"mountain":
 			if roll < 0.22:
 				kind = "rock"
+			elif roll < 0.255:
+				kind = "iron_ore"
+			elif roll < 0.27 and h >= FWConst.GOLD_MIN_HEIGHT:
+				kind = "gold_ore"
 		"beach":
 			if roll < 0.12:
 				kind = "clay"
+	# گنج پنهان: بسیار نادر، در هر زیست‌بوم خشکی (قطعی از Seed).
+	if kind == "" and _h01(rx, rz, 7) < 0.0025:
+		kind = "chest"
 	if kind == "":
 		return {}
 	var def: Dictionary = FWConst.RESOURCES[kind]

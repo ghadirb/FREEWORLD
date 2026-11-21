@@ -779,8 +779,16 @@ func gather(player_name: String, rx: int, rz: int, tool: String, pos: Vector2) -
 		return {"ok": false, "error": "wrong_tool", "tool": str(def["tool"])}
 	if pos.distance_to(Vector2(float(node["x"]), float(node["z"]))) > FWConst.GATHER_RANGE:
 		return {"ok": false, "error": "too_far"}
-	var item: String = def["item"]
 	var acc: Dictionary = accounts[player_name]
+	if def.has("reward_min"):
+		# صندوق گنج: مقدار پاداش قطعی از موقعیت گره (همه جا یکسان)، نه تصادفی سمت کلاینت.
+		var span: int = int(def["reward_max"]) - int(def["reward_min"]) + 1
+		var reward: int = int(def["reward_min"]) + int(world._h01(rx, rz, 8) * float(span))
+		acc["money"] = int(acc["money"]) + reward
+		depleted[key] = float(def["respawn"])
+		_log(player_name, "treasure", {"rx": rx, "rz": rz, "reward": reward})
+		return {"ok": true, "treasure": true, "reward": reward, "money": int(acc["money"]), "rx": rx, "rz": rz}
+	var item: String = def["item"]
 	if int(acc["inv"].get(item, 0)) >= FWConst.ITEM_CAP:
 		return {"ok": false, "error": "inv_full"}
 	_inv_add(acc, item, int(node["n"]))

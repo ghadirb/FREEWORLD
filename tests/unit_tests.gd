@@ -40,6 +40,7 @@ func _init() -> void:
 	test_world_tools()
 	test_interiors()
 	test_blocks_and_resources()
+	test_exploration()
 	test_stairs_and_floors()
 	test_p2p_trade()
 	test_world_slots()
@@ -883,6 +884,45 @@ func test_blocks_and_resources() -> void:
 	check(mirror.is_walkable(wx, wz) == cs.is_walkable(wx, wz), "mirror and server agree on walkability")
 	mirror.apply_block(cell.x, cell.y, cell.z, -1, 0)
 	check(not mirror.blocks.has(cell), "block removal is mirrored")
+
+
+func test_exploration() -> void:
+	var cs = CityState.new(2026)
+	_login(cs, "digger")
+	var kinds := {}
+	var firsts := {}
+	for rx in range(-120, 220):
+		for rz in range(-120, 220):
+			var n: Dictionary = cs.world.resource_in_cell(rx, rz)
+			if n.is_empty():
+				continue
+			kinds[n["kind"]] = int(kinds.get(n["kind"], 0)) + 1
+			if not firsts.has(n["kind"]):
+				firsts[n["kind"]] = [rx, rz, n]
+	check(kinds.has("iron_ore") and kinds.has("chest"), "world has iron ore and treasure chests (%s)" % str(kinds))
+	check(int(kinds.get("chest", 0)) < int(kinds.get("tree", 1)) / 10, "treasure is rare")
+	var acc: Dictionary = cs.accounts.get("digger", {})
+	check(not acc.is_empty(), "test account exists")
+	var ch: Array = firsts["chest"]
+	var at := Vector2(float(ch[2]["x"]), float(ch[2]["z"]))
+	var m0: int = int(acc["money"])
+	check(cs.gather("digger", ch[0], ch[1], "axe", at)["error"] == "wrong_tool", "chest needs the bare hand")
+	check(cs.gather("digger", ch[0], ch[1], "hand", at + Vector2(FWConst.GATHER_RANGE + 3.0, 0))["error"] == "too_far", "chest needs closeness")
+	var r: Dictionary = cs.gather("digger", ch[0], ch[1], "hand", at)
+	check(r["ok"] and r["treasure"] and int(acc["money"]) == m0 + int(r["reward"]), "opening a chest pays coins")
+	check(int(r["reward"]) >= 60 and int(r["reward"]) <= 240, "chest reward is in range")
+	check(cs.gather("digger", ch[0], ch[1], "hand", at)["error"] == "depleted", "an opened chest is empty")
+	var cs2 = CityState.new(2026)
+	check(cs2.world.resource_in_cell(ch[0], ch[1])["kind"] == "chest", "chests are deterministic per seed")
+	var io: Array = firsts["iron_ore"]
+	var ip := Vector2(float(io[2]["x"]), float(io[2]["z"]))
+	check(cs.gather("digger", io[0], io[1], "axe", ip)["error"] == "wrong_tool", "ore needs the pickaxe")
+	var i0: int = int(acc["inv"].get("iron", 0))
+	var g: Dictionary = cs.gather("digger", io[0], io[1], "pickaxe", ip)
+	check(g["ok"] and g["item"] == "iron" and int(acc["inv"]["iron"]) == i0 + int(io[2]["n"]), "pickaxe on iron ore gives iron")
+	cs.sell_price("iron")
+	var money1: int = int(acc["money"])
+	check(cs.trade("digger", "iron", 1, false)["ok"] and int(acc["money"]) > money1, "iron can be sold at the market")
 
 
 func test_stairs_and_floors() -> void:

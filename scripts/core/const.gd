@@ -1,7 +1,7 @@
 extends RefCounted
 ## ثابت‌های مشترک بین سرور و کلاینت.
 
-const PROTOCOL_VERSION := 8
+const PROTOCOL_VERSION := 9
 # ترافیک شبکه با DTLS رمز می‌شود (نسخهٔ ۴ به بعد). فقط برای عیب‌یابی خاموش شود.
 const USE_DTLS := true
 const DEFAULT_PORT := 7777
@@ -122,8 +122,9 @@ const STEP_UP := 1.0  # بیشترین بالا رفتن در یک قدم
 # مواد: قیمت پایهٔ فروش. خرید از فروشگاه عمومی ۱٫۸ برابر است.
 const ITEMS := {
 	"wood": 4.0, "stone": 5.0, "clay": 4.0, "dirt": 1.0, "sand": 2.0, "brick": 10.0, "glass": 12.0,
+	"iron": 14.0, "gold": 40.0,
 }
-const ITEM_ORDER := ["wood", "stone", "clay", "dirt", "sand", "brick", "glass"]
+const ITEM_ORDER := ["wood", "stone", "clay", "dirt", "sand", "brick", "glass", "iron", "gold"]
 const BUY_MARKUP := 1.8
 const SELL_DROP := 0.04   # نسبت کاهش قیمت با هر فروش
 const SELL_FLOOR := 0.5   # حداقل قیمت نسبت به پایه
@@ -159,7 +160,12 @@ const RESOURCES := {
 	"tree": {"tool": "axe", "item": "wood", "min": 2, "max": 4, "respawn": 90.0},
 	"rock": {"tool": "pickaxe", "item": "stone", "min": 2, "max": 3, "respawn": 120.0},
 	"clay": {"tool": "shovel", "item": "clay", "min": 2, "max": 3, "respawn": 100.0},
+	# اکتشاف: سنگ معدن فقط در کوهستان؛ صندوق گنج پنهان با دست باز می‌شود و پول می‌دهد.
+	"iron_ore": {"tool": "pickaxe", "item": "iron", "min": 1, "max": 3, "respawn": 180.0},
+	"gold_ore": {"tool": "pickaxe", "item": "gold", "min": 1, "max": 2, "respawn": 300.0},
+	"chest": {"tool": "hand", "item": "", "min": 1, "max": 1, "respawn": 900.0, "reward_min": 60, "reward_max": 240},
 }
+const GOLD_MIN_HEIGHT := 20.0
 # معامله مستقیم بین بازیکنان
 const OFFER_TTL := 60.0
 const OFFER_MAX_PENDING := 5
