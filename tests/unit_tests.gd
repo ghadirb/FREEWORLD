@@ -924,6 +924,22 @@ func test_exploration() -> void:
 	var money1: int = int(acc["money"])
 	check(cs.trade("digger", "iron", 1, false)["ok"] and int(acc["money"]) > money1, "iron can be sold at the market")
 
+	# --- ابزار آهنی ---
+	var go: Array = firsts["gold_ore"]
+	var gp := Vector2(float(go[2]["x"]), float(go[2]["z"]))
+	check(cs.gather("digger", go[0], go[1], "pickaxe", gp)["error"] == "needs_better_tool", "gold ore needs an iron pickaxe")
+	check(cs.craft("digger", "upgrade_pickaxe", 1)["error"] == "no_items", "upgrade needs iron")
+	acc["inv"]["iron"] = 10
+	acc["inv"]["wood"] = 10
+	check(cs.craft("digger", "upgrade_pickaxe", 1)["ok"] and cs.tool_tier(acc, "pickaxe") == 2, "iron pickaxe is crafted")
+	check(int(acc["inv"]["iron"]) == 6 and int(acc["inv"]["wood"]) == 8, "upgrade consumes materials")
+	check(cs.craft("digger", "upgrade_pickaxe", 1)["error"] == "already_owned", "a tool is upgraded only once")
+	var g2: Dictionary = cs.gather("digger", go[0], go[1], "pickaxe", gp)
+	check(g2["ok"] and g2["item"] == "gold" and int(g2["count"]) == int(go[2]["n"]) + 1, "iron pickaxe mines gold with a bonus")
+	check(cs.tool_tier(acc, "axe") == 1 and cs.inv_public("digger")["tools"]["pickaxe"] == 2, "tiers are reported per tool")
+	var cs3 = CityState.from_dict(cs.to_dict())
+	check(cs3 != null and cs3.tool_tier(cs3.accounts["digger"], "pickaxe") == 2, "tool upgrades survive a save/load")
+
 
 func test_stairs_and_floors() -> void:
 	print("== stairs and second floors ==")

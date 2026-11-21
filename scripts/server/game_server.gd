@@ -797,7 +797,10 @@ func on_craft(pid: int, recipe: String, times: int) -> void:
 		_notice(pid, str(res["error"]))
 		return
 	_push_inv(pid, p["name"])
-	_notice(pid, "crafted", {"item": res["item"], "count": res["count"]})
+	if res.has("upgrade"):
+		_notice(pid, "upgraded", {"tool": res["upgrade"]})
+	else:
+		_notice(pid, "crafted", {"item": res["item"], "count": res["count"]})
 	_dirty = true
 
 

@@ -660,7 +660,11 @@ func inv_public(player_name: String) -> Dictionary:
 	if accounts.has(player_name):
 		for item in FWConst.ITEM_ORDER:
 			inv[item] = int(accounts[player_name]["inv"].get(item, 0))
-	return {"inv": inv, "sell": sell}
+	var tools: Dictionary = {}
+	if accounts.has(player_name):
+		for tl in FWConst.TOOL_UPGRADES:
+			tools[tl] = tool_tier(accounts[player_name], tl)
+	return {"inv": inv, "sell": sell, "tools": tools}
 
 
 ## خطای کد برای قرار دادن یک بلوک (رشتهٔ خالی = مجاز). موجودی و سقف‌ها جداگانه بررسی می‌شوند.
@@ -765,6 +769,11 @@ func paint_block(player_name: String, x: int, y: int, z: int, color: int) -> Dic
 
 
 ## برداشت از درخت/سنگ/خاک رس. pos موقعیت بازیکن است (برای فاصله).
+func tool_tier(acc: Dictionary, tool: String) -> int:
+	var t: Variant = acc.get("tools", {})
+	return 2 if (t is Dictionary and bool(t.get(tool, false))) else 1
+
+
 func gather(player_name: String, rx: int, rz: int, tool: String, pos: Vector2) -> Dictionary:
 	if not accounts.has(player_name):
 		return {"ok": false, "error": "no_account"}
@@ -780,6 +789,8 @@ func gather(player_name: String, rx: int, rz: int, tool: String, pos: Vector2) -
 	if pos.distance_to(Vector2(float(node["x"]), float(node["z"]))) > FWConst.GATHER_RANGE:
 		return {"ok": false, "error": "too_far"}
 	var acc: Dictionary = accounts[player_name]
+	if tool_tier(acc, tool) < int(def.get("min_tier", 1)):
+		return {"ok": false, "error": "needs_better_tool"}
 	if def.has("reward_min"):
 		# صندوق گنج: مقدار پاداش قطعی از موقعیت گره (همه جا یکسان)، نه تصادفی سمت کلاینت.
 		var span: int = int(def["reward_max"]) - int(def["reward_min"]) + 1
@@ -791,9 +802,10 @@ func gather(player_name: String, rx: int, rz: int, tool: String, pos: Vector2) -
 	var item: String = def["item"]
 	if int(acc["inv"].get(item, 0)) >= FWConst.ITEM_CAP:
 		return {"ok": false, "error": "inv_full"}
-	_inv_add(acc, item, int(node["n"]))
+	var got: int = int(node["n"]) + (1 if tool_tier(acc, tool) >= 2 else 0)
+	_inv_add(acc, item, got)
 	depleted[key] = float(def["respawn"])
-	return {"ok": true, "item": item, "count": int(node["n"]), "rx": rx, "rz": rz}
+	return {"ok": true, "item": item, "count": got, "rx": rx, "rz": rz}
 
 
 ## کندن خاک/شن با بیل: ۱ واحد خاک یا (کنار ساحل) شن.
@@ -811,8 +823,9 @@ func dig(player_name: String, x: float, z: float, tool: String, pos: Vector2) ->
 	var acc: Dictionary = accounts[player_name]
 	if int(acc["inv"].get(item, 0)) >= FWConst.ITEM_CAP:
 		return {"ok": false, "error": "inv_full"}
-	_inv_add(acc, item, 1)
-	return {"ok": true, "item": item, "count": 1}
+	var dug: int = 2 if tool_tier(acc, "shovel") >= 2 else 1
+	_inv_add(acc, item, dug)
+	return {"ok": true, "item": item, "count": dug}
 
 
 func craft(player_name: String, recipe: String, times: int) -> Dictionary:
@@ -822,6 +835,21 @@ func craft(player_name: String, recipe: String, times: int) -> Dictionary:
 		return {"ok": false, "error": "bad_request"}
 	var r: Dictionary = FWConst.RECIPES[recipe]
 	var acc: Dictionary = accounts[player_name]
+	if r.has("upgrade"):
+		var tl: String = str(r["upgrade"])
+		if times != 1:
+			return {"ok": false, "error": "bad_request"}
+		if tool_tier(acc, tl) >= 2:
+			return {"ok": false, "error": "already_owned"}
+		if not has_items(acc["inv"], r["in"]):
+			return {"ok": false, "error": "no_items"}
+		for item in r["in"]:
+			acc["inv"][item] = int(acc["inv"][item]) - int(r["in"][item])
+		if not acc.has("tools") or not (acc["tools"] is Dictionary):
+			acc["tools"] = {}
+		acc["tools"][tl] = true
+		_log(player_name, "tool_upgrade", {"tool": tl})
+		return {"ok": true, "upgrade": tl}
 	if not has_items(acc["inv"], r["in"], times):
 		return {"ok": false, "error": "no_items"}
 	for item in r["in"]:
@@ -1062,6 +1090,15 @@ func to_dict() -> Dictionary:
 
 
 ## حساب‌های قدیمی بدون کیف، مواد اولیه می‌گیرند تا بتوانند فوراً بسازند.
+static func _load_tools(v) -> Dictionary:
+	var out: Dictionary = {}
+	if v is Dictionary:
+		for tl in FWConst.TOOL_UPGRADES:
+			if bool(v.get(tl, false)):
+				out[tl] = true
+	return out
+
+
 static func _load_inv(v) -> Dictionary:
 	var out: Dictionary = {}
 	if v is Dictionary:
@@ -1125,6 +1162,7 @@ static func from_dict(d: Dictionary):
 			"work_acc": float(a.get("work_acc", 0.0)),
 			"energy": clampf(float(a.get("energy", FWConst.ENERGY_MAX)), 0.0, FWConst.ENERGY_MAX),
 			"inv": _load_inv(a.get("inv", null)),
+			"tools": _load_tools(a.get("tools", null)),
 		}
 	for b in d["buildings"]:
 		if not (b.has("id") and b.has("type") and b.has("owner") and b.has("cx") and b.has("cz")):

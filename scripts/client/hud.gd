@@ -451,12 +451,13 @@ func _build_inventory_panel() -> void:
 			r.add_child(c)
 		_inv_rows[item] = {"count": cnt, "price": pr}
 	v.add_child(_label(Loc.t("craft_title"), 22, Color("9ad0ff")))
-	var crow := HBoxContainer.new()
-	crow.add_theme_constant_override("separation", 8)
+	var crow := HFlowContainer.new()
+	crow.add_theme_constant_override("h_separation", 8)
+	crow.add_theme_constant_override("v_separation", 8)
 	v.add_child(crow)
 	for recipe in FWConst.RECIPES:
 		var cb := UiTheme.button(Loc.t("craft_" + recipe), Vector2(0, 56))
-		cb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		cb.custom_minimum_size = Vector2(250, 56)
 		cb.add_theme_font_size_override("font_size", 20)
 		cb.pressed.connect(func(): client.craft(recipe, 1))
 		crow.add_child(cb)
@@ -796,6 +797,9 @@ func _on_notice(code: String, args: Dictionary) -> void:
 		"gathered":
 			Sfx.play(self, "coin")
 			toast(Loc.fmt("msg_gathered", [Loc.digits(str(args["count"])), Loc.t("item_" + str(args["item"]))]), Color("c8f08a"))
+		"upgraded":
+			Sfx.play(self, "coin")
+			toast(Loc.fmt("msg_upgraded", [Loc.t("tool_" + str(args["tool"]))]), Color("ffd84a"))
 		"treasure":
 			Sfx.play(self, "coin")
 			toast(Loc.fmt("msg_treasure", [Loc.digits(str(args["reward"]))]), Color("ffd84a"))

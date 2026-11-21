@@ -103,7 +103,7 @@ func resource_in_cell(rx: int, rz: int) -> Dictionary:
 				kind = "rock"
 			elif roll < 0.255:
 				kind = "iron_ore"
-			elif roll < 0.27 and h >= FWConst.GOLD_MIN_HEIGHT:
+			elif roll < 0.285 and h >= FWConst.GOLD_MIN_HEIGHT:
 				kind = "gold_ore"
 		"beach":
 			if roll < 0.12:

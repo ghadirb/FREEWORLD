@@ -152,6 +152,9 @@ const BLOCK_TYPES := {
 const RECIPES := {
 	"brick": {"in": {"clay": 2}, "out": "brick", "n": 2},
 	"glass": {"in": {"sand": 2}, "out": "glass", "n": 1},
+	"upgrade_axe": {"in": {"iron": 3, "wood": 4}, "upgrade": "axe"},
+	"upgrade_pickaxe": {"in": {"iron": 4, "wood": 2}, "upgrade": "pickaxe"},
+	"upgrade_shovel": {"in": {"iron": 2, "wood": 2}, "upgrade": "shovel"},
 }
 
 # گره‌های منبع در جهان و ابزار مناسب هرکدام.
@@ -162,10 +165,12 @@ const RESOURCES := {
 	"clay": {"tool": "shovel", "item": "clay", "min": 2, "max": 3, "respawn": 100.0},
 	# اکتشاف: سنگ معدن فقط در کوهستان؛ صندوق گنج پنهان با دست باز می‌شود و پول می‌دهد.
 	"iron_ore": {"tool": "pickaxe", "item": "iron", "min": 1, "max": 3, "respawn": 180.0},
-	"gold_ore": {"tool": "pickaxe", "item": "gold", "min": 1, "max": 2, "respawn": 300.0},
+	"gold_ore": {"tool": "pickaxe", "item": "gold", "min": 1, "max": 2, "respawn": 300.0, "min_tier": 2},
 	"chest": {"tool": "hand", "item": "", "min": 1, "max": 1, "respawn": 900.0, "reward_min": 60, "reward_max": 240},
 }
 const GOLD_MIN_HEIGHT := 20.0
+# ابزار آهنی (سطح ۲): یک واحد بیشتر از هر گره/کندن می‌دهد و برای سنگ طلا لازم است. دائمی است.
+const TOOL_UPGRADES := ["axe", "pickaxe", "shovel"]
 # معامله مستقیم بین بازیکنان
 const OFFER_TTL := 60.0
 const OFFER_MAX_PENDING := 5
