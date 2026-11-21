@@ -1077,14 +1077,15 @@ static func terrain_vertex(x: float, z: float) -> Vector2i:
 	return Vector2i(int(round(x / FWConst.TERRAIN_EDIT_STEP)), int(round(z / FWConst.TERRAIN_EDIT_STEP)))
 
 
-## خطای تغییر زمین در همسایگی ۳×۳ رأس؛ رشتهٔ خالی = مجاز. زیر ساختمان و بلوک و میدان (برای غیرمدیر) قفل است.
-func terrain_check(role: String, v: Vector2i) -> String:
+## خطای تغییر زمین در همسایگی r رأس (r=۱ بیل معمولی ۳×۳، r=۲ بیل آهنی ۵×۵)؛ رشتهٔ خالی = مجاز.
+## زیر ساختمان و بلوک و میدان (برای غیرمدیر) قفل است.
+func terrain_check(role: String, v: Vector2i, r: int = 1) -> String:
 	var lim := int(FWConst.WORLD_LIMIT / FWConst.TERRAIN_EDIT_STEP)
 	var hi := int(FWConst.CITY_SIZE / FWConst.TERRAIN_EDIT_STEP) + lim
-	if v.x - 1 < -lim or v.y - 1 < -lim or v.x + 1 > hi or v.y + 1 > hi:
+	if v.x - r < -lim or v.y - r < -lim or v.x + r > hi or v.y + r > hi:
 		return "out_of_bounds"
-	for dx in range(-1, 2):
-		for dz in range(-1, 2):
+	for dx in range(-r, r + 1):
+		for dz in range(-r, r + 1):
 			var vx := v.x + dx
 			var vz := v.y + dz
 			for cx in [vx - 1, vx]:
@@ -1099,17 +1100,18 @@ func terrain_check(role: String, v: Vector2i) -> String:
 
 ## تغییر را روی لایهٔ زمین اعمال می‌کند (سرور و کلاینت). sign = -1 کندن، +1 پر کردن.
 ## فهرست رأس‌های واقعاً تغییرکرده را [[ix, iz, مقدار جدید], ...] برمی‌گرداند.
-func apply_terraform(v: Vector2i, sign: int) -> Array:
+func apply_terraform(v: Vector2i, sign: int, r: int = 1) -> Array:
 	var changed: Array = []
-	var st: Array = FWConst.TERRAIN_DIG_STRENGTH
-	for dx in range(-1, 2):
-		for dz in range(-1, 2):
+	var st: Array = FWConst.TERRAIN_DIG_STRENGTH_IRON if r >= 2 else FWConst.TERRAIN_DIG_STRENGTH
+	for dx in range(-r, r + 1):
+		for dz in range(-r, r + 1):
 			var ring: int = absi(dx) + absi(dz)
-			var amount: int = int(st[ring])
+			if ring >= st.size():
+				continue
 			var ix := v.x + dx
 			var iz := v.y + dz
 			var old: int = world.edit_units(ix, iz)
-			world.set_edit(ix, iz, old + sign * amount)
+			world.set_edit(ix, iz, old + sign * int(st[ring]))
 			var now: int = world.edit_units(ix, iz)
 			if now != old:
 				changed.append([ix, iz, now])
@@ -1134,7 +1136,9 @@ func _terraform(player_name: String, x: float, z: float, tool: String, pos: Vect
 	if pos.distance_to(Vector2(x, z)) > FWConst.GATHER_RANGE:
 		return {"ok": false, "error": "too_far"}
 	var v := terrain_vertex(x, z)
-	var err := terrain_check(role_of(player_name), v)
+	var acc0: Dictionary = accounts[player_name]
+	var rad := 2 if tool_tier(acc0, "shovel") >= 2 else 1
+	var err := terrain_check(role_of(player_name), v, rad)
 	if err != "":
 		return {"ok": false, "error": err}
 	var h: float = world.height_at(x, z)
@@ -1148,13 +1152,13 @@ func _terraform(player_name: String, x: float, z: float, tool: String, pos: Vect
 		if inv_count(acc["inv"], item) < 1:
 			return {"ok": false, "error": "no_material"}
 	var fresh := 0
-	for dx in range(-1, 2):
-		for dz in range(-1, 2):
+	for dx in range(-rad, rad + 1):
+		for dz in range(-rad, rad + 1):
 			if world.edit_units(v.x + dx, v.y + dz) == 0:
 				fresh += 1
 	if world.edits.size() + fresh > FWConst.TERRAIN_MAX_EDITS:
 		return {"ok": false, "error": "terrain_full"}
-	var changed := apply_terraform(v, sign)
+	var changed := apply_terraform(v, sign, rad)
 	if changed.is_empty():
 		return {"ok": false, "error": "terrain_limit"}
 	var n: int = (2 if tool_tier(acc, "shovel") >= 2 else 1) if sign < 0 else 1

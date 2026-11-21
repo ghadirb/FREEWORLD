@@ -1541,6 +1541,33 @@ func test_terrain() -> void:
 	var sp2 := _terrain_spot(cs2, 1.0, 4.0)
 	check(cs2.dig("digger", sp2.x, sp2.y, "shovel", sp2)["error"] == "terrain_full", "the number of terrain edits is capped")
 
+	# بیل آهنی: ۵×۵ و قفل‌های گسترده‌تر
+	var cs3 = CityState.new(4343)
+	_login(cs3, "smith")
+	cs3.accounts["smith"]["tools"] = {"shovel": true}
+	var sp3 := _terrain_spot(cs3, 1.0, 4.0)
+	var ri: Dictionary = cs3.dig("smith", sp3.x, sp3.y, "shovel", sp3)
+	check(ri["ok"] and ri["changes"].size() == 25 and ri["count"] == 2, "an iron shovel digs a 5x5 patch and yields double")
+	var v3: Vector2i = CityState.terrain_vertex(sp3.x + 9.0, sp3.y)
+	cs3.block_cells[Placement.cell_key(v3.x - 3, v3.y)] = 1
+	check(cs3.terrain_check("player", v3, 1) == "" and cs3.terrain_check("player", v3, 2) == "terrain_locked", "the iron shovel needs a wider clear area")
+
+	# رودخانه
+	var rv := WorldGen.new(4343)
+	var cc: float = FWConst.CITY_SIZE * 0.5
+	var near_ok := true
+	for k in range(0, 360, 10):
+		var q := Vector2(cc, cc) + Vector2(FWConst.RIVER_MIN_DIST - 1.0, 0.0).rotated(deg_to_rad(float(k)))
+		near_ok = near_ok and rv.river_weight(q.x, q.y) == 0.0
+	check(near_ok, "no river inside the city's surroundings")
+	var wet := 0
+	for xi in range(-380, 520, 8):
+		for zi in range(-380, 520, 8):
+			if rv.river_weight(float(xi), float(zi)) > 0.9 and rv.height_at(float(xi), float(zi)) < 0.0 and rv.biome_at(float(xi), float(zi)) == "water":
+				wet += 1
+	check(wet > 20, "rivers carve water channels in the world (%d wet samples)" % wet)
+	check(is_equal_approx(rv.height_at(-200.0, -200.0), WorldGen.new(4343).height_at(-200.0, -200.0)), "river terrain is deterministic")
+
 	# ذخیره، بارگذاری و همگام‌سازی
 	var flat: PackedInt32Array = cs.terrain_flat()
 	check(flat.size() == cs.world.edits.size() * 3, "terrain is exported as triples")

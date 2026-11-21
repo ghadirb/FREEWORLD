@@ -223,7 +223,10 @@ const TERRAIN_UNIT := 0.125
 const TERRAIN_MIN_UNITS := -40      # حداکثر ۵ متر عمق نسبت به زمین پایه
 const TERRAIN_MAX_UNITS := 24       # حداکثر ۳ متر بلندی
 const TERRAIN_MAX_EDITS := 6000     # سقف رأس‌های تغییرکرده در هر شهر
-const TERRAIN_DIG_STRENGTH := [4, 2, 1]  # مرکز، چهار همسایه، چهار گوشه
+const TERRAIN_DIG_STRENGTH := [4, 2, 1]  # بیل معمولی ۳×۳: بر اساس فاصلهٔ منهتن از مرکز
+const TERRAIN_DIG_STRENGTH_IRON := [4, 3, 2, 1, 1]  # بیل آهنی ۵×۵
+const RIVER_WIDTH := 0.05           # نیم‌پهنای کانال در نویز (بزرگ‌تر = رودخانهٔ پهن‌تر)
+const RIVER_MIN_DIST := 125.0       # رودخانه فقط بیرون از شهر
 
 
 static func role_rank(role: String) -> int:

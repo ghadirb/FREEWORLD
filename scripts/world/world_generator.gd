@@ -9,6 +9,7 @@ var _base := FastNoiseLite.new()
 var _detail := FastNoiseLite.new()
 var _moist := FastNoiseLite.new()
 var _lake := FastNoiseLite.new()
+var _river := FastNoiseLite.new()
 
 
 func _init(s: int = 12345) -> void:
@@ -26,6 +27,9 @@ func _init(s: int = 12345) -> void:
 	_lake.seed = s + 303
 	_lake.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
 	_lake.frequency = 0.008
+	_river.seed = s + 404
+	_river.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	_river.frequency = 0.0045
 
 
 ## لایهٔ تغییرات ارتفاع (پروتکل ۱۶): کلید = رأس شبکهٔ ۲ متری (ix, iz)، مقدار = جابه‌جایی به واحد ۱/۸ متر.
@@ -80,7 +84,22 @@ func base_height_at(x: float, z: float) -> float:
 	var h := 2.0 + d * 0.8
 	h += _base.get_noise_2d(x, z) * 28.0 * outside + d * 3.0 * outside
 	var lake := maxf(_lake.get_noise_2d(x, z) - 0.35, 0.0) * 40.0 * smoothstep(90.0, 140.0, dist)
-	return h - lake
+	h -= lake
+	var rw := river_weight(x, z)
+	if rw > 0.0:
+		# کانال رودخانه: کف زیر سطح دریا؛ در ارتفاع‌های بلند کم‌رنگ می‌شود تا دره‌های بی‌رحم نسازد.
+		h = lerpf(h, -1.4, rw * (1.0 - smoothstep(7.0, 15.0, h)))
+	return h
+
+
+## وزن رودخانه در [0,1]: ۱ در محور کانال. فقط بیرون از شهر؛ قطعی از Seed.
+func river_weight(x: float, z: float) -> float:
+	var half := FWConst.CITY_SIZE * 0.5
+	var dist := Vector2(x, z).distance_to(Vector2(half, half))
+	if dist < FWConst.RIVER_MIN_DIST:
+		return 0.0
+	var edge := 1.0 - smoothstep(0.0, FWConst.RIVER_WIDTH, absf(_river.get_noise_2d(x, z)))
+	return edge * smoothstep(FWConst.RIVER_MIN_DIST, FWConst.RIVER_MIN_DIST + 25.0, dist)
 
 
 func moisture_at(x: float, z: float) -> float:
