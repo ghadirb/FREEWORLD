@@ -115,6 +115,9 @@ const MAX_BLOCK_HEIGHT := 24  # بالاتر از سطح زمین همان ست�
 const BLOCK_SEND_BATCH := 400
 const ITEM_CAP := 999
 const COLOR_COUNT := 12  # ۰ = رنگ طبیعی
+# فیلد color هر بلوک یک «متا» است: رنگ (۰..۱۱) + ۱۶×جهت (۰..۳؛ فقط برای پله: جهت بالا رفتن).
+const META_MAX := 64
+const STEP_UP := 1.0  # بیشترین بالا رفتن در یک قدم
 
 # مواد: قیمت پایهٔ فروش. خرید از فروشگاه عمومی ۱٫۸ برابر است.
 const ITEMS := {
@@ -128,7 +131,7 @@ const SELL_RECOVER_PER_SEC := 0.01
 const START_ITEMS := {"wood": 24, "stone": 12, "dirt": 12, "glass": 2, "brick": 4}
 
 # نوع بلوک‌ها. cost = مواد لازم برای هر بلوک. passable = بازیکن می‌تواند از آن عبور کند.
-const BLOCK_ORDER := ["dirt", "wood", "stone", "brick", "glass", "window", "door", "roof", "fence", "road", "lamp"]
+const BLOCK_ORDER := ["dirt", "wood", "stone", "brick", "glass", "window", "door", "roof", "fence", "road", "stairs", "lamp"]
 const BLOCK_TYPES := {
 	"dirt": {"cost": {"dirt": 1}},
 	"wood": {"cost": {"wood": 1}},
@@ -140,6 +143,7 @@ const BLOCK_TYPES := {
 	"roof": {"cost": {"wood": 1, "clay": 1}},
 	"fence": {"cost": {"wood": 1}},
 	"road": {"cost": {"stone": 1}, "passable": true},
+	"stairs": {"cost": {"wood": 2}},
 	"lamp": {"cost": {"glass": 1, "wood": 1}},
 }
 
@@ -177,3 +181,15 @@ static func building_size(type: String) -> Array:
 
 static func block_passable(type: String) -> bool:
 	return bool(BLOCK_TYPES.get(type, {}).get("passable", false))
+
+
+static func meta_color(m: int) -> int:
+	return m % 16
+
+
+static func meta_facing(m: int) -> int:
+	return (m / 16) % 4
+
+
+static func meta_valid(m: int) -> bool:
+	return m >= 0 and m < META_MAX and m % 16 < COLOR_COUNT

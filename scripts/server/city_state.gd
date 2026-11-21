@@ -126,8 +126,8 @@ func count_owned(player_name: String) -> int:
 
 
 ## قابل‌عبور بودن نقطه برای بازیکن و NPC: جاده و چاه آزادند، بقیه ساختمان‌ها مانع‌اند.
-## بلوک‌ها هم مانع‌اند (جز در و جاده)؛ روی یک بلوک تکی می‌شود ایستاد (پله/کف/پل).
-func is_walkable(x: float, z: float) -> bool:
+## بلوک‌ها هم مانع‌اند (جز در و جاده). ref_y ارتفاع فعلی بازیکن است تا طبقه‌ها و پله‌ها درست تشخیص داده شوند.
+func is_walkable(x: float, z: float, ref_y: float = NAN) -> bool:
 	var cx := int(floor(x / FWConst.CELL_SIZE))
 	var cz := int(floor(z / FWConst.CELL_SIZE))
 	var key := Placement.cell_key(cx, cz)
@@ -135,43 +135,77 @@ func is_walkable(x: float, z: float) -> bool:
 		var t: String = buildings[occupied[key]]["type"]
 		if t != "road" and t != "well":
 			return false
+	return not is_nan(surface_at(x, z, ref_y))
+
+
+func _solid_at(bx: int, lv: int, bz: int) -> bool:
+	var b = blocks.get(Vector3i(bx, lv, bz))
+	return b != null and not FWConst.block_passable(str(b[0]))
+
+
+## ارتفاع پله در نقطهٔ (fx, fz) داخل بلوک: از لبهٔ پایین (۰) تا لبهٔ بالا (۱) در جهت facing.
+static func stair_t(fx: float, fz: float, facing: int) -> float:
+	match facing:
+		0:
+			return fz
+		1:
+			return fx
+		2:
+			return 1.0 - fz
+	return 1.0 - fx
+
+
+## سطحی که در (x, z) می‌شود روی آن ایستاد و از ارتفاع ref_y قابل‌رسیدن است (حداکثر یک بلوک بالاتر).
+## زمین، بالای بلوک‌های پر، جاده و پله کاندید هستند و باید جای سر (دو بلوک) آزاد باشد.
+## اگر ref_y داده نشود، ارتفاع زمین مرجع است. NAN یعنی نمی‌شود رفت.
+func surface_at(x: float, z: float, ref_y: float = NAN) -> float:
 	var h: float = world.height_at(x, z)
 	if blocks.is_empty():
-		return h >= -0.3
-	return _blocks_walkable(x, z, h)
-
-
-func _blocks_walkable(x: float, z: float, h: float) -> bool:
+		return h if h >= -0.3 else NAN
+	var limit: float = (h if is_nan(ref_y) else ref_y) + FWConst.STEP_UP
 	var bx := int(floor(x))
 	var bz := int(floor(z))
 	var lv := maxi(0, int(floor(h)))
-	var b0 = blocks.get(Vector3i(bx, lv, bz))
-	if h < -0.3 and b0 == null:
-		return false
-	var base := lv
-	if b0 != null and not FWConst.block_passable(str(b0[0])):
-		base = lv + 1
-	for k in range(2):
-		var bb = blocks.get(Vector3i(bx, base + k, bz))
-		if bb != null and not FWConst.block_passable(str(bb[0])):
-			return false
-	return true
+	var best := NAN
+	if h >= -0.3 and h <= limit and not _solid_at(bx, lv, bz) and not _solid_at(bx, lv + 1, bz):
+		best = h
+	for k in range(lv, lv + FWConst.MAX_BLOCK_HEIGHT + 1):
+		if float(k) > limit:
+			break
+		var b = blocks.get(Vector3i(bx, k, bz))
+		if b == null:
+			continue
+		var t := str(b[0])
+		var sv: float
+		var top := k + 2
+		match t:
+			"door":
+				continue
+			"road":
+				sv = maxf(float(k) + 0.15, h) if k == lv else float(k) + 0.15
+				top = k + 1
+			"stairs":
+				sv = float(k) + stair_t(x - float(bx), z - float(bz), FWConst.meta_facing(int(b[1])))
+				if k == lv:
+					sv = maxf(sv, h)
+			_:
+				sv = float(k + 1)
+		if sv > limit:
+			continue
+		var clear := true
+		for lvl in range(k + 1, top + 1):
+			if _solid_at(bx, lvl, bz):
+				clear = false
+				break
+		if clear and (is_nan(best) or sv > best):
+			best = sv
+	return best
 
 
-## ارتفاع سطحی که بازیکن روی آن می‌ایستد (زمین یا بالای یک بلوک یا جاده).
-func ground_height(x: float, z: float) -> float:
-	var h: float = world.height_at(x, z)
-	if blocks.is_empty():
-		return h
-	var lv := maxi(0, int(floor(h)))
-	var b = blocks.get(Vector3i(int(floor(x)), lv, int(floor(z))))
-	if b == null:
-		return h
-	if str(b[0]) == "road":
-		return maxf(h, float(lv) + 0.15)
-	if FWConst.block_passable(str(b[0])):
-		return h
-	return float(lv + 1)
+## ارتفاع سطحی که بازیکن روی آن می‌ایستد (زمین، بالای بلوک، جاده، پله).
+func ground_height(x: float, z: float, ref_y: float = NAN) -> float:
+	var s := surface_at(x, z, ref_y)
+	return world.height_at(x, z) if is_nan(s) else s
 
 
 ## نقطهٔ جلوی در ساختمان (برای فاصلهٔ تعامل و مقصد NPC).
@@ -537,7 +571,7 @@ func apply_block(x: int, y: int, z: int, type_id: int, color: int) -> void:
 		return
 	if blocks.has(v):
 		_del_block(v)
-	_add_block(v, str(FWConst.BLOCK_ORDER[type_id]), clampi(color, 0, FWConst.COLOR_COUNT - 1), "")
+	_add_block(v, str(FWConst.BLOCK_ORDER[type_id]), color if FWConst.meta_valid(color) else 0, "")
 
 
 func block_batches() -> Array:
@@ -641,7 +675,7 @@ func place_block(player_name: String, req_id: int, x: int, y: int, z: int, type:
 	var acc: Dictionary = accounts[player_name]
 	if req_id != 0 and _remember_request(acc, req_id):
 		return {"ok": false, "error": "duplicate", "silent": true}
-	if color < 0 or color >= FWConst.COLOR_COUNT:
+	if not FWConst.meta_valid(color):
 		return {"ok": false, "error": "bad_request"}
 	var err := check_block(acc["role"], x, y, z, type)
 	if err != "":
@@ -690,8 +724,8 @@ func paint_block(player_name: String, x: int, y: int, z: int, color: int) -> Dic
 	var b: Array = blocks[v]
 	if str(b[2]) != player_name and not FWConst.is_admin(role_of(player_name)):
 		return {"ok": false, "error": "forbidden"}
-	b[1] = color
-	return {"ok": true, "type": str(b[0]), "color": color}
+	b[1] = (int(b[1]) / 16) * 16 + color  # جهت پله حفظ می‌شود
+	return {"ok": true, "type": str(b[0]), "color": int(b[1])}
 
 
 ## برداشت از درخت/سنگ/خاک رس. pos موقعیت بازیکن است (برای فاصله).
@@ -1029,7 +1063,7 @@ static func from_dict(d: Dictionary):
 	if bl is Array:
 		for e in bl:
 			if e is Array and e.size() >= 6 and FWConst.BLOCK_TYPES.has(str(e[3])):
-				cs._add_block(Vector3i(int(e[0]), int(e[1]), int(e[2])), str(e[3]), clampi(int(e[4]), 0, FWConst.COLOR_COUNT - 1), str(e[5]))
+				cs._add_block(Vector3i(int(e[0]), int(e[1]), int(e[2])), str(e[3]), int(e[4]) if FWConst.meta_valid(int(e[4])) else 0, str(e[5]))
 	var dp = d.get("depleted", {})
 	if dp is Dictionary:
 		for k in dp:

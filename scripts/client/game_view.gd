@@ -432,6 +432,14 @@ func set_paint_color(c: int) -> void:
 	tool_changed.emit()
 
 
+## جهت نگاه دوربین (۰=+z، ۱=+x، ۲=−z، ۳=−x)؛ پله به‌سمت جلوی دوربین بالا می‌رود.
+func _facing() -> int:
+	var f: Vector3 = -cam.camera.global_transform.basis.z
+	if absf(f.x) > absf(f.z):
+		return 1 if f.x > 0.0 else 3
+	return 0 if f.z > 0.0 else 2
+
+
 func _in_reach(cell: Vector3i) -> bool:
 	var c := Vector3(cell.x + 0.5, cell.y + 0.5, cell.z + 0.5)
 	return Vector3(my_pos.x, my_pos.y + 1.0, my_pos.z).distance_to(c) <= FWConst.BLOCK_REACH
@@ -519,7 +527,7 @@ func _tool_tap(pos: Vector2) -> void:
 				_feedback(err)
 				return
 			Sfx.play(self, "place")
-			client.place_block(cell, block_type, paint_color)
+			client.place_block(cell, block_type, paint_color + (16 * _facing() if block_type == "stairs" else 0))
 		"brush":
 			var hit: Dictionary = block_view.raycast(o, d)
 			if hit.get("kind", "") != "block":
@@ -809,16 +817,16 @@ func _move_player(dt: float, input: Vector2) -> void:
 	var lo := -FWConst.WORLD_LIMIT
 	var hi := FWConst.CITY_SIZE + FWConst.WORLD_LIMIT
 	var mirror = client.mirror
-	if mirror.is_walkable(nx, nz) and nx > lo and nx < hi and nz > lo and nz < hi:
+	if mirror.is_walkable(nx, nz, my_pos.y) and nx > lo and nx < hi and nz > lo and nz < hi:
 		my_pos.x = nx
 		my_pos.z = nz
-	elif mirror.is_walkable(nx, my_pos.z):
+	elif mirror.is_walkable(nx, my_pos.z, my_pos.y):
 		my_pos.x = nx
-	elif mirror.is_walkable(my_pos.x, nz):
+	elif mirror.is_walkable(my_pos.x, nz, my_pos.y):
 		my_pos.z = nz
 	else:
 		return
-	my_pos.y = client.mirror.ground_height(my_pos.x, my_pos.z)
+	my_pos.y = client.mirror.ground_height(my_pos.x, my_pos.z, my_pos.y)
 	my_yaw = atan2(dir.x, dir.z)
 	my_avatar.position = my_pos
 	my_avatar.target = my_pos

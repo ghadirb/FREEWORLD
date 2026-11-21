@@ -12,7 +12,7 @@ const REINDEX_INTERVAL := 0.3
 const BASE := {
 	"dirt": Color("8b6a47"), "wood": Color("b98a55"), "stone": Color("8f9298"), "brick": Color("b5543f"),
 	"glass": Color(0.66, 0.85, 0.94, 0.42), "window": Color(0.45, 0.72, 0.92, 0.5), "door": Color("7a4f2a"),
-	"roof": Color("c4553c"), "fence": Color("a87a48"), "road": Color("6e6e74"), "lamp": Color("ffe9a6"),
+	"roof": Color("c4553c"), "fence": Color("a87a48"), "road": Color("6e6e74"), "stairs": Color("c19a62"), "lamp": Color("ffe9a6"),
 }
 ## رنگ‌های ابزار رنگ‌آمیزی؛ اندیس ۰ = رنگ طبیعی بلوک.
 const TINTS := [
@@ -129,7 +129,7 @@ func _rebuild(key: Vector2i) -> void:
 	for v in entry["set"]:
 		var b: Array = mirror.blocks[v]
 		var t := str(b[0])
-		var col := color_of(t, int(b[1]))
+		var col := color_of(t, FWConst.meta_color(int(b[1])))
 		var c := Vector3(v.x + 0.5, v.y + 0.5, v.z + 0.5)
 		match t:
 			"fence":
@@ -138,6 +138,8 @@ func _rebuild(key: Vector2i) -> void:
 				_door(solid, v, c, col)
 			"road":
 				solid.add_box(Vector3(c.x, v.y + 0.075, c.z), Vector3(1.0, 0.15, 1.0), col)
+			"stairs":
+				_stairs(solid, v, c, col, FWConst.meta_facing(int(b[1])))
 			"lamp":
 				solid.add_box(Vector3(c.x, v.y + 0.3, c.z), Vector3(0.18, 0.6, 0.18), Color("55555c"))
 				glow.add_box(Vector3(c.x, v.y + 0.75, c.z), Vector3(0.42, 0.34, 0.42), col)
@@ -202,6 +204,16 @@ func _fence(mb, v: Vector3i, c: Vector3, col: Color) -> void:
 			var size := Vector3(0.5 if d.x != 0 else 0.08, 0.08, 0.5 if d.z != 0 else 0.08)
 			for ry in [0.35, 0.75]:
 				mb.add_box(Vector3(c.x, v.y + ry, c.z) + half, size, col.darkened(0.08))
+
+
+func _stairs(mb, v: Vector3i, c: Vector3, col: Color, facing: int) -> void:
+	var d := [Vector3(0, 0, 1), Vector3(1, 0, 0), Vector3(0, 0, -1), Vector3(-1, 0, 0)][facing] as Vector3
+	var along_x := facing == 1 or facing == 3
+	for i in range(3):
+		var hgt := float(i + 1) / 3.0
+		var off := d * ((float(i) + 0.5) / 3.0 - 0.5)
+		var size := Vector3(1.0 / 3.0, hgt, 1.0) if along_x else Vector3(1.0, hgt, 1.0 / 3.0)
+		mb.add_box(Vector3(c.x, v.y + hgt * 0.5, c.z) + off, size, col.darkened(0.06 * float(2 - i)))
 
 
 func _door(mb, v: Vector3i, c: Vector3, col: Color) -> void:

@@ -39,6 +39,7 @@ func _init() -> void:
 	test_world_tools()
 	test_interiors()
 	test_blocks_and_resources()
+	test_stairs_and_floors()
 	test_world_slots()
 	test_npc_label_fade()
 	test_tls_pinning()
@@ -866,6 +867,82 @@ func test_blocks_and_resources() -> void:
 	check(mirror.is_walkable(wx, wz) == cs.is_walkable(wx, wz), "mirror and server agree on walkability")
 	mirror.apply_block(cell.x, cell.y, cell.z, -1, 0)
 	check(not mirror.blocks.has(cell), "block removal is mirrored")
+
+
+func test_stairs_and_floors() -> void:
+	print("== stairs and second floors ==")
+	var cs = CityState.new(777)
+	_login(cs, "mason")
+	var base: Vector3i = _land_cell(cs, 20, 20)
+	var x0: int = base.x
+	var z0: int = base.z
+	var lvs: Array = []
+	var bl := 0
+	for i in range(4):
+		var lv: int = maxi(0, int(floor(cs.world.height_at(x0 + 0.5, z0 + i + 0.5))))
+		lvs.append(lv)
+		bl = maxi(bl, lv + 1)
+	# پایه: سنگ تا زیر سطح bl، سپس سه پله و کف طبقهٔ دوم
+	for i in range(4):
+		for lvl in range(int(lvs[i]), bl):
+			cs._add_block(Vector3i(x0, lvl, z0 + i), "stone", 0, "mason")
+	cs._add_block(Vector3i(x0, bl, z0), "stairs", 0, "mason")
+	cs._add_block(Vector3i(x0, bl + 1, z0 + 1), "stairs", 0, "mason")
+	cs._add_block(Vector3i(x0, bl + 2, z0 + 2), "stairs", 0, "mason")
+	cs._add_block(Vector3i(x0, bl + 2, z0 + 3), "wood", 0, "mason")
+	var fx := float(x0) + 0.5
+	var b := float(bl)
+	check(is_equal_approx(cs.surface_at(fx, float(z0) + 0.1, b), b + 0.1), "bottom of the stairs is walkable at ground level")
+	# بالا رفتن
+	var y := b
+	var z := float(z0) + 0.02
+	var ok_up := true
+	var max_jump := 0.0
+	while z < float(z0) + 3.9:
+		var ny: float = cs.surface_at(fx, z, y)
+		if is_nan(ny) or ny < y - 0.001:
+			ok_up = false
+			break
+		max_jump = maxf(max_jump, ny - y)
+		y = ny
+		z += 0.05
+	check(ok_up, "walking up the stairs never gets blocked or sinks")
+	check(max_jump < 0.12, "the stair ramp is smooth (max step %.3f)" % max_jump)
+	check(is_equal_approx(y, b + 3.0), "the top of the stairs reaches the second floor (%.2f)" % y)
+	check(is_equal_approx(cs.surface_at(fx, float(z0) + 3.5, b + 3.0), b + 3.0), "the upper floor can be stood on")
+	check(is_equal_approx(cs.surface_at(fx, float(z0) + 3.5, b), b), "ground below the upper floor is still reachable")
+	# پایین آمدن
+	var down_ok := true
+	z = float(z0) + 3.9
+	y = b + 3.0
+	while z > float(z0) + 0.02:
+		var ny2: float = cs.surface_at(fx, z, y)
+		if is_nan(ny2) or ny2 > y + 0.001:
+			down_ok = false
+			break
+		y = ny2
+		z -= 0.05
+	check(down_ok and absf(y - b) < 0.2, "walking back down returns to the ground")
+	# طبقهٔ دوم از کنار بدون پله قابل‌صعود نیست
+	var stuck: float = cs.surface_at(fx, float(z0) + 3.5, b + 0.5)
+	check(is_nan(stuck) or stuck <= b + 1.5, "a player at ground level cannot jump onto the second floor")
+	# جهت پله
+	check(is_equal_approx(CityState.stair_t(0.3, 0.8, 0), 0.8) and is_equal_approx(CityState.stair_t(0.3, 0.8, 2), 0.2), "stairs rise along +z or −z")
+	check(is_equal_approx(CityState.stair_t(0.3, 0.8, 1), 0.3) and is_equal_approx(CityState.stair_t(0.3, 0.8, 3), 0.7), "stairs rise along +x or −x")
+	# متا: رنگ + جهت
+	var free: Vector3i = _land_cell(cs, 70, 20)
+	check(cs.place_block("mason", 1, free.x, free.y, free.z, "stairs", 16 * 1 + 0)["ok"], "stairs can be placed with a facing")
+	check(cs.paint_block("mason", free.x, free.y, free.z, 4)["color"] == 20, "painting keeps the stair facing")
+	check(cs.place_block("mason", 2, free.x + 1, free.y, free.z, "stairs", 99)["error"] == "bad_request", "invalid block meta is rejected")
+	var back = CityState.from_dict(JSON.parse_string(JSON.stringify(cs.to_dict())))
+	check(int(back.blocks[free][1]) == 20, "facing and colour survive saving")
+	var mirror = CityState.new(777)
+	for batch in cs.block_batches():
+		var i := 0
+		while i + 4 < batch.size():
+			mirror.apply_block(batch[i], batch[i + 1], batch[i + 2], batch[i + 3], batch[i + 4])
+			i += 5
+	check(is_equal_approx(mirror.surface_at(fx, float(z0) + 1.5, b + 1.0), cs.surface_at(fx, float(z0) + 1.5, b + 1.0)), "client mirror computes the same stair height")
 
 
 func test_world_slots() -> void:

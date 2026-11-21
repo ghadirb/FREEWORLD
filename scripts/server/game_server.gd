@@ -417,7 +417,7 @@ func on_login(pid: int, player_name: String, token: String, proto: int) -> void:
 	var acc: Dictionary = cs.accounts[player_name]
 	var sp: Array = acc["pos"]
 	var pos := Vector3(sp[0], sp[1], sp[2])
-	if not cs.is_walkable(pos.x, pos.z):
+	if not cs.is_walkable(pos.x, pos.z, pos.y):
 		pos = cs.spawn_position()
 	p["name"] = player_name
 	p["auth"] = true
@@ -459,10 +459,10 @@ func on_move(pid: int, x: float, z: float, yaw: float) -> void:
 	var d: float = Vector2(x, z).distance_to(Vector2(cur.x, cur.z))
 	var lo: float = -FWConst.WORLD_LIMIT
 	var hi: float = FWConst.CITY_SIZE + FWConst.WORLD_LIMIT
-	var valid: bool = d <= float(p["allow"]) + 0.05 and x >= lo and x <= hi and z >= lo and z <= hi and cs.is_walkable(x, z)
+	var valid: bool = d <= float(p["allow"]) + 0.05 and x >= lo and x <= hi and z >= lo and z <= hi and cs.is_walkable(x, z, cur.y)
 	if valid:
 		p["allow"] = float(p["allow"]) - d
-		p["pos"] = Vector3(x, cs.ground_height(x, z), z)
+		p["pos"] = Vector3(x, cs.ground_height(x, z, cur.y), z)
 		p["yaw"] = yaw
 	elif d > 0.001 and now - int(p["last_tp"]) > 500:
 		p["last_tp"] = now
