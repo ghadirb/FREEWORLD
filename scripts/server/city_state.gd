@@ -6,6 +6,7 @@ const FWConst = preload("res://scripts/core/const.gd")
 const WorldGen = preload("res://scripts/world/world_generator.gd")
 const Placement = preload("res://scripts/shared/placement.gd")
 const NpcNav = preload("res://scripts/server/npc_nav.gd")
+const Minigame = preload("res://scripts/server/minigame.gd")
 
 const SAVE_VERSION := 1
 const MAX_REQUEST_MEMORY := 64
@@ -33,6 +34,7 @@ var market: Dictionary = {"wheat": 0.0, "flour": 0.0, "bread": 0.0, "egg": 0.0, 
 ## قیمت کالاهای دامی (تخم‌مرغ و شیر).
 var prices: Dictionary = {"egg": 6.0, "milk": 14.0, "flour": 16.0, "bread": 20.0, "cheese": 34.0}
 var npcs: Array = []
+var minigame = Minigame.new()
 ## ساخت بلوکی: Vector3i -> [نوع, رنگ, مالک]. block_cells شمارندهٔ بلوک در هر خانهٔ ۲×۲ شبکهٔ ساختمان است.
 var blocks: Dictionary = {}
 var block_cells: Dictionary = {}
@@ -955,6 +957,26 @@ func npc_sell(player_name: String, npc_id: int, item: String, n: int, pos: Vecto
 	return {"ok": true, "npc": str(npc["name"]), "item": item, "count": count, "total": total, "money": int(acc["money"])}
 
 
+## شروع یک دور مینی‌بازی سکه‌یاب برای بازیکن.
+func minigame_start(player_name: String, pos: Vector2) -> Dictionary:
+	if not accounts.has(player_name):
+		return {"ok": false, "error": "no_account"}
+	return minigame.start(world, seed_value, player_name, pos)
+
+
+## هر فریم سرور: رویدادهای مینی‌بازی را می‌گیرد و جایزهٔ دورهای تمام‌شده را به حساب بازیکن می‌ریزد.
+func minigame_step(dt: float, positions: Dictionary) -> Array:
+	var events: Array = minigame.step(dt, positions, day_count)
+	for ev in events:
+		if ev["kind"] == "end":
+			var nm: String = ev["name"]
+			if int(ev["reward"]) > 0 and accounts.has(nm):
+				accounts[nm]["money"] = int(accounts[nm]["money"]) + int(ev["reward"])
+				_log(nm, "minigame_reward", {"score": ev["score"], "reward": ev["reward"]})
+			ev["money"] = money_of(nm)
+	return events
+
+
 func gather(player_name: String, rx: int, rz: int, tool: String, pos: Vector2) -> Dictionary:
 	if not accounts.has(player_name):
 		return {"ok": false, "error": "no_account"}
@@ -1273,6 +1295,7 @@ func to_dict() -> Dictionary:
 		"blocks": _blocks_to_list(),
 		"depleted": depleted,
 		"item_mult": item_mult,
+		"minigame": minigame.to_dict(),
 	}
 
 
@@ -1340,6 +1363,7 @@ static func from_dict(d: Dictionary):
 					var gid := int(g["id"])
 					cs.god[gid] = {"id": gid, "kind": gk, "x": float(g["x"]), "z": float(g["z"]), "tx": float(g["x"]), "tz": float(g["z"]), "wait": 1.0}
 					cs.next_god_id = maxi(cs.next_god_id, gid + 1)
+	cs.minigame.load_dict(d.get("minigame", {}))
 	cs.wheat_price = float(d.get("wheat_price", FWConst.WHEAT_BASE_PRICE))
 	cs.bread_price = float(d.get("bread_price", FWConst.BREAD_BASE_PRICE))
 	var mk = d.get("market", {})

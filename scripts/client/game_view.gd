@@ -42,6 +42,8 @@ var avatars: Dictionary = {}
 var npc_avatars: Dictionary = {}
 var god_kind: String = ""
 var god_nodes: Dictionary = {}
+var coin_nodes: Array = []
+var _coin_mesh: ArrayMesh
 var _god_meshes: Dictionary = {}
 var _god_mat: StandardMaterial3D
 var building_nodes: Dictionary = {}
@@ -95,6 +97,7 @@ func setup(game_client, quality_level: int) -> void:
 	block_view.setup(client)
 	client.resource_changed.connect(func(rx: int, rz: int, _alive: bool): streamer.refresh_resource(rx, rz))
 	client.god_changed.connect(_sync_god)
+	client.minigame_changed.connect(_sync_coins)
 	cam = CameraRig.new()
 	cam.name = "CameraRig"
 	add_child(cam)
@@ -1032,7 +1035,32 @@ func _sync_god() -> void:
 			god_nodes.erase(id)
 
 
+func _sync_coins() -> void:
+	for n in coin_nodes:
+		n.queue_free()
+	coin_nodes.clear()
+	if not bool(client.minigame.get("active", false)):
+		return
+	if _coin_mesh == null:
+		var mb := MeshBuilder.new()
+		mb.add_box(Vector3(0, 0.9, 0), Vector3(0.5, 0.5, 0.12), Color("ffd24a"))
+		mb.add_box(Vector3(0, 0.9, 0), Vector3(0.3, 0.3, 0.16), Color("fff1a8"))
+		_coin_mesh = mb.build()
+	if _god_mat == null:
+		_god_mat = MeshBuilder.material()
+	for c in client.minigame.get("coins", []):
+		var node := MeshInstance3D.new()
+		node.mesh = _coin_mesh
+		node.material_override = _god_mat
+		node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		node.position = Vector3(float(c[0]), world.height_at(float(c[0]), float(c[1])), float(c[1]))
+		add_child(node)
+		coin_nodes.append(node)
+
+
 func _update_god(dt: float) -> void:
+	for n in coin_nodes:
+		n.rotation.y += dt * 3.0
 	for node in god_nodes.values():
 		if not FWConst.GOD_ANIMALS.has(str(node.get_meta("kind"))):
 			continue

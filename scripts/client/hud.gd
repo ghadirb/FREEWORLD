@@ -62,6 +62,12 @@ var _inv_panel: PanelContainer
 var _inv_rows: Dictionary = {}
 var _god_panel: PanelContainer
 var _god_btn: Button
+var _mg_btn: Button
+var _mg_panel: PanelContainer
+var _mg_status: Label
+var _mg_board: Label
+var _mg_best: Label
+var _mg_bar: Label
 var _god_btns: Dictionary = {}
 var _npc_panel: PanelContainer
 var _npc_title: Label
@@ -121,6 +127,7 @@ func setup(game_client, game_view) -> void:
 	_build_info_panel()
 	_build_npc_panel()
 	_build_god_panel()
+	_build_minigame()
 	_build_leave_button()
 	_build_toasts()
 	_build_chat()
@@ -254,7 +261,9 @@ func _build_side_buttons() -> void:
 	menu_btn.pressed.connect(func(): _menu_panel.visible = not _menu_panel.visible)
 	_god_btn = UiTheme.button(Loc.t("god_tools"), Vector2(180, 58))
 	_god_btn.pressed.connect(_toggle_god)
-	for b in [_mode_btn, _view_btn, _build_btn, _tools_btn, _inv_btn, chat_btn, _admin_btn, _god_btn, menu_btn]:
+	_mg_btn = UiTheme.button(Loc.t("minigame"), Vector2(180, 58))
+	_mg_btn.pressed.connect(func(): Sfx.play(self, "click"); _mg_panel.visible = not _mg_panel.visible; _refresh_minigame())
+	for b in [_mode_btn, _view_btn, _build_btn, _tools_btn, _inv_btn, chat_btn, _admin_btn, _god_btn, _mg_btn, menu_btn]:
 		v.add_child(b)
 		_interactive.append(b)
 	_update_mode_btn()
@@ -668,6 +677,62 @@ func _toggle_god() -> void:
 			_god_btns[t].button_pressed = false
 
 
+func _build_minigame() -> void:
+	_mg_panel = _panel(0.5, 1.0)
+	_mg_panel.visible = false
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 8)
+	_mg_panel.add_child(v)
+	v.add_child(_label(Loc.t("mg_title"), 28, Color("ffd24a")))
+	_mg_best = _label("", 22)
+	_mg_status = _label("", 22)
+	_mg_board = _label("", 20)
+	v.add_child(_mg_best)
+	v.add_child(_mg_status)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	v.add_child(row)
+	var start := UiTheme.button(Loc.t("mg_start"), Vector2(0, 64))
+	start.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	start.pressed.connect(func(): client.minigame_start(); _mg_panel.visible = false)
+	var close := UiTheme.button("✕", Vector2(64, 64))
+	close.pressed.connect(func(): _mg_panel.visible = false)
+	row.add_child(start)
+	row.add_child(close)
+	v.add_child(_label(Loc.t("mg_board"), 22, Color("c8f08a")))
+	v.add_child(_mg_board)
+	# نوار امتیاز و زمان بالای صفحه، فقط وسط دور
+	_mg_bar = _label("", 30, Color("ffd24a"))
+	root.add_child(_mg_bar)
+	_place(_mg_bar, 0.5, 0.0, 0.0, 90.0)
+	_mg_bar.visible = false
+	client.minigame_changed.connect(_refresh_minigame)
+
+
+func _refresh_minigame() -> void:
+	if _mg_panel == null:
+		return
+	var mg: Dictionary = client.minigame
+	_mg_best.text = Loc.fmt("mg_best", [Loc.digits(str(int(mg.get("best", 0))))])
+	_mg_status.text = ""
+	var lines: Array = []
+	var rank := 1
+	for row in mg.get("board", []):
+		lines.append("%s. %s — %s" % [Loc.digits(str(rank)), str(row[0]), Loc.digits(str(int(row[1])))])
+		rank += 1
+	_mg_board.text = "\n".join(lines) if not lines.is_empty() else "—"
+	_update_mg_bar()
+
+
+func _update_mg_bar() -> void:
+	if _mg_bar == null:
+		return
+	var active := bool(client.minigame.get("active", false))
+	_mg_bar.visible = active
+	if active:
+		_mg_bar.text = Loc.fmt("mg_status", [Loc.digits(str(int(client.minigame.get("score", 0)))), Loc.digits(str(int(ceil(client.minigame_time_left()))))])
+
+
 func _build_npc_panel() -> void:
 	_npc_panel = _panel(0.5, 1.0)
 	_npc_panel.visible = false
@@ -927,6 +992,12 @@ func _on_notice(code: String, args: Dictionary) -> void:
 		"npc_bought":
 			Sfx.play(self, "coin")
 			toast(Loc.fmt("msg_npc_bought", [str(args["npc"]), Loc.digits(str(args["count"])), Loc.t("item_" + str(args["item"])), Loc.digits(str(args["total"]))]), Color("c8f08a"))
+		"minigame_end":
+			Sfx.play(self, "coin")
+			var txt: String = Loc.fmt("msg_mg_end_reward", [Loc.digits(str(args["score"])), Loc.digits(str(args["reward"]))]) if int(args["reward"]) > 0 else Loc.fmt("msg_mg_end", [Loc.digits(str(args["score"]))])
+			if bool(args["new_best"]):
+				txt += " " + Loc.t("msg_mg_new_best")
+			toast(txt, Color("ffd84a"))
 		"npc_gift":
 			Sfx.play(self, "coin")
 			toast(Loc.fmt("msg_npc_gift", [str(args["npc"]), Loc.t("item_" + str(args["item"]))]), Color("ffd84a"))
@@ -992,6 +1063,7 @@ func _process(delta: float) -> void:
 	if _stat_acc > 0.4:
 		_stat_acc = 0.0
 		_refresh_stats()
+	_update_mg_bar()
 
 
 func _update_mode_btn() -> void:
@@ -1007,6 +1079,7 @@ func _on_mode_changed(_m: String) -> void:
 	_update_mode_btn()
 	_update_view_btn()
 	_tools_btn.visible = view.mode == "life"
+	_mg_btn.visible = view.mode == "life"
 	_refresh_role()
 	if view.mode == "world":
 		_set_tools_visible(false)

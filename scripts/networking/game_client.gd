@@ -31,6 +31,7 @@ signal audit_received(entries: Array)
 signal teleported(pos: Vector2)
 signal ticked
 signal god_changed
+signal minigame_changed
 signal inventory_changed
 signal offer_received(data: Dictionary)
 signal block_changed(pos: Vector3i, type_id: int, color: int)
@@ -64,6 +65,8 @@ var spawn: Vector2 = Vector2.ZERO
 var inv: Dictionary = {}
 var friends: Dictionary = {}
 var god_list: Array = []
+var minigame: Dictionary = {"active": false, "t": 0.0, "score": 0, "coins": [], "best": 0, "board": []}
+var minigame_stamp: float = 0.0   # لحظهٔ دریافت وضعیت؛ برای شمارش معکوس محلی
 var sell_prices: Dictionary = {}
 var is_logged_in: bool = false
 var last_tick_msec: int = 0
@@ -294,6 +297,24 @@ func god(action: String, kind: String, x: float, z: float) -> void:
 func on_god(list: Array) -> void:
 	god_list = list
 	god_changed.emit()
+
+
+func on_minigame(data: Dictionary) -> void:
+	minigame = data
+	minigame_stamp = Time.get_ticks_msec() / 1000.0
+	minigame_changed.emit()
+
+
+func minigame_start() -> void:
+	if is_logged_in:
+		_tx("c2s_minigame_start", [])
+
+
+## ثانیه‌های باقی‌ماندهٔ دور (شمارش معکوس محلی از آخرین وضعیت سرور؛ سرور تعیین‌کنندهٔ پایان است).
+func minigame_time_left() -> float:
+	if not bool(minigame.get("active", false)):
+		return 0.0
+	return maxf(0.0, float(minigame.get("t", 0.0)) - (Time.get_ticks_msec() / 1000.0 - minigame_stamp))
 
 
 func npc_interact(npc_id: int, item: String = "") -> void:

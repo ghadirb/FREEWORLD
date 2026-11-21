@@ -129,6 +129,18 @@ func c2s_npc_sell(npc_id: int, item: String, n: int) -> void:
 
 
 @rpc("any_peer", "call_remote", "reliable")
+func c2s_minigame_start() -> void:
+	if server:
+		server.on_minigame_start(multiplayer.get_remote_sender_id())
+
+
+@rpc("authority", "call_remote", "reliable")
+func s2c_minigame(data: Dictionary) -> void:
+	if client:
+		client.on_minigame(data)
+
+
+@rpc("any_peer", "call_remote", "reliable")
 func c2s_god(action: String, kind: String, x: float, z: float) -> void:
 	if server:
 		server.on_god(multiplayer.get_remote_sender_id(), action, kind, x, z)

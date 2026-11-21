@@ -1,7 +1,7 @@
 extends RefCounted
 ## ثابت‌های مشترک بین سرور و کلاینت.
 
-const PROTOCOL_VERSION := 12
+const PROTOCOL_VERSION := 13
 # ترافیک شبکه با DTLS رمز می‌شود (نسخهٔ ۴ به بعد). فقط برای عیب‌یابی خاموش شود.
 const USE_DTLS := true
 const DEFAULT_PORT := 7777
@@ -184,6 +184,17 @@ const FRIEND_REWARD := [0, 10, 25]       # پاداش روزانهٔ صحبت (�
 # فروش کالا به NPC: قیمت بازار + پاداش دوستی، از پول خود NPC پرداخت می‌شود (قیمت بازار را پایین نمی‌آورد)
 const NPC_TRADE_BONUS := [0.0, 0.10, 0.25]
 const NPC_TRADE_MAX := 50
+# مینی‌بازی «سکه‌یاب»: ۲۰ سکه دور بازیکن، ۶۰ ثانیه. جایزه فقط برای چند دور اول هر روز بازی (جلوگیری از پول‌سازی بی‌پایان).
+const MINIGAME_COINS := 20
+const MINIGAME_TIME := 60.0
+const MINIGAME_RADIUS := 30.0
+const MINIGAME_MIN_DIST := 4.0
+const MINIGAME_MAX_HEIGHT := 18.0
+const MINIGAME_PICK_RANGE := 1.8
+const MINIGAME_REWARD_PER_COIN := 2
+const MINIGAME_FULL_BONUS := 10
+const MINIGAME_REWARDED_RUNS := 3
+const MINIGAME_BOARD_SIZE := 10
 # ابزارهای خلقت (World Mode، فقط مدیران): درخت، سنگ و حیوانات آرام. وضعیتشان با شهر ذخیره می‌شود.
 const GOD_STATIC := ["tree", "rock"]
 const GOD_ANIMALS := {"sheep": 1.0, "deer": 2.2, "rabbit": 1.7}   # سرعت راه رفتن

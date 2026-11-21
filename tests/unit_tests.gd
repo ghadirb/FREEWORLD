@@ -43,6 +43,7 @@ func _init() -> void:
 	test_exploration()
 	test_npc_friendship()
 	test_npc_sell()
+	test_minigame()
 	test_god_tools()
 	test_stairs_and_floors()
 	test_p2p_trade()
@@ -942,6 +943,94 @@ func test_exploration() -> void:
 	check(cs.tool_tier(acc, "axe") == 1 and cs.inv_public("digger")["tools"]["pickaxe"] == 2, "tiers are reported per tool")
 	var cs3 = CityState.from_dict(cs.to_dict())
 	check(cs3 != null and cs3.tool_tier(cs3.accounts["digger"], "pickaxe") == 2, "tool upgrades survive a save/load")
+
+
+func _mg_land_pos(cs) -> Vector2:
+	# نقطه‌ای روی خشکی که برای چیدن سکه‌ها جا دارد
+	var c: float = FWConst.CITY_SIZE * 0.5
+	return Vector2(c, c)
+
+
+func test_minigame() -> void:
+	print("== Coin Rush minigame ==")
+	var cs = CityState.new(4244)
+	_login(cs, "runner")
+	_login(cs, "rival")
+	var at := _mg_land_pos(cs)
+	check(cs.minigame_start("ghost", at)["error"] == "no_account", "unknown player cannot start")
+	var st: Dictionary = cs.minigame_start("runner", at)
+	check(st["ok"], "a run starts")
+	check(cs.minigame_start("runner", at)["error"] == "mg_running", "only one run at a time")
+	var pub: Dictionary = cs.minigame.public_state("runner")
+	check(pub["active"] and pub["coins"].size() >= 5 and pub["coins"].size() <= FWConst.MINIGAME_COINS, "coins are placed around the player")
+	var ok_dist := true
+	for c in pub["coins"]:
+		if Vector2(float(c[0]), float(c[1])).distance_to(at) > FWConst.MINIGAME_RADIUS + 1.0:
+			ok_dist = false
+	check(ok_dist, "coins stay within the play radius")
+	# تعیین‌پذیری: همان seed و شمارنده همان چیدمان را می‌دهد
+	var cs_b = CityState.new(4244)
+	_login(cs_b, "runner")
+	cs_b.minigame_start("runner", at)
+	check(cs_b.minigame.public_state("runner")["coins"] == pub["coins"], "coin layout is deterministic")
+	# دور نبودن از سکه: امتیازی نمی‌دهد
+	var far := {"runner": at + Vector2(500, 500), "rival": at}
+	cs.minigame_step(0.1, far)
+	check(int(cs.minigame.public_state("runner")["score"]) == 0, "standing far from coins scores nothing")
+	# جمع کردن همهٔ سکه‌ها با رفتن روی هرکدام
+	var m0: int = int(cs.accounts["runner"]["money"])
+	var total: int = pub["coins"].size()
+	var end_ev: Dictionary = {}
+	for c in pub["coins"]:
+		var evs: Array = cs.minigame_step(0.1, {"runner": Vector2(float(c[0]), float(c[1])), "rival": at})
+		for ev in evs:
+			if ev["kind"] == "end":
+				end_ev = ev
+	check(not end_ev.is_empty() and end_ev["score"] == total, "collecting every coin ends the run with full score")
+	var expect: int = total * FWConst.MINIGAME_REWARD_PER_COIN + (FWConst.MINIGAME_FULL_BONUS if total >= FWConst.MINIGAME_COINS else 0)
+	check(int(end_ev["reward"]) == expect and int(cs.accounts["runner"]["money"]) == m0 + expect, "reward is paid to the account")
+	check(not cs.minigame.is_running("runner"), "the run is over")
+	check(cs.minigame.board()[0][0] == "runner" and cs.minigame.board()[0][1] == total, "best score reaches the leaderboard")
+	# مهلت زمانی
+	cs.minigame_start("rival", at)
+	var timed: Array = []
+	var guard := 0
+	while cs.minigame.is_running("rival") and guard < 1000:
+		guard += 1
+		timed = cs.minigame_step(1.0, {"runner": at, "rival": at + Vector2(900, 900)})
+	check(guard <= int(FWConst.MINIGAME_TIME) + 2 and not cs.minigame.is_running("rival"), "a run ends when time runs out")
+	check(cs.minigame.board().size() == 1, "zero-score runs still record only real scores")
+	# محدودیت جایزهٔ روزانه
+	cs.minigame.plays["runner"] = {"day": cs.day_count, "n": FWConst.MINIGAME_REWARDED_RUNS}
+	cs.minigame_start("runner", at)
+	var capped: Array = []
+	for c in cs.minigame.public_state("runner")["coins"]:
+		for ev in cs.minigame_step(0.1, {"runner": Vector2(float(c[0]), float(c[1]))}):
+			if ev["kind"] == "end":
+				capped.append(ev)
+	check(capped.size() == 1 and int(capped[0]["reward"]) == 0, "no reward after the daily limit")
+	cs.day_count += 1
+	cs.minigame_start("runner", at)
+	var nd: Array = []
+	for c in cs.minigame.public_state("runner")["coins"]:
+		for ev in cs.minigame_step(0.1, {"runner": Vector2(float(c[0]), float(c[1]))}):
+			if ev["kind"] == "end":
+				nd.append(ev)
+	check(nd.size() == 1 and int(nd[0]["reward"]) > 0, "rewards return on the next day")
+	# خروج بازیکن دور را لغو می‌کند
+	cs.minigame_start("rival", at)
+	cs.minigame_step(0.1, {"runner": at})
+	check(not cs.minigame.is_running("rival"), "leaving cancels the run without reward")
+	# جدول امتیاز و ذخیره
+	cs.minigame.scores["rival"] = 3
+	var b: Array = cs.minigame.board()
+	check(b[0][1] >= b[1][1], "leaderboard is sorted by score")
+	var cs2 = CityState.from_dict(cs.to_dict())
+	check(cs2 != null and cs2.minigame.scores == cs.minigame.scores and cs2.minigame.plays.has("runner"), "scores and daily limits survive save/load")
+	check(not cs2.minigame.is_running("runner"), "an unfinished run is not saved")
+	var old: Dictionary = cs.to_dict()
+	old.erase("minigame")
+	check(CityState.from_dict(old) != null, "old saves without minigame data still load")
 
 
 func test_npc_sell() -> void:
