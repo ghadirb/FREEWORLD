@@ -57,6 +57,24 @@ func c2s_leave() -> void:
 
 
 @rpc("any_peer", "call_remote", "reliable")
+func c2s_mine_enter(mine_id: String) -> void:
+	if server:
+		server.on_mine_enter(multiplayer.get_remote_sender_id(), mine_id)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func c2s_mine_leave() -> void:
+	if server:
+		server.on_mine_leave(multiplayer.get_remote_sender_id())
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func c2s_mine_gather(idx: int) -> void:
+	if server:
+		server.on_mine_gather(multiplayer.get_remote_sender_id(), idx)
+
+
+@rpc("any_peer", "call_remote", "reliable")
 func c2s_chat(text: String) -> void:
 	if server:
 		server.on_chat(multiplayer.get_remote_sender_id(), text)
@@ -248,6 +266,18 @@ func s2c_world(settings: Dictionary) -> void:
 func s2c_inside(building_id: int) -> void:
 	if client:
 		client.on_inside(building_id)
+
+
+@rpc("authority", "call_remote", "reliable")
+func s2c_mine(mine_id: String, depleted: PackedInt32Array) -> void:
+	if client:
+		client.on_mine(mine_id, depleted)
+
+
+@rpc("authority", "call_remote", "reliable")
+func s2c_mine_node(idx: int, alive: bool) -> void:
+	if client:
+		client.on_mine_node(idx, alive)
 
 
 @rpc("authority", "call_remote", "reliable")

@@ -13,6 +13,8 @@ const Avatar = preload("res://scripts/client/avatar.gd")
 const CameraRig = preload("res://scripts/client/camera_rig.gd")
 const Streamer = preload("res://scripts/client/terrain_streamer.gd")
 const BlockView = preload("res://scripts/client/block_view.gd")
+const MineView = preload("res://scripts/client/mine_view.gd")
+const Mine = preload("res://scripts/shared/mine.gd")
 
 signal building_tapped(id: int)
 signal npc_tapped(id: int)
@@ -69,6 +71,7 @@ var tool: String = "hand"
 var block_type: String = "wood"
 var paint_color: int = 0
 var block_view
+var mine_view
 var quality: int = 1
 
 var _ghost: MeshInstance3D
@@ -99,6 +102,12 @@ func setup(game_client, quality_level: int) -> void:
 	block_view.name = "Blocks"
 	add_child(block_view)
 	block_view.setup(client)
+	mine_view = MineView.new()
+	mine_view.name = "Mines"
+	add_child(mine_view)
+	mine_view.setup(world)
+	client.mine_changed.connect(_on_mine_changed)
+	client.mine_node_changed.connect(func(idx: int, alive: bool): mine_view.set_node_alive(idx, alive))
 	client.resource_changed.connect(func(rx: int, rz: int, _alive: bool): streamer.refresh_resource(rx, rz))
 	client.terrain_changed.connect(streamer.invalidate_area)
 	client.god_changed.connect(_sync_god)
@@ -266,7 +275,7 @@ func _setup_water() -> void:
 # ---------------- حالت‌ها ----------------
 
 func toggle_mode() -> void:
-	if inside_id > 0:
+	if inside_id > 0 or client.mine_id != "":
 		return
 	set_mode("world" if mode == "life" else "life")
 
@@ -444,7 +453,7 @@ func set_first_person(on: bool) -> void:
 
 
 func _apply_perspective() -> void:
-	var fp := first_person and mode == "life" and inside_id == 0
+	var fp: bool = first_person and mode == "life" and inside_id == 0 and client.mine_id == ""
 	cam.first_person = fp
 	if fp:
 		cam.fp_pitch = 0.0
@@ -644,6 +653,9 @@ func _pick_building(screen_pos: Vector2, max_dist: float) -> int:
 
 
 func _tap(pos: Vector2) -> void:
+	if client.mine_id != "":
+		_mine_tap(pos)
+		return
 	if inside_id > 0:
 		return
 	if mode == "life" and tool != "hand" and build_type == "":
@@ -838,7 +850,7 @@ func _check_long_press() -> void:
 
 ## نگه داشتن روی یک بلوک (با چکش، کلنگ یا قلم‌مو) آن را برمی‌دارد و موادش برمی‌گردد.
 func _long_press(pos: Vector2) -> void:
-	if mode != "life" or inside_id > 0 or not (tool == "hammer" or tool == "pickaxe" or tool == "brush"):
+	if mode != "life" or inside_id > 0 or client.mine_id != "" or not (tool == "hammer" or tool == "pickaxe" or tool == "brush"):
 		return
 	var hit: Dictionary = block_view.raycast(cam.camera.project_ray_origin(pos), cam.camera.project_ray_normal(pos))
 	if hit.get("kind", "") != "block":
@@ -870,14 +882,19 @@ func _process(delta: float) -> void:
 		if kb.length() > 0.0:
 			var speed: float = cam.world_distance * 0.9 * dt
 			cam.pan(kb.x * speed, -kb.y * speed)
-	if inside_id == 0:
+	var underground: bool = client.mine_id != ""
+	if inside_id == 0 and not underground:
 		streamer.update_focus(cam.focus)
+	if underground:
+		mine_view.follow(my_pos)
 	# دوربین نمای شهر دور است؛ مه را کم می‌کنیم تا رنگ‌ها شسته نشوند.
 	env.fog_density = lerpf(env.fog_density, _fog_base() * _weather_fog() * (1.0 if mode == "life" else 0.22), minf(dt * 3.0, 1.0))
-	_update_rain()
+	if not underground:
+		_update_rain()
 	water.position = Vector3(snappedf(cam.focus.x, 16.0), 0.0, snappedf(cam.focus.z, 16.0))
 	_time = lerpf(_time + dt * FWConst.TIME_SCALE * client.time_speed, client.world_time, minf(dt * 0.5, 1.0))
-	_update_sky(fposmod(_time, 86400.0) / 3600.0)
+	if not underground:
+		_update_sky(fposmod(_time, 86400.0) / 3600.0)
 	_sync_remote(dt)
 	_label_acc += dt
 	if _label_acc > 0.25:
@@ -897,6 +914,9 @@ func _move_player(dt: float, input: Vector2) -> void:
 		my_avatar.position = my_pos
 		my_avatar.target = my_pos
 		my_avatar.target_yaw = my_yaw
+		return
+	if client.mine_id != "" and mine_view.in_mine():
+		_move_in_mine(dt, len, (cam.right_flat() * input.x + cam.forward_flat() * (-input.y)).normalized())
 		return
 	var dir: Vector3 = (cam.right_flat() * input.x + cam.forward_flat() * (-input.y)).normalized()
 	var step := dir * FWConst.PLAYER_SPEED * (FWConst.RACE_SPEED_MULT if client.race_active() else 1.0) * len * dt
@@ -982,7 +1002,133 @@ func _exit_interior() -> void:
 	_last_sent = Vector2(-9999, -9999)
 
 
+## نزدیک‌ترین ورودی معدن در برد ورود (برای دکمهٔ «ورود به معدن»)؛ "" اگر نبود.
+func near_mine_id() -> String:
+	if client == null or client.mine_id != "" or inside_id > 0 or mode != "life":
+		return ""
+	var e: Dictionary = mine_view.nearest_entrance(my_pos.x, my_pos.z, FWConst.MINE_ENTER_RANGE)
+	return str(e.get("id", ""))
+
+
+func _on_mine_changed(id: String) -> void:
+	if id != "":
+		_enter_mine(id)
+	else:
+		_exit_mine()
+
+
+func _enter_mine(id: String) -> void:
+	_outside_pos = my_pos
+	build_type = ""
+	_ghost.visible = false
+	set_mode("life")
+	joy = Vector2.ZERO
+	mine_view.enter(id, client.mine_depleted)
+	_set_underground(true)
+	var sp: Vector2 = Mine.spawn_point(mine_view.layout())
+	my_pos = mine_view.to_world(sp.x, sp.y)
+	my_yaw = PI
+	_apply_perspective()
+	my_avatar.teleport_to(my_pos)
+	my_avatar.target_yaw = my_yaw
+	cam.life_distance = 8.5
+	cam.life_pitch_min = -34.0
+	cam.life_pitch_offset = -30.0
+	cam.yaw = 0.0
+	cam.set_life_focus(my_pos)
+	cam.snap(cam.focus)
+	_last_sent = Vector2(-9999, -9999)
+
+
+func _exit_mine() -> void:
+	if not mine_view.in_mine():
+		return
+	var e: Dictionary = world.mine_entrance(mine_view.mine_id())
+	mine_view.leave()
+	_set_underground(false)
+	if e.is_empty():
+		my_pos = _outside_pos
+	else:
+		my_pos = Vector3(float(e["ex"]), client.mirror.ground_height(float(e["ex"]), float(e["ez"])), float(e["ez"]))
+		my_yaw = float(e["yaw"])
+	_apply_perspective()
+	my_avatar.teleport_to(my_pos)
+	cam.life_distance = 9.0
+	cam.life_pitch_min = -20.0
+	cam.life_pitch_offset = 0.0
+	cam.yaw = my_yaw + PI
+	cam.set_life_focus(my_pos)
+	cam.snap(cam.focus)
+	streamer.update_focus(my_pos)
+	mine_view.set_surface_visible(true)
+	_last_sent = Vector2(-9999, -9999)
+
+
+## زیرزمین: آسمان و خورشید و مه خاموش، فقط چراغ شخصیت و نور محیطی ضعیف.
+func _set_underground(on: bool) -> void:
+	if on:
+		env.background_mode = Environment.BG_COLOR
+		env.background_color = Color(0.012, 0.012, 0.018)
+		env.ambient_light_color = Color(0.34, 0.33, 0.4)
+		env.ambient_light_energy = 1.0
+		env.fog_enabled = false
+		sun.light_energy = 0.0
+		sun.shadow_enabled = false
+		water.visible = false
+		if _rain != null:
+			_rain.emitting = false
+	else:
+		env.background_mode = Environment.BG_SKY
+		env.fog_enabled = true
+		sun.shadow_enabled = quality >= 2
+		water.visible = true
+
+
+func _move_in_mine(dt: float, len: float, d: Vector3) -> void:
+	var lay: Dictionary = mine_view.layout()
+	var cur: Vector2 = mine_view.to_mine(my_pos)
+	var nxt: Vector2 = cur + Vector2(d.x, d.z) * FWConst.PLAYER_SPEED * len * dt
+	if Mine.walkable(lay, nxt.x, nxt.y):
+		cur = nxt
+	elif Mine.walkable(lay, nxt.x, cur.y):
+		cur.x = nxt.x
+	elif Mine.walkable(lay, cur.x, nxt.y):
+		cur.y = nxt.y
+	else:
+		return
+	my_pos = mine_view.to_world(cur.x, cur.y)
+	my_yaw = atan2(d.x, d.z)
+	my_avatar.position = my_pos
+	my_avatar.target = my_pos
+	my_avatar.target_yaw = my_yaw
+	_send_acc += dt
+	if _send_acc >= 0.05:
+		_send_acc = 0.0
+		if cur.distance_to(_last_sent) > 0.01:
+			_last_sent = cur
+			client.send_move(cur.x, cur.y, my_yaw)
+
+
+## لمس در معدن: سنگ معدن را برمی‌دارد (ابزار را سرور از نوع سنگ می‌فهمد).
+func _mine_tap(pos: Vector2) -> void:
+	var idx: int = mine_view.pick_node(cam.camera.project_ray_origin(pos), cam.camera.project_ray_normal(pos))
+	if idx < 0:
+		return
+	var n: Dictionary = Mine.node_of(mine_view.layout(), idx)
+	if mine_view.to_mine(my_pos).distance_to(Vector2(float(n["x"]), float(n["z"]))) > FWConst.MINE_GATHER_RANGE:
+		Sfx.play(self, "error")
+		_feedback("too_far")
+		return
+	Sfx.play(self, "click")
+	client.mine_gather(idx)
+
+
 func _on_teleported(p: Vector2) -> void:
+	if client.mine_id != "" and mine_view.in_mine():
+		my_pos = mine_view.to_world(p.x, p.y)
+		my_avatar.teleport_to(my_pos)
+		_last_sent = p
+		return
 	if inside_id > 0:
 		return
 	my_pos = Vector3(p.x, client.mirror.ground_height(p.x, p.y), p.y)
@@ -1152,13 +1298,25 @@ func _sync_remote(_dt: float) -> void:
 			av = Avatar.new()
 			add_child(av)
 			av.setup(pname, Avatar.color_for(pname), false)
-			av.teleport_to(data["pos"])
+			var first_pos: Vector3 = data["pos"]
+			if str(data.get("mine", "")) != "":
+				first_pos = mine_view.to_world(first_pos.x, first_pos.z)
+			av.teleport_to(first_pos)
+			av.set_meta("space", str(data.get("mine", "")))
 			avatars[pname] = av
 		if data["role"] != FWConst.ROLE_PLAYER:
 			av.label.modulate = Color("ffd24a")
-		av.target = data["pos"]
+		# بازیکن داخل معدن مختصات محلی دارد؛ فقط کسانی که در همان معدن‌اند دیده می‌شوند.
+		var their_mine: String = str(data.get("mine", ""))
+		var rpos: Vector3 = data["pos"]
+		if their_mine != "":
+			rpos = mine_view.to_world(rpos.x, rpos.z)
+		if str(av.get_meta("space", "")) != their_mine:
+			av.set_meta("space", their_mine)
+			av.teleport_to(rpos)
+		av.target = rpos
 		av.target_yaw = data["yaw"]
-		av.visible = int(data.get("inside", 0)) == 0
+		av.visible = int(data.get("inside", 0)) == 0 and their_mine == client.mine_id
 	for pname in avatars.keys():
 		if not client.players.has(pname):
 			avatars[pname].queue_free()

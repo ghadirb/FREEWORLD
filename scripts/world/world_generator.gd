@@ -182,6 +182,83 @@ func resource_in_cell(rx: int, rz: int) -> Dictionary:
 		"rot": _h01(rx, rz, 5) * TAU, "s": 0.8 + _h01(rx, rz, 6) * 0.7}
 
 
+## ---------------- ورودی معدن ----------------
+## در هر خانهٔ MINE_CELL_WORLD متری حداکثر یک ورودی روی کوه (زمین پایه، نه تغییرات بازیکن)،
+## بیرون از شهر و رودخانه. کاملاً قطعی؛ سرور و کلاینت یک فهرست می‌گیرند.
+var _mine_list: Array = []
+var _mine_by_id: Dictionary = {}
+var _mine_built: bool = false
+
+
+func mine_entrances() -> Array:
+	if not _mine_built:
+		_build_mine_entrances()
+	return _mine_list
+
+
+## ورودی با شناسهٔ "mx,mz" یا دیکشنری خالی.
+func mine_entrance(id: String) -> Dictionary:
+	if not _mine_built:
+		_build_mine_entrances()
+	return _mine_by_id.get(id, {})
+
+
+func nearest_mine_entrance(x: float, z: float, max_dist: float) -> Dictionary:
+	var best: Dictionary = {}
+	var best_d := max_dist
+	for e in mine_entrances():
+		var d := Vector2(x, z).distance_to(Vector2(float(e["x"]), float(e["z"])))
+		if d <= best_d:
+			best_d = d
+			best = e
+	return best
+
+
+## آیا نقطه نزدیک یک ورودی معدن است؟ (برای ممنوعیت ساخت و تغییر زمین)
+func near_mine_entrance(x: float, z: float, radius: float) -> bool:
+	return not nearest_mine_entrance(x, z, radius).is_empty()
+
+
+func _build_mine_entrances() -> void:
+	_mine_built = true
+	_mine_list = []
+	_mine_by_id = {}
+	var cell := FWConst.MINE_CELL_WORLD
+	var lo := int(floor(-FWConst.WORLD_LIMIT / cell))
+	var hi := int(floor((FWConst.CITY_SIZE + FWConst.WORLD_LIMIT) / cell))
+	var half := FWConst.CITY_SIZE * 0.5
+	for mz in range(lo, hi + 1):
+		for mx in range(lo, hi + 1):
+			for attempt in range(10):
+				var x := (float(mx) + 0.08 + _h01(mx, mz, 20 + attempt * 2) * 0.84) * cell
+				var z := (float(mz) + 0.08 + _h01(mx, mz, 21 + attempt * 2) * 0.84) * cell
+				if x < -FWConst.WORLD_LIMIT + 14.0 or z < -FWConst.WORLD_LIMIT + 14.0 or x > FWConst.CITY_SIZE + FWConst.WORLD_LIMIT - 14.0 or z > FWConst.CITY_SIZE + FWConst.WORLD_LIMIT - 14.0:
+					continue
+				if Vector2(x, z).distance_to(Vector2(half, half)) < 130.0:
+					continue
+				var h := base_height_at(x, z)
+				if h < FWConst.MINE_MIN_HEIGHT or h > FWConst.MINE_MAX_HEIGHT or river_weight(x, z) > 0.0:
+					continue
+				# جلوی ورودی: سمتی که زمین پایین‌تر است.
+				var best_dir := Vector2(0, 1)
+				var best_h := INF
+				for k in range(8):
+					var a := float(k) * TAU / 8.0
+					var dv := Vector2(sin(a), cos(a))
+					var hh := base_height_at(x + dv.x * 6.0, z + dv.y * 6.0)
+					if hh < best_h:
+						best_h = hh
+						best_dir = dv
+				var ex := x + best_dir.x * 3.5
+				var ez := z + best_dir.y * 3.5
+				var id := "%d,%d" % [mx, mz]
+				var e := {"id": id, "mx": mx, "mz": mz, "x": x, "z": z, "y": h,
+					"yaw": atan2(best_dir.x, best_dir.y), "ex": ex, "ez": ez}
+				_mine_list.append(e)
+				_mine_by_id[id] = e
+				break
+
+
 static func biome_color(biome: String) -> Color:
 	match biome:
 		"water":

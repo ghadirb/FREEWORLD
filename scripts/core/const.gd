@@ -1,7 +1,7 @@
 extends RefCounted
 ## ثابت‌های مشترک بین سرور و کلاینت.
 
-const PROTOCOL_VERSION := 16
+const PROTOCOL_VERSION := 17
 # ترافیک شبکه با DTLS رمز می‌شود (نسخهٔ ۴ به بعد). فقط برای عیب‌یابی خاموش شود.
 const USE_DTLS := true
 const DEFAULT_PORT := 7777
@@ -128,9 +128,9 @@ const STEP_UP := 1.0  # بیشترین بالا رفتن در یک قدم
 # مواد: قیمت پایهٔ فروش. خرید از فروشگاه عمومی ۱٫۸ برابر است.
 const ITEMS := {
 	"wood": 4.0, "stone": 5.0, "clay": 4.0, "dirt": 1.0, "sand": 2.0, "brick": 10.0, "glass": 12.0,
-	"iron": 14.0, "gold": 40.0,
+	"iron": 14.0, "gold": 40.0, "coal": 8.0, "gem": 60.0,
 }
-const ITEM_ORDER := ["wood", "stone", "clay", "dirt", "sand", "brick", "glass", "iron", "gold"]
+const ITEM_ORDER := ["wood", "stone", "clay", "dirt", "sand", "brick", "glass", "iron", "gold", "coal", "gem"]
 const BUY_MARKUP := 1.8
 const SELL_DROP := 0.04   # نسبت کاهش قیمت با هر فروش
 const SELL_FLOOR := 0.5   # حداقل قیمت نسبت به پایه
@@ -227,6 +227,31 @@ const TERRAIN_DIG_STRENGTH := [4, 2, 1]  # بیل معمولی ۳×۳: بر اس
 const TERRAIN_DIG_STRENGTH_IRON := [4, 3, 2, 1, 1]  # بیل آهنی ۵×۵
 const RIVER_WIDTH := 0.05           # نیم‌پهنای کانال در نویز (بزرگ‌تر = رودخانهٔ پهن‌تر)
 const RIVER_MIN_DIST := 125.0       # رودخانه فقط بیرون از شهر
+
+## ---------------- معدن زیرزمینی (پروتکل ۱۷) ----------------
+## ورودی معدن در کوهستان است (قطعی از Seed). داخل معدن شبکهٔ تونل ۲۵×۲۵ کاشی (هر کاشی ۳ متر) با سنگ معدن است.
+## هرچه از ورودی دورتر، سنگ ارزشمندتر: سنگ/زغال ← آهن ← طلا ← جواهر. دورترین بن‌بست‌ها صندوق گنج دارند.
+const MINE_CELL_WORLD := 96.0       # شبکهٔ جست‌وجوی ورودی‌ها روی نقشه (متر)
+const MINE_MIN_HEIGHT := 14.5       # ورودی فقط روی کوه (زیست‌بوم کوهستان از ۱۴ شروع می‌شود)
+const MINE_MAX_HEIGHT := 48.0
+const MINE_ENTER_RANGE := 7.0       # فاصلهٔ مجاز برای ورود
+const MINE_NO_BUILD_RADIUS := 7.0   # ساخت و تغییر زمین نزدیک ورودی ممنوع
+const MINE_GATHER_RANGE := 4.0
+const MINE_TILE := 3.0
+const MINE_ROOMS := 12              # اتاق‌ها در هر ضلع؛ اندازهٔ شبکه = ۲×۱۲+۱ = ۲۵
+const MINE_MARGIN := 0.45           # فاصلهٔ شخصیت تا دیوار
+const MINE_CAVERNS := 5
+const MINE_LOOP_CHANCE := 0.07
+const MINE_ORE_CHANCE := 0.14       # احتمال سنگ در کاشی معمولی (بن‌بست‌ها همیشه سنگ دارند)
+const MINE_CHESTS := 3
+const MINE_ORES := {
+	"stone": {"item": "stone", "min": 2, "max": 4, "respawn": 120.0},
+	"coal": {"item": "coal", "min": 2, "max": 4, "respawn": 150.0},
+	"iron": {"item": "iron", "min": 1, "max": 3, "respawn": 180.0},
+	"gold": {"item": "gold", "min": 1, "max": 2, "respawn": 300.0, "min_tier": 2},
+	"gem": {"item": "gem", "min": 1, "max": 1, "respawn": 600.0, "min_tier": 2},
+	"chest": {"item": "", "min": 1, "max": 1, "respawn": 1200.0, "reward_min": 150, "reward_max": 500},
+}
 
 
 static func role_rank(role: String) -> int:

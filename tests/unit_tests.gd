@@ -12,6 +12,7 @@ const TlsSetup = preload("res://scripts/networking/tls_setup.gd")
 const GameClient = preload("res://scripts/networking/game_client.gd")
 const Settings = preload("res://scripts/client/settings.gd")
 const NpcNav = preload("res://scripts/server/npc_nav.gd")
+const Mine = preload("res://scripts/shared/mine.gd")
 
 var _fail := 0
 var _pass := 0
@@ -52,6 +53,7 @@ func _init() -> void:
 	test_world_slots()
 	test_npc_label_fade()
 	test_terrain()
+	test_mines()
 	test_tls_pinning()
 	print("\nRESULT: %d passed, %d failed" % [_pass, _fail])
 	quit(1 if _fail > 0 else 0)
@@ -1599,6 +1601,166 @@ func test_terrain() -> void:
 	gc.on_terrain_edit(PackedInt32Array([ix, iz, -4]))
 	check(gc.mirror.world.edit_units(ix, iz) == -4, "the client applies a single terrain edit")
 	gc.queue_free()
+
+
+func _first_node(layout: Dictionary, kind: String) -> Dictionary:
+	for n in layout["nodes"]:
+		if str(n["kind"]) == kind:
+			return n
+	return {}
+
+
+func test_mines() -> void:
+	print("[mines]")
+	var w1 := WorldGen.new(2026)
+	var w2 := WorldGen.new(2026)
+	var w3 := WorldGen.new(99)
+	var es: Array = w1.mine_entrances()
+	check(es.size() >= 8, "mountains have mine entrances (%d)" % es.size())
+	var same := es.size() == w2.mine_entrances().size()
+	if same:
+		for i in range(es.size()):
+			if es[i]["id"] != w2.mine_entrances()[i]["id"] or es[i]["x"] != w2.mine_entrances()[i]["x"]:
+				same = false
+	check(same, "entrances are deterministic per seed")
+	check(w3.mine_entrances().size() > 0 and w3.mine_entrances()[0]["id"] != es[0]["id"] or w3.mine_entrances().size() != es.size(), "different seeds give different entrances")
+	var on_mountain := true
+	var outside := true
+	var ids := {}
+	for e in es:
+		var h: float = w1.base_height_at(float(e["x"]), float(e["z"]))
+		if h < FWConst.MINE_MIN_HEIGHT or h > FWConst.MINE_MAX_HEIGHT:
+			on_mountain = false
+		if Vector2(float(e["x"]), float(e["z"])).distance_to(Vector2(64, 64)) < 130.0:
+			outside = false
+		ids[e["id"]] = true
+	check(on_mountain, "every entrance stands on a mountain")
+	check(outside and ids.size() == es.size(), "entrances are outside the city and unique")
+	check(w1.mine_entrance(str(es[0]["id"]))["x"] == es[0]["x"] and w1.mine_entrance("nope").is_empty(), "entrance lookup by id")
+	var near: Dictionary = w1.nearest_mine_entrance(float(es[0]["x"]) + 1.0, float(es[0]["z"]), 5.0)
+	check(near.get("id", "") == es[0]["id"] and w1.nearest_mine_entrance(float(es[0]["x"]) + 60.0, float(es[0]["z"]), 5.0).is_empty(), "nearest entrance respects the range")
+
+	# --- چیدمان تونل‌ها ---
+	var e0: Dictionary = es[0]
+	var l1: Dictionary = Mine.layout(2026, int(e0["mx"]), int(e0["mz"]))
+	var l2: Dictionary = Mine._generate(2026, int(e0["mx"]), int(e0["mz"]))
+	check(l1["tiles"] == l2["tiles"] and l1["nodes"].size() == l2["nodes"].size(), "mine layout is deterministic")
+	var l3: Dictionary = Mine._generate(2026, int(e0["mx"]) + 1, int(e0["mz"]))
+	check(l3["tiles"] != l1["tiles"], "different mines have different tunnels")
+	var border_closed := true
+	for i in range(Mine.SIZE):
+		if Mine.tile_open(l1, i, 0) or Mine.tile_open(l1, i, Mine.SIZE - 1) or Mine.tile_open(l1, 0, i) or Mine.tile_open(l1, Mine.SIZE - 1, i):
+			border_closed = false
+	check(border_closed, "mine is enclosed by rock")
+	var open_n := 0
+	var unreachable := 0
+	for i in range(Mine.SIZE * Mine.SIZE):
+		if int(l1["tiles"][i]) == 1:
+			open_n += 1
+			if int(l1["dist"][i]) < 0:
+				unreachable += 1
+	check(open_n > 150 and unreachable == 0, "all tunnels are reachable from the entrance (%d tiles)" % open_n)
+	var sp: Vector2 = Mine.spawn_point(l1)
+	check(Mine.walkable(l1, sp.x, sp.y), "entry point is walkable")
+	check(not Mine.walkable(l1, 0.5, 0.5) and not Mine.walkable(l1, NAN, 1.0) and not Mine.walkable(l1, -3.0, 4.0), "rock and invalid points are not walkable")
+	var edge_x: float = floorf(sp.x / Mine.TILE) * Mine.TILE
+	check(Mine.walkable(l1, sp.x, sp.y) and (not Mine.tile_open(l1, int(sp.x / Mine.TILE) - 1, int(sp.y / Mine.TILE))) == (not Mine.walkable(l1, edge_x + 0.1, sp.y)), "characters keep a margin from walls")
+	var nodes: Array = l1["nodes"]
+	check(nodes.size() >= 25, "mine has plenty of ore nodes (%d)" % nodes.size())
+	var kinds := {}
+	var pos_seen := {}
+	var all_ok := true
+	for n in nodes:
+		kinds[n["kind"]] = int(kinds.get(n["kind"], 0)) + 1
+		pos_seen["%.2f,%.2f" % [n["x"], n["z"]]] = true
+		if not Mine.tile_open(l1, int(n["tx"]), int(n["tz"])) or int(l1["dist"][Mine.tile_index(int(n["tx"]), int(n["tz"]))]) < 3:
+			all_ok = false
+		if int(n["idx"]) != nodes.find(n):
+			all_ok = false
+	check(all_ok and pos_seen.size() == nodes.size(), "ore sits in reachable tunnels, away from the door, with stable indices")
+	check(int(kinds.get("chest", 0)) == FWConst.MINE_CHESTS, "mine hides exactly %d treasure chests" % FWConst.MINE_CHESTS)
+	var shallow := 0
+	var deep_valuable := 0
+	for n in nodes:
+		var pct: int = int(n["depth"]) * 100 / maxi(int(l1["max_dist"]), 1)
+		if pct < 30 and (n["kind"] == "gold" or n["kind"] == "gem"):
+			shallow += 1
+		if pct >= 65 and (n["kind"] == "gold" or n["kind"] == "gem" or n["kind"] == "chest"):
+			deep_valuable += 1
+	check(shallow == 0 and deep_valuable >= 2, "valuable ore is found deep, not near the door")
+	var all_kinds := {}
+	for e in es:
+		var lx: Dictionary = Mine.layout(2026, int(e["mx"]), int(e["mz"]))
+		for n in lx["nodes"]:
+			all_kinds[n["kind"]] = true
+	check(all_kinds.has("stone") and all_kinds.has("coal") and all_kinds.has("iron") and all_kinds.has("gold") and all_kinds.has("gem") and all_kinds.has("chest"), "all ore kinds occur across mines")
+	check(Mine.parse_id("3,-2") == Vector2i(3, -2) and Mine.parse_id("bad").x == -99999 and Mine.parse_id("1,x").x == -99999, "mine ids parse safely")
+
+	# --- منطق شهر ---
+	var cs = CityState.new(2026)
+	_login(cs, "miner")
+	var acc: Dictionary = cs.accounts["miner"]
+	var mid: String = str(e0["id"])
+	var at := Vector2(float(e0["x"]), float(e0["z"]))
+	check(cs.mine_enter_error("miner", mid, at + Vector2(FWConst.MINE_ENTER_RANGE + 5.0, 0)) == "too_far", "must stand at the entrance to enter")
+	check(cs.mine_enter_error("miner", "9,9", at) == "no_mine" and cs.mine_enter_error("ghost", mid, at) == "no_account", "unknown mine and unknown player are rejected")
+	check(cs.mine_enter_error("miner", mid, at + Vector2(2.0, 0)) == "", "standing at the entrance allows entering")
+	var layout: Dictionary = cs.mine_layout(mid)
+	var stone: Dictionary = _first_node(layout, "stone")
+	if stone.is_empty():
+		stone = _first_node(layout, "coal")
+	var sat := Vector2(float(stone["x"]), float(stone["z"]))
+	check(cs.mine_gather("miner", mid, int(stone["idx"]), sat + Vector2(FWConst.MINE_GATHER_RANGE + 3.0, 0))["error"] == "too_far", "ore needs closeness")
+	check(cs.mine_gather("miner", mid, 9999, sat)["error"] == "no_resource" and cs.mine_gather("miner", "9,9", 0, sat)["error"] == "no_mine", "bad ore index and bad mine are rejected")
+	var item: String = FWConst.MINE_ORES[str(stone["kind"])]["item"]
+	var before: int = int(acc["inv"].get(item, 0))
+	var g: Dictionary = cs.mine_gather("miner", mid, int(stone["idx"]), sat)
+	check(g["ok"] and g["item"] == item and int(acc["inv"][item]) == before + int(stone["n"]), "mining gives the ore")
+	check(cs.mine_gather("miner", mid, int(stone["idx"]), sat)["error"] == "depleted", "mined ore is depleted")
+	check(cs.mine_depleted_list(mid).has(int(stone["idx"])), "depleted list reports the mined ore")
+	check(cs.mine_depleted_list("0,0").is_empty(), "depleted list is per mine")
+	var cs2 = CityState.from_dict(cs.to_dict())
+	check(cs2 != null and cs2.mine_depleted_list(mid).has(int(stone["idx"])), "mined ore survives a save/load")
+	cs.tick(float(FWConst.MINE_ORES[str(stone["kind"])]["respawn"]) + 1.0)
+	check(not cs.mine_respawned.is_empty() and cs.mine_respawned[0][0] == mid and int(cs.mine_respawned[0][1]) == int(stone["idx"]), "ore grows back and is announced")
+	check(cs.mine_gather("miner", mid, int(stone["idx"]), sat)["ok"], "respawned ore can be mined again")
+
+	# --- طلا و جواهر کلنگ آهنی می‌خواهند؛ صندوق پول می‌دهد ---
+	var gold: Dictionary = {}
+	var gold_mine := ""
+	for e in es:
+		gold = _first_node(Mine.layout(2026, int(e["mx"]), int(e["mz"])), "gold")
+		if not gold.is_empty():
+			gold_mine = str(e["id"])
+			break
+	var gat := Vector2(float(gold["x"]), float(gold["z"]))
+	check(cs.mine_gather("miner", gold_mine, int(gold["idx"]), gat)["error"] == "needs_better_tool", "gold needs an iron pickaxe")
+	acc["inv"]["iron"] = 10
+	acc["inv"]["wood"] = 10
+	cs.craft("miner", "upgrade_pickaxe", 1)
+	var gg: Dictionary = cs.mine_gather("miner", gold_mine, int(gold["idx"]), gat)
+	check(gg["ok"] and gg["item"] == "gold" and int(gg["count"]) == int(gold["n"]) + 1, "iron pickaxe mines gold with a bonus")
+	var chest: Dictionary = _first_node(cs.mine_layout(mid), "chest")
+	var cat := Vector2(float(chest["x"]), float(chest["z"]))
+	var m0: int = int(acc["money"])
+	var cr: Dictionary = cs.mine_gather("miner", mid, int(chest["idx"]), cat)
+	check(cr["ok"] and cr["treasure"] and int(acc["money"]) == m0 + int(chest["reward"]), "mine chest pays its fixed reward")
+	check(int(chest["reward"]) >= 150 and int(chest["reward"]) <= 500, "mine chest reward is in range")
+	check(cs.mine_gather("miner", mid, int(chest["idx"]), cat)["error"] == "depleted", "opened mine chest is empty")
+	acc["inv"]["coal"] = 5
+	acc["inv"]["gem"] = 2
+	var m1: int = int(acc["money"])
+	check(cs.trade("miner", "coal", 5, false)["ok"] and cs.trade("miner", "gem", 2, false)["ok"] and int(acc["money"]) > m1 + 100, "coal and gems sell at the market")
+	acc["inv"][item] = FWConst.ITEM_CAP
+	cs.mine_depleted.clear()
+	check(cs.mine_gather("miner", mid, int(stone["idx"]), sat)["error"] == "inv_full", "full inventory blocks mining")
+
+	# --- ساخت و تغییر زمین کنار ورودی ممنوع است ---
+	var ex := int(floor(float(e0["x"])))
+	var ez := int(floor(float(e0["z"])))
+	check(cs.check_block(FWConst.ROLE_PLAYER, ex, 20, ez, "stone") == "near_mine", "blocks cannot be placed at a mine entrance")
+	check(cs.terrain_check(FWConst.ROLE_PLAYER, Vector2i(int(round(float(e0["x"]) / 2.0)), int(round(float(e0["z"]) / 2.0)))) == "near_mine", "terrain near a mine entrance is locked")
+	check(cs.check_block(FWConst.ROLE_PLAYER, ex + 40, 20, ez, "stone") != "near_mine", "building far from the entrance is not blocked by it")
 
 
 func test_tls_pinning() -> void:

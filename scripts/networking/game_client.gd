@@ -40,6 +40,8 @@ signal offer_received(data: Dictionary)
 signal block_changed(pos: Vector3i, type_id: int, color: int)
 signal blocks_loaded
 signal resource_changed(rx: int, rz: int, alive: bool)
+signal mine_changed(mine_id: String)
+signal mine_node_changed(idx: int, alive: bool)
 
 var net: Node
 var local_server = null  # وقتی تک‌نفره/میزبان است، سرور همین پردازه
@@ -53,6 +55,9 @@ var wheat_price: float = FWConst.WHEAT_BASE_PRICE
 var bread_price: float = FWConst.BREAD_BASE_PRICE
 var job_id: int = 0
 var inside_id: int = 0
+## معدن زیرزمینی: شناسهٔ معدنی که داخلش هستیم ("" = بیرون) و سنگ‌های برداشت‌شدهٔ آن (idx -> true).
+var mine_id: String = ""
+var mine_depleted: Dictionary = {}
 var energy: int = 100
 var time_speed: float = 1.0
 var weather: String = "clear"
@@ -542,6 +547,7 @@ func _apply_players(player_dict: Dictionary) -> void:
 		entry["yaw"] = float(a[3])
 		entry["role"] = str(a[4])
 		entry["inside"] = int(a[5]) if a.size() > 5 else 0
+		entry["mine"] = str(a[6]) if a.size() > 6 else ""
 		players[n] = entry
 	for n in players.keys():
 		if not player_dict.has(n):
@@ -579,6 +585,37 @@ func _apply_world(w: Dictionary) -> void:
 func on_world(w: Dictionary) -> void:
 	_apply_world(w)
 	world_changed.emit()
+
+
+func enter_mine(id: String) -> void:
+	if is_logged_in:
+		_tx("c2s_mine_enter", [id])
+
+
+func leave_mine() -> void:
+	if is_logged_in:
+		_tx("c2s_mine_leave", [])
+
+
+func mine_gather(idx: int) -> void:
+	if is_logged_in:
+		_tx("c2s_mine_gather", [idx])
+
+
+func on_mine(id: String, depleted: PackedInt32Array) -> void:
+	mine_id = id
+	mine_depleted.clear()
+	for i in depleted:
+		mine_depleted[int(i)] = true
+	mine_changed.emit(id)
+
+
+func on_mine_node(idx: int, alive: bool) -> void:
+	if alive:
+		mine_depleted.erase(idx)
+	else:
+		mine_depleted[idx] = true
+	mine_node_changed.emit(idx, alive)
 
 
 func enter_building(id: int) -> void:

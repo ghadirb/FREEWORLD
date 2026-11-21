@@ -8,6 +8,7 @@ const NetScript = preload("res://scripts/networking/net.gd")
 const GameClient = preload("res://scripts/networking/game_client.gd")
 const ServerMain = preload("res://scripts/server/server_main.gd")
 const Placement = preload("res://scripts/shared/placement.gd")
+const Mine = preload("res://scripts/shared/mine.gd")
 const GameViewScript = preload("res://scripts/client/game_view.gd")
 const HudScript = preload("res://scripts/client/hud.gd")
 
@@ -279,6 +280,82 @@ func _run() -> void:
 	ok(codes.has("job_lost"), "client got the job_lost notice")
 	c.set_job(0)
 	ok(await wait_until(func(): return codes.has("no_job"), 3.0), "quitting without a job reports no_job")
+	c.disconnect_from_server()
+	server.stop()
+	server.queue_free()
+	c.queue_free()
+	await create_timer(0.3).timeout
+
+	print("== mine over the local RPC path ==")
+	var mdir := OS.get_user_data_dir().path_join("local_test_mine_%d" % Time.get_ticks_msec())
+	server = _start_server(0, mdir)
+	c = _mk_client()
+	c.connect_local(server, "hosty", "secret-secret-1")
+	ok(await wait_until(func(): return c.is_logged_in and not c.inv.is_empty(), 3.0), "login for the mine test")
+	var ents: Array = server.cs.world.mine_entrances()
+	ok(ents.size() > 0, "the world has mine entrances")
+	var ent: Dictionary = ents[0]
+	var mid: String = str(ent["id"])
+	c.enter_mine(mid)
+	await create_timer(0.3).timeout
+	ok(c.mine_id == "", "cannot enter a mine from far away")
+	server.peers[1]["pos"] = Vector3(float(ent["x"]) + 2.0, 0.0, float(ent["z"]))
+	c.enter_mine(mid)
+	ok(await wait_until(func(): return c.mine_id == mid, 3.0), "entering works next to the entrance")
+	ok(str(server.peers[1]["mine"]) == mid, "server records that the player is in the mine")
+	var lay: Dictionary = server.cs.mine_layout(mid)
+	var sp: Vector2 = Mine.spawn_point(lay)
+	ok((server.peers[1]["mpos"] as Vector3).distance_to(Vector3(sp.x, 0.0, sp.y)) < 0.01, "player starts at the mine entry tile")
+	# شیء بیرونی در معدن کار نمی‌کند
+	var out_pos: Vector3 = server.peers[1]["pos"]
+	var bcell2 := Vector3i(int(floor(out_pos.x)) + 3, maxi(0, int(floor(server.cs.world.height_at(out_pos.x + 3.5, out_pos.z + 0.5)))), int(floor(out_pos.z)))
+	c.place_block(bcell2, "wood", 0)
+	await create_timer(0.3).timeout
+	ok(not server.cs.blocks.has(bcell2), "surface actions are refused while inside the mine")
+	# عبور از دیوار رد می‌شود
+	var before_m: Vector3 = server.peers[1]["mpos"]
+	c.send_move(0.5, 0.5, 0.0)
+	await create_timer(0.3).timeout
+	ok((server.peers[1]["mpos"] as Vector3).distance_to(before_m) < 0.01, "walking into rock is refused")
+	# نزدیک‌ترین سنگ معمولی را پیدا کن و مسیرش را راه برو
+	var target: Dictionary = {}
+	for n in lay["nodes"]:
+		if n["kind"] != "chest" and (target.is_empty() or int(n["depth"]) < int(target["depth"])):
+			target = n
+	var path: Array = []
+	var cur := Vector2i(int(target["tx"]), int(target["tz"]))
+	while int(lay["dist"][Mine.tile_index(cur.x, cur.y)]) > 0:
+		path.append(cur)
+		var d0: int = int(lay["dist"][Mine.tile_index(cur.x, cur.y)])
+		for dd in Mine.DIRS:
+			var nb: Vector2i = cur + dd
+			if Mine.tile_open(lay, nb.x, nb.y) and int(lay["dist"][Mine.tile_index(nb.x, nb.y)]) == d0 - 1:
+				cur = nb
+				break
+	path.reverse()
+	var at := sp
+	for tile in path:
+		var goal: Vector2 = Mine.tile_center(tile.x, tile.y)
+		while at.distance_to(goal) > 0.01:
+			at = at.move_toward(goal, 0.5)
+			c.send_move(at.x, at.y, 0.0)
+			await create_timer(0.07).timeout
+	await create_timer(0.2).timeout
+	var srv_m: Vector3 = server.peers[1]["mpos"]
+	ok(Vector2(srv_m.x, srv_m.z).distance_to(at) < 0.6, "walking the tunnels is accepted by the server (%d tiles)" % path.size())
+	var kind_item: String = FWConst.MINE_ORES[str(target["kind"])]["item"]
+	var have0: int = c.item_count(kind_item)
+	server.cs.accounts["hosty"]["tools"] = {"pickaxe": true}
+	c.mine_gather(int(target["idx"]))
+	ok(await wait_until(func(): return c.mine_depleted.has(int(target["idx"])), 3.0), "mined ore is reported depleted to the client")
+	ok(await wait_until(func(): return c.item_count(kind_item) > have0, 3.0), "mined ore lands in the bag")
+	c.mine_gather(int(target["idx"]))
+	await create_timer(0.3).timeout
+	ok(c.item_count(kind_item) <= have0 + int(target["n"]) + 1, "an empty ore gives nothing more")
+	c.leave_mine()
+	ok(await wait_until(func(): return c.mine_id == "", 3.0), "leaving the mine works")
+	ok(str(server.peers[1]["mine"]) == "", "server clears the mine state")
+	ok(Vector2((server.peers[1]["pos"] as Vector3).x, (server.peers[1]["pos"] as Vector3).z).distance_to(Vector2(float(ent["x"]), float(ent["z"]))) < 6.0, "player is back in front of the entrance")
 	c.disconnect_from_server()
 	server.stop()
 	server.queue_free()

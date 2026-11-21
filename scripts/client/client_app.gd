@@ -248,6 +248,8 @@ func _on_logged_in() -> void:
 		hud._select_type(str(_args["build"]))
 	if _args.has("enter") and client.local_server != null:
 		_debug_enter(str(_args["enter"]))
+	if _args.has("mine") and client.local_server != null:
+		_debug_mine(str(_args["mine"]))
 	if _shot_path != "":
 		_take_shot_later()
 
@@ -275,6 +277,38 @@ func _debug_enter(type: String) -> void:
 	var d: Vector2 = srv.cs.door_point(srv.cs.buildings[id])
 	srv.peers[1]["pos"] = Vector3(d.x, 0.0, d.y)
 	client.enter_building(id)
+
+
+## آزمایشی (--mine surface|inside|deep): جلوی ورودی معدن می‌رود، وارد می‌شود یا کنار سنگ ارزشمند می‌ایستد.
+func _debug_mine(mode: String) -> void:
+	var srv = client.local_server
+	var ents: Array = srv.cs.world.mine_entrances()
+	if ents.is_empty():
+		return
+	var e: Dictionary = ents[0]
+	await get_tree().create_timer(0.5).timeout
+	var out := Vector2(float(e["x"]), float(e["z"])) + Vector2(sin(float(e["yaw"])), cos(float(e["yaw"]))) * (10.0 if mode == "surface" else 3.5)
+	srv.peers[1]["pos"] = Vector3(out.x, 0.0, out.y)
+	srv._send(1, "s2c_teleport", out.x, out.y)
+	if mode == "surface":
+		view.cam.yaw = float(e["yaw"])
+		return
+	await get_tree().create_timer(0.4).timeout
+	client.enter_mine(str(e["id"]))
+	if mode != "deep":
+		return
+	await get_tree().create_timer(0.6).timeout
+	var lay: Dictionary = srv.cs.mine_layout(str(e["id"]))
+	var pick: Dictionary = {}
+	for n in lay["nodes"]:
+		if n["kind"] == "gem" or n["kind"] == "gold":
+			pick = n
+			break
+	if pick.is_empty():
+		return
+	var c := Vector2((float(pick["tx"]) + 0.5) * FWConst.MINE_TILE, (float(pick["tz"]) + 0.5) * FWConst.MINE_TILE)
+	srv.peers[1]["mpos"] = Vector3(c.x, 0.0, c.y)
+	srv._send(1, "s2c_teleport", c.x, c.y)
 
 
 func _take_shot_later() -> void:

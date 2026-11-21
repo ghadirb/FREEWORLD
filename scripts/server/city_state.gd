@@ -8,6 +8,7 @@ const Placement = preload("res://scripts/shared/placement.gd")
 const NpcNav = preload("res://scripts/server/npc_nav.gd")
 const Minigame = preload("res://scripts/server/minigame.gd")
 const Race = preload("res://scripts/server/race.gd")
+const Mine = preload("res://scripts/shared/mine.gd")
 
 const SAVE_VERSION := 1
 const MAX_REQUEST_MEMORY := 64
@@ -46,6 +47,9 @@ var block_owner_count: Dictionary = {}
 ## منابع برداشت‌شده: "rx,rz" -> ثانیهٔ باقی‌مانده تا رویش دوباره. respawned را سرور تخلیه می‌کند.
 var depleted: Dictionary = {}
 var respawned: Array = []
+## سنگ‌های برداشت‌شدهٔ معدن‌ها: "mx,mz:idx" -> ثانیهٔ باقی‌مانده تا رویش دوباره. mine_respawned را سرور تخلیه می‌کند.
+var mine_depleted: Dictionary = {}
+var mine_respawned: Array = []
 ## ضریب قیمت فروش هر ماده (با فروش زیاد کم می‌شود و کم‌کم برمی‌گردد).
 var item_mult: Dictionary = {}
 ## پیشنهادهای معامله بین بازیکنان (ذخیره نمی‌شوند): id -> {from, to, item, n, price, ttl}
@@ -724,6 +728,8 @@ func check_block(role: String, x: int, y: int, z: int, type: String) -> String:
 	var v := Vector3i(x, y, z)
 	if blocks.has(v):
 		return "occupied"
+	if world.near_mine_entrance(float(x) + 0.5, float(z) + 0.5, FWConst.MINE_NO_BUILD_RADIUS):
+		return "near_mine"
 	if occupied.has(Placement.cell_key(x >> 1, z >> 1)):
 		return "occupied"
 	if not FWConst.is_admin(role):
@@ -1071,6 +1077,71 @@ func gather(player_name: String, rx: int, rz: int, tool: String, pos: Vector2) -
 	return {"ok": true, "item": item, "count": got, "rx": rx, "rz": rz}
 
 
+# ---------------- معدن زیرزمینی (پروتکل ۱۷) ----------------
+
+func mine_layout(mine_id: String) -> Dictionary:
+	var v: Vector2i = Mine.parse_id(mine_id)
+	return Mine.layout(seed_value, v.x, v.y)
+
+
+## خطای ورود به معدن یا رشتهٔ خالی. pos موقعیت بازیکن روی نقشهٔ بیرون است.
+func mine_enter_error(player_name: String, mine_id: String, pos: Vector2) -> String:
+	if not accounts.has(player_name):
+		return "no_account"
+	var e: Dictionary = world.mine_entrance(mine_id)
+	if e.is_empty():
+		return "no_mine"
+	if pos.distance_to(Vector2(float(e["x"]), float(e["z"]))) > FWConst.MINE_ENTER_RANGE:
+		return "too_far"
+	return ""
+
+
+## برداشت یک سنگ معدن. mpos موقعیت بازیکن در مختصات محلی معدن است.
+## ابزار را سرور از نوع سنگ می‌فهمد (کلنگ؛ برای صندوق دست)، نه از کلاینت.
+func mine_gather(player_name: String, mine_id: String, idx: int, mpos: Vector2) -> Dictionary:
+	if not accounts.has(player_name):
+		return {"ok": false, "error": "no_account"}
+	if world.mine_entrance(mine_id).is_empty():
+		return {"ok": false, "error": "no_mine"}
+	var node: Dictionary = Mine.node_of(mine_layout(mine_id), idx)
+	if node.is_empty():
+		return {"ok": false, "error": "no_resource"}
+	var key := "%s:%d" % [mine_id, idx]
+	if mine_depleted.has(key):
+		return {"ok": false, "error": "depleted"}
+	if mpos.distance_to(Vector2(float(node["x"]), float(node["z"]))) > FWConst.MINE_GATHER_RANGE:
+		return {"ok": false, "error": "too_far"}
+	var def: Dictionary = FWConst.MINE_ORES[str(node["kind"])]
+	var acc: Dictionary = accounts[player_name]
+	if def.has("reward_min"):
+		var reward: int = int(node["reward"])
+		acc["money"] = int(acc["money"]) + reward
+		mine_depleted[key] = float(def["respawn"])
+		_log(player_name, "mine_treasure", {"mine": mine_id, "idx": idx, "reward": reward})
+		return {"ok": true, "treasure": true, "reward": reward, "money": int(acc["money"]), "idx": idx}
+	if tool_tier(acc, "pickaxe") < int(def.get("min_tier", 1)):
+		return {"ok": false, "error": "needs_better_tool"}
+	var item: String = def["item"]
+	if int(acc["inv"].get(item, 0)) >= FWConst.ITEM_CAP:
+		return {"ok": false, "error": "inv_full"}
+	var got: int = int(node["n"]) + (1 if tool_tier(acc, "pickaxe") >= 2 else 0)
+	_inv_add(acc, item, got)
+	mine_depleted[key] = float(def["respawn"])
+	return {"ok": true, "item": item, "count": got, "idx": idx}
+
+
+## شمارهٔ سنگ‌های برداشت‌شدهٔ یک معدن (برای ارسال به بازیکنی که وارد می‌شود).
+func mine_depleted_list(mine_id: String) -> PackedInt32Array:
+	var out := PackedInt32Array()
+	var prefix := mine_id + ":"
+	for key in mine_depleted:
+		var k := str(key)
+		if k.begins_with(prefix):
+			out.append(int(k.substr(prefix.length())))
+	out.sort()
+	return out
+
+
 ## کندن خاک/شن با بیل: ۱ واحد خاک یا (کنار ساحل) شن.
 ## رأس شبکهٔ ۲ متریِ نزدیک به نقطه.
 static func terrain_vertex(x: float, z: float) -> Vector2i:
@@ -1084,6 +1155,8 @@ func terrain_check(role: String, v: Vector2i, r: int = 1) -> String:
 	var hi := int(FWConst.CITY_SIZE / FWConst.TERRAIN_EDIT_STEP) + lim
 	if v.x - r < -lim or v.y - r < -lim or v.x + r > hi or v.y + r > hi:
 		return "out_of_bounds"
+	if world.near_mine_entrance(float(v.x) * FWConst.TERRAIN_EDIT_STEP, float(v.y) * FWConst.TERRAIN_EDIT_STEP, FWConst.MINE_NO_BUILD_RADIUS + float(r) * FWConst.TERRAIN_EDIT_STEP):
+		return "near_mine"
 	for dx in range(-r, r + 1):
 		for dz in range(-r, r + 1):
 			var vx := v.x + dx
@@ -1290,6 +1363,13 @@ func _tick_resources(delta: float) -> void:
 		if float(depleted[key]) <= 0.0:
 			depleted.erase(key)
 			respawned.append(key)
+	for mkey in mine_depleted.keys():
+		mine_depleted[mkey] = float(mine_depleted[mkey]) - delta
+		if float(mine_depleted[mkey]) <= 0.0:
+			mine_depleted.erase(mkey)
+			var mk := str(mkey)
+			var cut := mk.rfind(":")
+			mine_respawned.append([mk.substr(0, cut), int(mk.substr(cut + 1))])
 	for item in item_mult.keys():
 		item_mult[item] = minf(1.0, float(item_mult[item]) + FWConst.SELL_RECOVER_PER_SEC * delta)
 
@@ -1443,6 +1523,7 @@ func to_dict() -> Dictionary:
 		"npcs": npcs,
 		"blocks": _blocks_to_list(),
 		"depleted": depleted,
+		"mine_depleted": mine_depleted,
 		"terrain": terrain_flat(),
 		"item_mult": item_mult,
 		"minigame": minigame.to_dict(),
@@ -1594,6 +1675,11 @@ static func from_dict(d: Dictionary):
 	if dp is Dictionary:
 		for k in dp:
 			cs.depleted[str(k)] = float(dp[k])
+	var mdp = d.get("mine_depleted", {})
+	if mdp is Dictionary:
+		for k in mdp:
+			if str(k).contains(":"):
+				cs.mine_depleted[str(k)] = float(mdp[k])
 	var tr = d.get("terrain", [])
 	if tr is Array:
 		var ti := 0

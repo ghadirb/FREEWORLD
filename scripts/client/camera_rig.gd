@@ -45,12 +45,14 @@ func rotate_by(dx: float, dy: float) -> void:
 	if first_person and mode == "life":
 		fp_pitch = clampf(fp_pitch - dy * 40.0, -80.0, 80.0)
 	elif mode == "life":
-		life_pitch_offset = clampf(life_pitch_offset - dy * 30.0, -20.0, 45.0)
+		life_pitch_offset = clampf(life_pitch_offset - dy * 30.0, life_pitch_min, 45.0)
 	else:
 		world_pitch_offset = clampf(world_pitch_offset - dy * 30.0, -25.0, 20.0)
 
 
 var life_pitch_offset: float = 0.0
+## داخل معدن دوربین تندتر از بالا نگاه می‌کند تا دیوارها دید را نبندند.
+var life_pitch_min: float = -20.0
 var world_pitch_offset: float = 0.0
 
 

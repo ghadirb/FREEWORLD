@@ -7,6 +7,7 @@ const CityState = preload("res://scripts/server/city_state.gd")
 const Persistence = preload("res://scripts/server/persistence.gd")
 const NpcSim = preload("res://scripts/server/npc_sim.gd")
 const TlsSetup = preload("res://scripts/networking/tls_setup.gd")
+const Mine = preload("res://scripts/shared/mine.gd")
 
 const NAME_PATTERN := "^[\\p{L}\\p{N}_]{3,16}$"
 const AUTH_TIMEOUT_MSEC := 10000
@@ -21,6 +22,7 @@ const LOCAL_METHODS := [
 	"c2s_login", "c2s_move", "c2s_place", "c2s_remove", "c2s_collect",
 	"c2s_chat", "c2s_set_role", "c2s_get_audit", "c2s_job", "c2s_set_world", "c2s_enter", "c2s_leave",
 	"c2s_place_block", "c2s_remove_block", "c2s_paint_block", "c2s_gather", "c2s_dig", "c2s_fill", "c2s_craft", "c2s_trade", "c2s_offer", "c2s_offer_answer", "c2s_npc", "c2s_npc_sell", "c2s_minigame_start", "c2s_race_start", "c2s_disaster", "c2s_god",
+	"c2s_mine_enter", "c2s_mine_leave", "c2s_mine_gather",
 ]
 
 var net: Node
@@ -206,6 +208,11 @@ func _process(delta: float) -> void:
 			_broadcast("s2c_resource", PackedInt32Array([int(parts[0]), int(parts[1]), 1]))
 		cs.respawned.clear()
 		_dirty = true
+	if not cs.mine_respawned.is_empty():
+		for mr in cs.mine_respawned:
+			_send_to_mine(str(mr[0]), "s2c_mine_node", int(mr[1]), true)
+		cs.mine_respawned.clear()
+		_dirty = true
 	NpcSim.step(cs, dt)
 	cs.god_step(dt)
 	_god_acc += dt
@@ -302,7 +309,7 @@ func on_race_start(pid: int) -> void:
 	if not _allow_action(p):
 		_notice(pid, "rate_limited")
 		return
-	if int(p.get("inside", 0)) > 0:
+	if _indoors(p):
 		return
 	var pos: Vector3 = p["pos"]
 	var res: Dictionary = cs.race_start(p["name"], Vector2(pos.x, pos.z))
@@ -319,7 +326,7 @@ func on_minigame_start(pid: int) -> void:
 	if not _allow_action(p):
 		_notice(pid, "rate_limited")
 		return
-	if int(p.get("inside", 0)) > 0:
+	if _indoors(p):
 		return
 	var pos: Vector3 = p["pos"]
 	var res: Dictionary = cs.minigame_start(p["name"], Vector2(pos.x, pos.z))
@@ -337,7 +344,7 @@ func _work_step(dt: float) -> void:
 		positions[p["name"]] = Vector2(pos.x, pos.z)
 	var online: Dictionary = {}
 	for pid in _auth_peers():
-		online[peers[pid]["name"]] = int(peers[pid].get("inside", 0))
+		online[peers[pid]["name"]] = -1 if str(peers[pid].get("mine", "")) != "" else int(peers[pid].get("inside", 0))
 	cs.energy_step(dt, online)
 	for ev in cs.work_step(dt, positions):
 		var worker: String = ev["worker"]
@@ -370,7 +377,7 @@ func _send(pid: int, method: String, a: Variant = null, b: Variant = null, c: Va
 				_deliver_local(method, [a, b, c])
 			"s2c_tick":
 				_deliver_local(method, [a, b, c, d])
-			"s2c_notice", "s2c_player_joined", "s2c_chat", "s2c_teleport":
+			"s2c_notice", "s2c_player_joined", "s2c_chat", "s2c_teleport", "s2c_mine", "s2c_mine_node":
 				_deliver_local(method, [a, b])
 			_:
 				_deliver_local(method, [a])
@@ -384,7 +391,7 @@ func _send(pid: int, method: String, a: Variant = null, b: Variant = null, c: Va
 			net.rpc_id(pid, method, a, b, c)
 		"s2c_tick":
 			net.rpc_id(pid, method, a, b, c, d)
-		"s2c_notice", "s2c_player_joined", "s2c_chat", "s2c_teleport":
+		"s2c_notice", "s2c_player_joined", "s2c_chat", "s2c_teleport", "s2c_mine", "s2c_mine_node":
 			net.rpc_id(pid, method, a, b)
 		_:
 			net.rpc_id(pid, method, a)
@@ -421,9 +428,10 @@ func _players_public() -> Dictionary:
 	var out: Dictionary = {}
 	for pid in _auth_peers():
 		var p: Dictionary = peers[pid]
-		var pos: Vector3 = p["pos"]
+		var mine: String = str(p.get("mine", ""))
+		var pos: Vector3 = p["mpos"] if mine != "" else p["pos"]   # داخل معدن: مختصات محلی معدن
 		out[p["name"]] = [snappedf(pos.x, 0.01), snappedf(pos.y, 0.01), snappedf(pos.z, 0.01),
-			snappedf(float(p["yaw"]), 0.01), cs.role_of(p["name"]), int(p.get("inside", 0))]
+			snappedf(float(p["yaw"]), 0.01), cs.role_of(p["name"]), int(p.get("inside", 0)), mine]
 	return out
 
 
@@ -469,6 +477,7 @@ func _on_peer_connected(pid: int) -> void:
 		"bucket": 10.0, "bucket_t": Time.get_ticks_msec(),
 		"allow": 6.0, "last_move": Time.get_ticks_msec(), "last_tp": 0,
 		"pos": Vector3.ZERO, "yaw": 0.0, "failures": 0,
+		"mine": "", "mpos": Vector3.ZERO,
 	}
 
 
@@ -552,6 +561,9 @@ func on_login(pid: int, player_name: String, token: String, proto: int) -> void:
 func on_move(pid: int, x: float, z: float, yaw: float) -> void:
 	var p := _player_of(pid)
 	if p.is_empty():
+		return
+	if str(p.get("mine", "")) != "":
+		_move_in_mine(pid, p, x, z, yaw)
 		return
 	if int(p.get("inside", 0)) > 0:
 		return  # داخل ساختمان موقعیت بیرونی تغییر نمی‌کند
@@ -694,7 +706,7 @@ func on_enter(pid: int, id: int) -> void:
 	if not _allow_action(p):
 		_notice(pid, "rate_limited")
 		return
-	if int(p.get("inside", 0)) > 0:
+	if _indoors(p):
 		_notice(pid, "already_inside")
 		return
 	var pos: Vector3 = p["pos"]
@@ -715,6 +727,108 @@ func on_leave(pid: int) -> void:
 		return
 	p["inside"] = 0
 	_send(pid, "s2c_inside", 0)
+
+
+## داخل ساختمان یا معدن؟ در این حالت اقدام‌های دنیای بیرون (ساخت، برداشت، مینی‌بازی…) رد می‌شوند.
+func _indoors(p: Dictionary) -> bool:
+	return int(p.get("inside", 0)) > 0 or str(p.get("mine", "")) != ""
+
+
+## همهٔ بازیکنانی که الان داخل معدن mine_id هستند پیام می‌گیرند.
+func _send_to_mine(mine_id: String, method: String, a: Variant, b: Variant) -> void:
+	for pid in _auth_peers():
+		if str(peers[pid].get("mine", "")) == mine_id:
+			_send(pid, method, a, b)
+
+
+func _move_in_mine(pid: int, p: Dictionary, x: float, z: float, yaw: float) -> void:
+	if not (is_finite(x) and is_finite(z) and is_finite(yaw)):
+		return
+	var now := Time.get_ticks_msec()
+	var dt: float = clampf(float(now - int(p["last_move"])) / 1000.0, 0.0, 0.5)
+	p["last_move"] = now
+	p["allow"] = minf(float(p["allow"]) + FWConst.PLAYER_SPEED * 1.3 * dt, 6.0)
+	var cur: Vector3 = p["mpos"]
+	var d: float = Vector2(x, z).distance_to(Vector2(cur.x, cur.z))
+	var layout: Dictionary = cs.mine_layout(str(p["mine"]))
+	if d <= float(p["allow"]) + 0.05 and Mine.walkable(layout, x, z):
+		p["allow"] = float(p["allow"]) - d
+		p["mpos"] = Vector3(x, 0.0, z)
+		p["yaw"] = yaw
+	elif d > 0.001 and now - int(p["last_tp"]) > 500:
+		p["last_tp"] = now
+		_send(pid, "s2c_teleport", cur.x, cur.z)
+
+
+func on_mine_enter(pid: int, mine_id: String) -> void:
+	var p := _player_of(pid)
+	if p.is_empty():
+		return
+	if not _allow_action(p):
+		_notice(pid, "rate_limited")
+		return
+	if _indoors(p):
+		_notice(pid, "already_inside")
+		return
+	var nm: String = p["name"]
+	if cs.race.is_running(nm) or cs.minigame.is_running(nm):
+		_notice(pid, "mine_busy")
+		return
+	var pos: Vector3 = p["pos"]
+	var err: String = cs.mine_enter_error(nm, mine_id, Vector2(pos.x, pos.z))
+	if err != "":
+		_notice(pid, err)
+		return
+	var e: Dictionary = cs.world.mine_entrance(mine_id)
+	var sp: Vector2 = Mine.spawn_point(cs.mine_layout(mine_id))
+	p["mine"] = mine_id
+	p["mpos"] = Vector3(sp.x, 0.0, sp.y)
+	p["yaw"] = PI
+	p["allow"] = 6.0
+	p["last_move"] = Time.get_ticks_msec()
+	# اگر قطع شود یا سرور ببندد، بازیکن جلوی ورودی معدن (روی زمین بیرون) برمی‌گردد.
+	p["pos"] = Vector3(float(e["ex"]), cs.ground_height(float(e["ex"]), float(e["ez"])), float(e["ez"]))
+	_send(pid, "s2c_mine", mine_id, cs.mine_depleted_list(mine_id))
+
+
+func on_mine_leave(pid: int) -> void:
+	var p := _player_of(pid)
+	if p.is_empty():
+		return
+	if str(p.get("mine", "")) == "":
+		_notice(pid, "not_in_mine")
+		return
+	p["mine"] = ""
+	p["mpos"] = Vector3.ZERO
+	_send(pid, "s2c_mine", "", PackedInt32Array())
+	var pos: Vector3 = p["pos"]
+	_send(pid, "s2c_teleport", pos.x, pos.z)
+
+
+func on_mine_gather(pid: int, idx: int) -> void:
+	var p := _player_of(pid)
+	if p.is_empty():
+		return
+	if not _allow_action(p):
+		_notice(pid, "rate_limited")
+		return
+	var mine_id: String = str(p.get("mine", ""))
+	if mine_id == "":
+		_notice(pid, "not_in_mine")
+		return
+	var mp: Vector3 = p["mpos"]
+	var res: Dictionary = cs.mine_gather(p["name"], mine_id, idx, Vector2(mp.x, mp.z))
+	if not res["ok"]:
+		_notice(pid, str(res["error"]), {"tool": "pickaxe"})
+		return
+	_send_to_mine(mine_id, "s2c_mine_node", idx, false)
+	if res.get("treasure", false):
+		_send(pid, "s2c_money", int(res["money"]))
+		_notice(pid, "treasure", {"reward": res["reward"]})
+	else:
+		_push_inv(pid, p["name"])
+		_notice(pid, "gathered", {"item": res["item"], "count": res["count"]})
+	_dirty = true
 
 
 func on_get_audit(pid: int) -> void:
@@ -791,7 +905,7 @@ func on_place_block(pid: int, req_id: int, x: int, y: int, z: int, type: String,
 	if not _allow_action(p):
 		_notice(pid, "rate_limited")
 		return
-	if int(p.get("inside", 0)) > 0:
+	if _indoors(p):
 		return
 	if not _near(p, float(x) + 0.5, float(y) + 0.5, float(z) + 0.5, FWConst.BLOCK_REACH):
 		_notice(pid, "too_far")
@@ -855,7 +969,7 @@ func on_gather(pid: int, rx: int, rz: int, tool: String) -> void:
 	if not _allow_action(p):
 		_notice(pid, "rate_limited")
 		return
-	if int(p.get("inside", 0)) > 0:
+	if _indoors(p):
 		return
 	var pos: Vector3 = p["pos"]
 	var res: Dictionary = cs.gather(p["name"], rx, rz, tool, Vector2(pos.x, pos.z))
@@ -888,7 +1002,7 @@ func _terraform_request(pid: int, x: float, z: float, tool: String, digging: boo
 	if not _allow_action(p):
 		_notice(pid, "rate_limited")
 		return
-	if int(p.get("inside", 0)) > 0 or not (is_finite(x) and is_finite(z)):
+	if _indoors(p) or not (is_finite(x) and is_finite(z)):
 		return
 	var pos: Vector3 = p["pos"]
 	var at := Vector2(pos.x, pos.z)
@@ -948,7 +1062,7 @@ func on_npc(pid: int, npc_id: int, item: String) -> void:
 	if not _allow_action(p):
 		_notice(pid, "rate_limited")
 		return
-	if int(p.get("inside", 0)) > 0:
+	if _indoors(p):
 		return
 	var pos: Vector3 = p["pos"]
 	var res: Dictionary = cs.npc_interact(p["name"], npc_id, item, Vector2(pos.x, pos.z))
@@ -970,7 +1084,7 @@ func on_npc_sell(pid: int, npc_id: int, item: String, n: int) -> void:
 	if not _allow_action(p):
 		_notice(pid, "rate_limited")
 		return
-	if int(p.get("inside", 0)) > 0:
+	if _indoors(p):
 		return
 	var pos: Vector3 = p["pos"]
 	var res: Dictionary = cs.npc_sell(p["name"], npc_id, item, n, Vector2(pos.x, pos.z))

@@ -36,6 +36,8 @@ var _info_body: Label
 var _info_collect: Button
 var _info_enter: Button
 var _leave_btn: Button
+var _mine_btn: Button
+var _mine_acc: float = 0.0
 var _info_demolish: Button
 var _info_job: Button
 var _info_id: int = -1
@@ -156,6 +158,7 @@ func setup(game_client, game_view) -> void:
 	client.money_changed.connect(func(_m): _refresh_stats())
 	client.notice.connect(_on_notice)
 	client.inside_changed.connect(_on_inside_changed)
+	client.mine_changed.connect(_on_mine_changed)
 	client.energy_changed.connect(_refresh_stats)
 	client.job_changed.connect(func(): if _info.visible and _info_id >= 0: _fill_info(_info_id))
 	client.chat_received.connect(_on_chat)
@@ -429,7 +432,7 @@ func _refresh_tools() -> void:
 
 
 func _toggle_tools() -> void:
-	if view.inside_id > 0 or view.mode != "life":
+	if view.inside_id > 0 or client.mine_id != "" or view.mode != "life":
 		return
 	Sfx.play(self, "click")
 	var on := not _tools_panel.visible
@@ -878,14 +881,43 @@ func _fill_npc() -> void:
 func _build_leave_button() -> void:
 	_leave_btn = UiTheme.button(Loc.t("leave"), Vector2(260, 76))
 	_leave_btn.visible = false
-	_leave_btn.pressed.connect(func(): Sfx.play(self, "click"); client.leave_building())
+	_leave_btn.pressed.connect(func():
+		Sfx.play(self, "click")
+		if client.mine_id != "":
+			client.leave_mine()
+		else:
+			client.leave_building())
 	root.add_child(_leave_btn)
 	_place(_leave_btn, 0.5, 1.0, 0.0, 40.0)
 	_interactive.append(_leave_btn)
+	# دکمهٔ «ورود به معدن» فقط جلوی ورودی معدن نمایان می‌شود.
+	_mine_btn = UiTheme.button(Loc.t("enter_mine"), Vector2(300, 76))
+	_mine_btn.visible = false
+	_mine_btn.pressed.connect(func():
+		Sfx.play(self, "click")
+		var mid: String = view.near_mine_id()
+		if mid != "":
+			client.enter_mine(mid))
+	root.add_child(_mine_btn)
+	_place(_mine_btn, 0.5, 1.0, 0.0, 130.0)
+	_interactive.append(_mine_btn)
+
+
+func _on_mine_changed(id: String) -> void:
+	_leave_btn.visible = id != "" or client.inside_id > 0
+	_mine_btn.visible = false
+	_info.visible = false
+	if id != "":
+		_set_tools_visible(false)
+		_inv_panel.visible = false
+		view.set_tool("hand")
+		_palette.visible = false
+		toast(Loc.t("msg_mine_entered"), Color("c8f08a"))
+	_refresh_stats()
 
 
 func _on_inside_changed(id: int) -> void:
-	_leave_btn.visible = id > 0
+	_leave_btn.visible = id > 0 or client.mine_id != ""
 	_info.visible = false
 	if id > 0:
 		_set_tools_visible(false)
@@ -1167,6 +1199,10 @@ func _process(delta: float) -> void:
 	_update_mg_bar()
 	_update_race_bar()
 	_update_race_bar()
+	_mine_acc += delta
+	if _mine_acc > 0.25:
+		_mine_acc = 0.0
+		_mine_btn.visible = view.near_mine_id() != ""
 
 
 func _update_mode_btn() -> void:
@@ -1194,7 +1230,7 @@ func _on_mode_changed(_m: String) -> void:
 
 
 func _toggle_build() -> void:
-	if view.inside_id > 0:
+	if view.inside_id > 0 or client.mine_id != "":
 		return
 	Sfx.play(self, "click")
 	var on := not _palette.visible
