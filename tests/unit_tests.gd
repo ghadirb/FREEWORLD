@@ -51,6 +51,7 @@ func _init() -> void:
 	test_p2p_trade()
 	test_world_slots()
 	test_npc_label_fade()
+	test_terrain()
 	test_tls_pinning()
 	print("\nRESULT: %d passed, %d failed" % [_pass, _fail])
 	quit(1 if _fail > 0 else 0)
@@ -770,8 +771,9 @@ func test_blocks_and_resources() -> void:
 	check(cs.gather("builder", tn[0], tn[1], "axe", at)["ok"], "a respawned tree can be harvested again")
 	var hd: Vector2 = Vector2(60, 60)
 	check(cs.dig("builder", 60.0, 60.0, "axe", hd)["error"] == "wrong_tool", "digging needs the shovel")
-	var d: Dictionary = cs.dig("builder", 60.0, 60.0, "shovel", hd)
-	check(d["ok"] and d["item"] == "dirt", "shovel digs dirt on land")
+	check(cs.dig("builder", 60.0, 60.0, "shovel", hd)["error"] == "reserved", "the plaza ground is protected from digging")
+	var d: Dictionary = cs.dig("builder", at.x, at.y, "shovel", at)
+	check(d["ok"] and d["item"] in ["dirt", "sand"], "shovel digs dirt or sand on open land")
 
 	# --- چیدن بلوک ---
 	var cell: Vector3i = _land_cell(cs)
@@ -1447,6 +1449,129 @@ func test_npc_label_fade() -> void:
 	check(mid > 0.1 and mid < 0.9, "name is partly transparent in the fade band")
 	check(is_equal_approx(GameView.npc_label_alpha(45.0, 45.0), 0.0), "name is gone at the limit")
 	check(GameView.npc_label_alpha(500.0, 45.0) == 0.0, "far NPC name is hidden")
+
+
+func _terrain_spot(cs, lo: float, hi: float) -> Vector2:
+	## نقطهٔ بیرون از شهر با ارتفاع پایهٔ مشخص که همسایگی‌اش ساختمانی ندارد.
+	for xi in range(-90, 0, 4):
+		for zi in range(-90, 0, 4):
+			var h: float = cs.world.base_height_at(float(xi), float(zi))
+			if h >= lo and h <= hi:
+				return Vector2(float(xi), float(zi))
+	return Vector2(NAN, NAN)
+
+
+func test_terrain() -> void:
+	print("== terrain edits: pits, lakes, filling (protocol 16) ==")
+	var w := WorldGen.new(4343)
+	var p := Vector2(37.0, 51.0)
+	var base: float = w.base_height_at(p.x, p.y)
+	check(is_equal_approx(w.height_at(p.x, p.y), base), "with no edits the height is the seed terrain")
+	var ix := int(round(p.x / FWConst.TERRAIN_EDIT_STEP))
+	var iz := int(round(p.y / FWConst.TERRAIN_EDIT_STEP))
+	var vx: float = float(ix) * FWConst.TERRAIN_EDIT_STEP
+	var vz: float = float(iz) * FWConst.TERRAIN_EDIT_STEP
+	w.set_edit(ix, iz, -8)
+	check(is_equal_approx(w.height_at(vx, vz), w.base_height_at(vx, vz) - 1.0), "a vertex edit moves that vertex by units/8 metres")
+	var mid: float = w.height_at(vx + 1.0, vz)
+	check(absf(mid - (w.base_height_at(vx + 1.0, vz) - 0.5)) < 0.3, "height blends smoothly between edited and neighbouring vertices")
+	w.set_edit(ix, iz, -9999)
+	check(w.edit_units(ix, iz) == FWConst.TERRAIN_MIN_UNITS, "edits are clamped to the maximum depth")
+	w.set_edit(ix, iz, 0)
+	check(w.edits.is_empty(), "setting an edit to zero removes it")
+
+	var cs = CityState.new(4343)
+	_login(cs, "digger")
+	var spot := _terrain_spot(cs, 1.0, 4.0)
+	check(not is_nan(spot.x), "found open land outside the city for digging")
+	var h0: float = cs.world.height_at(spot.x, spot.y)
+	var dirt0: int = int(cs.accounts["digger"]["inv"].get("dirt", 0)) + int(cs.accounts["digger"]["inv"].get("sand", 0))
+	check(cs.dig("digger", spot.x, spot.y, "axe", spot)["error"] == "wrong_tool", "terraforming needs the shovel")
+	check(cs.dig("digger", spot.x, spot.y, "shovel", spot + Vector2(FWConst.GATHER_RANGE + 3.0, 0))["error"] == "too_far", "terraforming needs closeness")
+	var r: Dictionary = cs.dig("digger", spot.x, spot.y, "shovel", spot)
+	check(r["ok"] and r["changes"].size() == 9, "one dig changes a 3x3 patch of vertices")
+	check(cs.world.height_at(spot.x, spot.y) < h0 - 0.2, "digging lowers the ground")
+	var dirt1: int = int(cs.accounts["digger"]["inv"].get("dirt", 0)) + int(cs.accounts["digger"]["inv"].get("sand", 0))
+	check(dirt1 == dirt0 + 1, "digging yields one dirt or sand")
+
+	# دریاچه: آن‌قدر بکن تا کف زیر سطح دریا برود
+	var digs := 1
+	while cs.world.height_at(spot.x, spot.y) >= 0.0 and digs < 60:
+		var rr: Dictionary = cs.dig("digger", spot.x, spot.y, "shovel", spot)
+		if not rr["ok"]:
+			break
+		digs += 1
+	check(cs.world.height_at(spot.x, spot.y) < 0.0, "a deep enough pit drops below sea level")
+	check(cs.world.biome_at(spot.x, spot.y) == "water", "the pit counts as water (a lake)")
+	# عمق محدود است
+	var guard := 0
+	var last: Dictionary = {"ok": true}
+	while last["ok"] and guard < 100:
+		last = cs.dig("digger", spot.x, spot.y, "shovel", spot)
+		guard += 1
+	check(last["error"] == "terrain_limit", "the pit stops at the maximum depth")
+	check(cs.world.edit_units(int(round(spot.x / 2.0)), int(round(spot.y / 2.0))) == FWConst.TERRAIN_MIN_UNITS, "the centre sits exactly at the depth limit")
+
+	# پر کردن
+	var acc: Dictionary = cs.accounts["digger"]
+	var before: float = cs.world.height_at(spot.x, spot.y)
+	acc["inv"]["dirt"] = 0
+	acc["inv"]["sand"] = 0
+	check(cs.fill("digger", spot.x, spot.y, "shovel", spot)["error"] == "no_material", "filling needs dirt or sand")
+	acc["inv"]["dirt"] = 5
+	var f: Dictionary = cs.fill("digger", spot.x, spot.y, "shovel", spot)
+	check(f["ok"] and int(acc["inv"]["dirt"]) == 4, "filling spends one dirt")
+	check(cs.world.height_at(spot.x, spot.y) > before + 0.3, "filling raises the ground")
+
+	# قفل‌ها
+	var key := Placement.cell_key(int(floor(spot.x / 2.0)), int(floor(spot.y / 2.0)))
+	cs.block_cells[key] = 1
+	check(cs.dig("digger", spot.x, spot.y, "shovel", spot)["error"] == "terrain_locked", "ground under blocks cannot be reshaped")
+	cs.block_cells.erase(key)
+	var c0: float = FWConst.CITY_SIZE * 0.5
+	check(cs.fill("digger", c0, c0, "shovel", Vector2(c0, c0))["error"] == "reserved", "the plaza ground is protected from players")
+	var far_x: float = FWConst.CITY_SIZE + FWConst.WORLD_LIMIT + 50.0
+	check(cs.dig("digger", far_x, far_x, "shovel", Vector2(far_x, far_x))["error"] == "out_of_bounds", "terraforming beyond the world edge is refused")
+
+	# سقف تعداد تغییرات
+	var cs2 = CityState.new(4343)
+	_login(cs2, "digger")
+	for i in range(FWConst.TERRAIN_MAX_EDITS - 3):
+		cs2.world.edits["%d,%d" % [5000 + i, 5000]] = 1
+	var sp2 := _terrain_spot(cs2, 1.0, 4.0)
+	check(cs2.dig("digger", sp2.x, sp2.y, "shovel", sp2)["error"] == "terrain_full", "the number of terrain edits is capped")
+
+	# ذخیره، بارگذاری و همگام‌سازی
+	var flat: PackedInt32Array = cs.terrain_flat()
+	check(flat.size() == cs.world.edits.size() * 3, "terrain is exported as triples")
+	var parsed = JSON.parse_string(JSON.stringify(cs.to_dict()))
+	var back = CityState.from_dict(parsed)
+	check(back != null and back.world.edits == cs.world.edits, "terrain edits survive a save and reload")
+	check(is_equal_approx(back.world.height_at(spot.x, spot.y), cs.world.height_at(spot.x, spot.y)), "a reloaded city has the same ground")
+	var twin := WorldGen.new(4343)
+	var i2 := 0
+	while i2 + 2 < flat.size():
+		twin.set_edit(flat[i2], flat[i2 + 1], flat[i2 + 2])
+		i2 += 3
+	check(is_equal_approx(twin.height_at(spot.x + 1.3, spot.y - 0.7), cs.world.height_at(spot.x + 1.3, spot.y - 0.7)), "a client rebuilding from the list sees identical ground")
+	var old_save: Dictionary = parsed.duplicate(true)
+	old_save.erase("terrain")
+	var legacy = CityState.from_dict(old_save)
+	check(legacy != null and legacy.world.edits.is_empty(), "older saves without terrain still load")
+
+	# کلاینت
+	var gc := Node.new()
+	gc.set_script(GameClient)
+	root.add_child(gc)
+	gc.mirror = CityState.new(4343)
+	var areas: Array = []
+	gc.terrain_changed.connect(func(x0, z0, x1, z1): areas.append([x0, z0, x1, z1]))
+	gc.on_terrain(flat)
+	check(gc.mirror.world.edits == cs.world.edits, "the client mirror applies the full terrain list")
+	check(areas.size() == 1 and areas[0][0] < areas[0][2], "the client announces which area to rebuild")
+	gc.on_terrain_edit(PackedInt32Array([ix, iz, -4]))
+	check(gc.mirror.world.edit_units(ix, iz) == -4, "the client applies a single terrain edit")
+	gc.queue_free()
 
 
 func test_tls_pinning() -> void:

@@ -163,7 +163,32 @@ func _builder() -> void:
 	client.offer("bob", "wood", 5, 0)
 	var sent: bool = await wait_until(func(): return "offer_sent" in notices, 3.0)
 	expect(sent, "my trade offer to bob was sent")
+	# زمین: کندن با بیل در نزدیکی خودم؛ همهٔ بازیکنان باید تغییر را ببینند (پروتکل ۱۶)
+	var spot := _dig_spot(pos)
+	expect(spot.x > -9000.0, "found open ground to dig")
+	if spot.x > -9000.0:
+		var tv: Vector2i = client.mirror.terrain_vertex(spot.x, spot.y)
+		client.dig(spot.x, spot.y)
+		var dug: bool = await wait_until(func(): return client.mirror.world.edit_units(tv.x, tv.y) < 0, 4.0)
+		expect(dug, "my dig lowered the ground on my own client")
+		var pre: int = client.mirror.world.edit_units(tv.x, tv.y)
+		client.fill(spot.x, spot.y)
+		var filled: bool = await wait_until(func(): return client.mirror.world.edit_units(tv.x, tv.y) > pre, 4.0)
+		expect(filled, "filling raised the ground again")
+		client.dig(spot.x, spot.y)
+		await wait_until(func(): return client.mirror.world.edit_units(tv.x, tv.y) <= pre, 4.0)
 	await create_timer(6.0).timeout
+
+
+func _dig_spot(from: Vector2) -> Vector2:
+	for r in [3.0, 4.0, 5.0, 6.0]:
+		for a in range(0, 360, 30):
+			var p: Vector2 = from + Vector2(r, 0.0).rotated(deg_to_rad(float(a)))
+			if client.mirror.world.height_at(p.x, p.y) < 1.0:
+				continue
+			if client.mirror.terrain_check("player", client.mirror.terrain_vertex(p.x, p.y)) == "":
+				return p
+	return Vector2(-9999.0, -9999.0)
 
 
 func _observer() -> void:
@@ -191,6 +216,8 @@ func _observer() -> void:
 	client.set_role("alice", "world_admin")
 	await create_timer(0.5).timeout
 	expect("forbidden" in notices and notices.count("forbidden") >= 2, "a player cannot grant roles")
+	var terr: bool = await wait_until(func(): return not client.mirror.world.edits.is_empty(), 10.0)
+	expect(terr, "I can see the terrain alice dug (%d edited vertices)" % client.mirror.world.edits.size())
 	var got: bool = await wait_until(func(): return offers.size() > 0, 10.0)
 	expect(got and offers[0]["from"] == "alice" and offers[0]["item"] == "wood", "I received alice's trade offer")
 	if got:
@@ -208,6 +235,7 @@ func _persist() -> void:
 			mine += 1
 	expect(mine == 1, "my building persisted")
 	expect(client.npcs.size() == FWConst.NPC_COUNT, "npcs exist after restart")
+	expect(not client.mirror.world.edits.is_empty(), "terrain edits persisted across restart (%d vertices)" % client.mirror.world.edits.size())
 	expect(client.spawn.x > client.mirror.spawn_position().x + 3.0, "my position persisted")
 
 

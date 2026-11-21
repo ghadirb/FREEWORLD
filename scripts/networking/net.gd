@@ -111,6 +111,12 @@ func c2s_dig(x: float, z: float, tool: String) -> void:
 
 
 @rpc("any_peer", "call_remote", "reliable")
+func c2s_fill(x: float, z: float, tool: String) -> void:
+	if server:
+		server.on_fill(multiplayer.get_remote_sender_id(), x, z, tool)
+
+
+@rpc("any_peer", "call_remote", "reliable")
 func c2s_craft(recipe: String, times: int) -> void:
 	if server:
 		server.on_craft(multiplayer.get_remote_sender_id(), recipe, times)
@@ -342,6 +348,20 @@ func s2c_resource(data: PackedInt32Array) -> void:
 func s2c_depleted(flat: PackedInt32Array) -> void:
 	if client:
 		client.on_depleted(flat)
+
+
+## کل تغییرات زمین هنگام ورود: سه‌تایی‌های ix, iz, مقدار (پروتکل ۱۶)
+@rpc("authority", "call_remote", "reliable")
+func s2c_terrain(flat: PackedInt32Array) -> void:
+	if client:
+		client.on_terrain(flat)
+
+
+## تغییر تازهٔ زمین (همان قالب سه‌تایی)
+@rpc("authority", "call_remote", "reliable")
+func s2c_terrain_edit(flat: PackedInt32Array) -> void:
+	if client:
+		client.on_terrain_edit(flat)
 
 
 @rpc("authority", "call_remote", "unreliable")

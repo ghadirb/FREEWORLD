@@ -1072,23 +1072,107 @@ func gather(player_name: String, rx: int, rz: int, tool: String, pos: Vector2) -
 
 
 ## کندن خاک/شن با بیل: ۱ واحد خاک یا (کنار ساحل) شن.
-func dig(player_name: String, x: float, z: float, tool: String, pos: Vector2) -> Dictionary:
+## رأس شبکهٔ ۲ متریِ نزدیک به نقطه.
+static func terrain_vertex(x: float, z: float) -> Vector2i:
+	return Vector2i(int(round(x / FWConst.TERRAIN_EDIT_STEP)), int(round(z / FWConst.TERRAIN_EDIT_STEP)))
+
+
+## خطای تغییر زمین در همسایگی ۳×۳ رأس؛ رشتهٔ خالی = مجاز. زیر ساختمان و بلوک و میدان (برای غیرمدیر) قفل است.
+func terrain_check(role: String, v: Vector2i) -> String:
+	var lim := int(FWConst.WORLD_LIMIT / FWConst.TERRAIN_EDIT_STEP)
+	var hi := int(FWConst.CITY_SIZE / FWConst.TERRAIN_EDIT_STEP) + lim
+	if v.x - 1 < -lim or v.y - 1 < -lim or v.x + 1 > hi or v.y + 1 > hi:
+		return "out_of_bounds"
+	for dx in range(-1, 2):
+		for dz in range(-1, 2):
+			var vx := v.x + dx
+			var vz := v.y + dz
+			for cx in [vx - 1, vx]:
+				for cz in [vz - 1, vz]:
+					var key := Placement.cell_key(cx, cz)
+					if occupied.has(key) or block_cells.has(key):
+						return "terrain_locked"
+					if not FWConst.is_admin(role) and cx >= FWConst.PLAZA_MIN and cx <= FWConst.PLAZA_MAX and cz >= FWConst.PLAZA_MIN and cz <= FWConst.PLAZA_MAX:
+						return "reserved"
+	return ""
+
+
+## تغییر را روی لایهٔ زمین اعمال می‌کند (سرور و کلاینت). sign = -1 کندن، +1 پر کردن.
+## فهرست رأس‌های واقعاً تغییرکرده را [[ix, iz, مقدار جدید], ...] برمی‌گرداند.
+func apply_terraform(v: Vector2i, sign: int) -> Array:
+	var changed: Array = []
+	var st: Array = FWConst.TERRAIN_DIG_STRENGTH
+	for dx in range(-1, 2):
+		for dz in range(-1, 2):
+			var ring: int = absi(dx) + absi(dz)
+			var amount: int = int(st[ring])
+			var ix := v.x + dx
+			var iz := v.y + dz
+			var old: int = world.edit_units(ix, iz)
+			world.set_edit(ix, iz, old + sign * amount)
+			var now: int = world.edit_units(ix, iz)
+			if now != old:
+				changed.append([ix, iz, now])
+	return changed
+
+
+func terrain_flat() -> PackedInt32Array:
+	var out := PackedInt32Array()
+	for k in world.edits:
+		var kp: PackedStringArray = str(k).split(",")
+		out.append(int(kp[0]))
+		out.append(int(kp[1]))
+		out.append(int(world.edits[k]))
+	return out
+
+
+func _terraform(player_name: String, x: float, z: float, tool: String, pos: Vector2, sign: int) -> Dictionary:
 	if not accounts.has(player_name):
 		return {"ok": false, "error": "no_account"}
 	if tool != "shovel":
 		return {"ok": false, "error": "wrong_tool", "tool": "shovel"}
 	if pos.distance_to(Vector2(x, z)) > FWConst.GATHER_RANGE:
 		return {"ok": false, "error": "too_far"}
+	var v := terrain_vertex(x, z)
+	var err := terrain_check(role_of(player_name), v)
+	if err != "":
+		return {"ok": false, "error": err}
 	var h: float = world.height_at(x, z)
-	if h < 0.2:
-		return {"ok": false, "error": "no_resource"}
-	var item := "sand" if h < 0.9 else "dirt"
 	var acc: Dictionary = accounts[player_name]
-	if int(acc["inv"].get(item, 0)) >= FWConst.ITEM_CAP:
-		return {"ok": false, "error": "inv_full"}
-	var dug: int = 2 if tool_tier(acc, "shovel") >= 2 else 1
-	_inv_add(acc, item, dug)
-	return {"ok": true, "item": item, "count": dug}
+	var item := "sand" if h < 0.9 else "dirt"
+	if sign < 0:
+		if int(acc["inv"].get(item, 0)) >= FWConst.ITEM_CAP:
+			return {"ok": false, "error": "inv_full"}
+	else:
+		item = "dirt" if inv_count(acc["inv"], "dirt") > 0 else "sand"
+		if inv_count(acc["inv"], item) < 1:
+			return {"ok": false, "error": "no_material"}
+	var fresh := 0
+	for dx in range(-1, 2):
+		for dz in range(-1, 2):
+			if world.edit_units(v.x + dx, v.y + dz) == 0:
+				fresh += 1
+	if world.edits.size() + fresh > FWConst.TERRAIN_MAX_EDITS:
+		return {"ok": false, "error": "terrain_full"}
+	var changed := apply_terraform(v, sign)
+	if changed.is_empty():
+		return {"ok": false, "error": "terrain_limit"}
+	var n: int = (2 if tool_tier(acc, "shovel") >= 2 else 1) if sign < 0 else 1
+	if sign < 0:
+		_inv_add(acc, item, n)
+	else:
+		_inv_add(acc, item, -1)
+	return {"ok": true, "item": item, "count": n, "changes": changed, "mode": "dig" if sign < 0 else "fill"}
+
+
+## کندن زمین با بیل: خاک یا شن می‌دهد و زمین را پایین می‌برد؛ زیر ۰ متر آب می‌آید (دریاچه).
+func dig(player_name: String, x: float, z: float, tool: String, pos: Vector2) -> Dictionary:
+	return _terraform(player_name, x, z, tool, pos, -1)
+
+
+## پر کردن گودی: یک خاک (یا شن) مصرف می‌کند و زمین را بالا می‌آورد.
+func fill(player_name: String, x: float, z: float, tool: String, pos: Vector2) -> Dictionary:
+	return _terraform(player_name, x, z, tool, pos, 1)
 
 
 func craft(player_name: String, recipe: String, times: int) -> Dictionary:
@@ -1355,6 +1439,7 @@ func to_dict() -> Dictionary:
 		"npcs": npcs,
 		"blocks": _blocks_to_list(),
 		"depleted": depleted,
+		"terrain": terrain_flat(),
 		"item_mult": item_mult,
 		"minigame": minigame.to_dict(),
 		"race": race.to_dict(),
@@ -1505,6 +1590,12 @@ static func from_dict(d: Dictionary):
 	if dp is Dictionary:
 		for k in dp:
 			cs.depleted[str(k)] = float(dp[k])
+	var tr = d.get("terrain", [])
+	if tr is Array:
+		var ti := 0
+		while ti + 2 < tr.size() and cs.world.edits.size() < FWConst.TERRAIN_MAX_EDITS:
+			cs.world.set_edit(int(tr[ti]), int(tr[ti + 1]), int(tr[ti + 2]))
+			ti += 3
 	var im = d.get("item_mult", {})
 	if im is Dictionary:
 		for k in im:

@@ -194,6 +194,23 @@ func _add_resources(root: Node3D, c: Vector2i) -> void:
 		holder.add_child(mmi)
 
 
+## پس از تغییر زمین (کندن/پر کردن): چانک‌های درگیر حذف می‌شوند و با ارتفاع تازه دوباره ساخته می‌شوند.
+func invalidate_area(x0: float, z0: float, x1: float, z1: float) -> void:
+	var cs := FWConst.CHUNK_SIZE
+	var cx0 := int(floor(x0 / cs))
+	var cx1 := int(floor(x1 / cs))
+	var cz0 := int(floor(z0 / cs))
+	var cz1 := int(floor(z1 / cs))
+	for cz in range(cz0, cz1 + 1):
+		for cx in range(cx0, cx1 + 1):
+			var key := Vector2i(cx, cz)
+			if _chunks.has(key):
+				_chunks[key].queue_free()
+				_chunks.erase(key)
+				if _dist(key) <= radius and not _queue.has(key):
+					_queue.push_front(key)
+
+
 ## پس از برداشت یا رویش دوباره، فقط منابع همان چانک دوباره ساخته می‌شوند.
 func refresh_resource(rx: int, rz: int) -> void:
 	var per := int(FWConst.CHUNK_SIZE / FWConst.RESOURCE_CELL)

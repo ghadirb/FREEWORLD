@@ -20,7 +20,7 @@ const LOCAL_PID := 1
 const LOCAL_METHODS := [
 	"c2s_login", "c2s_move", "c2s_place", "c2s_remove", "c2s_collect",
 	"c2s_chat", "c2s_set_role", "c2s_get_audit", "c2s_job", "c2s_set_world", "c2s_enter", "c2s_leave",
-	"c2s_place_block", "c2s_remove_block", "c2s_paint_block", "c2s_gather", "c2s_dig", "c2s_craft", "c2s_trade", "c2s_offer", "c2s_offer_answer", "c2s_npc", "c2s_npc_sell", "c2s_minigame_start", "c2s_race_start", "c2s_disaster", "c2s_god",
+	"c2s_place_block", "c2s_remove_block", "c2s_paint_block", "c2s_gather", "c2s_dig", "c2s_fill", "c2s_craft", "c2s_trade", "c2s_offer", "c2s_offer_answer", "c2s_npc", "c2s_npc_sell", "c2s_minigame_start", "c2s_race_start", "c2s_disaster", "c2s_god",
 ]
 
 var net: Node
@@ -535,6 +535,7 @@ func on_login(pid: int, player_name: String, token: String, proto: int) -> void:
 	for batch in cs.block_batches():
 		_send(pid, "s2c_blocks", batch)
 	_send(pid, "s2c_depleted", cs.depleted_flat())
+	_send(pid, "s2c_terrain", cs.terrain_flat())
 	_send(pid, "s2c_god", cs.god_public())
 	_send(pid, "s2c_minigame", cs.minigame.public_state(player_name))
 	_send(pid, "s2c_disaster", cs.disaster_public())
@@ -873,6 +874,14 @@ func on_gather(pid: int, rx: int, rz: int, tool: String) -> void:
 
 
 func on_dig(pid: int, x: float, z: float, tool: String) -> void:
+	_terraform_request(pid, x, z, tool, true)
+
+
+func on_fill(pid: int, x: float, z: float, tool: String) -> void:
+	_terraform_request(pid, x, z, tool, false)
+
+
+func _terraform_request(pid: int, x: float, z: float, tool: String, digging: bool) -> void:
 	var p := _player_of(pid)
 	if p.is_empty():
 		return
@@ -882,12 +891,19 @@ func on_dig(pid: int, x: float, z: float, tool: String) -> void:
 	if int(p.get("inside", 0)) > 0 or not (is_finite(x) and is_finite(z)):
 		return
 	var pos: Vector3 = p["pos"]
-	var res: Dictionary = cs.dig(p["name"], x, z, tool, Vector2(pos.x, pos.z))
+	var at := Vector2(pos.x, pos.z)
+	var res: Dictionary = cs.dig(p["name"], x, z, tool, at) if digging else cs.fill(p["name"], x, z, tool, at)
 	if not res["ok"]:
 		_notice(pid, str(res["error"]), {"tool": str(res.get("tool", ""))})
 		return
+	var flat := PackedInt32Array()
+	for c in res["changes"]:
+		flat.append(int(c[0]))
+		flat.append(int(c[1]))
+		flat.append(int(c[2]))
+	_broadcast("s2c_terrain_edit", flat)
 	_push_inv(pid, p["name"])
-	_notice(pid, "gathered", {"item": res["item"], "count": res["count"]})
+	_notice(pid, "gathered" if digging else "filled", {"item": res["item"], "count": res["count"]})
 	_dirty = true
 
 

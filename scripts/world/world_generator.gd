@@ -28,7 +28,51 @@ func _init(s: int = 12345) -> void:
 	_lake.frequency = 0.008
 
 
+## لایهٔ تغییرات ارتفاع (پروتکل ۱۶): کلید = رأس شبکهٔ ۲ متری (ix, iz)، مقدار = جابه‌جایی به واحد ۱/۸ متر.
+## زمین پایه همچنان فقط از Seed می‌آید؛ تنها این تفاوت‌ها ذخیره و همگام می‌شوند.
+var edits: Dictionary = {}
+
+
+static func edit_key(ix: int, iz: int) -> String:
+	return "%d,%d" % [ix, iz]
+
+
+func edit_units(ix: int, iz: int) -> int:
+	return int(edits.get(edit_key(ix, iz), 0))
+
+
+## مقدار جدید یک رأس را می‌گذارد (۰ = حذف تغییر). مقدار در بازهٔ مجاز بریده می‌شود.
+func set_edit(ix: int, iz: int, units: int) -> void:
+	var u := clampi(units, FWConst.TERRAIN_MIN_UNITS, FWConst.TERRAIN_MAX_UNITS)
+	if u == 0:
+		edits.erase(edit_key(ix, iz))
+	else:
+		edits[edit_key(ix, iz)] = u
+
+
 func height_at(x: float, z: float) -> float:
+	var h := base_height_at(x, z)
+	if edits.is_empty():
+		return h
+	var st := FWConst.TERRAIN_EDIT_STEP
+	var fx := x / st
+	var fz := z / st
+	var ix := int(floor(fx))
+	var iz := int(floor(fz))
+	var tx := fx - float(ix)
+	var tz := fz - float(iz)
+	var d00 := edit_units(ix, iz)
+	var d10 := edit_units(ix + 1, iz)
+	var d01 := edit_units(ix, iz + 1)
+	var d11 := edit_units(ix + 1, iz + 1)
+	if d00 == 0 and d10 == 0 and d01 == 0 and d11 == 0:
+		return h
+	var top := lerpf(float(d00), float(d10), tx)
+	var bot := lerpf(float(d01), float(d11), tx)
+	return h + lerpf(top, bot, tz) * FWConst.TERRAIN_UNIT
+
+
+func base_height_at(x: float, z: float) -> float:
 	var half := FWConst.CITY_SIZE * 0.5
 	var dist := Vector2(x, z).distance_to(Vector2(half, half))
 	var outside := smoothstep(95.0, 220.0, dist)

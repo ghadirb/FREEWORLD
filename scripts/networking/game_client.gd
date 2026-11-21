@@ -28,6 +28,7 @@ signal notice(code: String, args: Dictionary)
 signal chat_received(from_name: String, text: String)
 signal role_changed(role: String)
 signal audit_received(entries: Array)
+signal terrain_changed(x0: float, z0: float, x1: float, z1: float)
 signal teleported(pos: Vector2)
 signal ticked
 signal god_changed
@@ -288,6 +289,39 @@ func gather(rx: int, rz: int, tool: String) -> void:
 func dig(x: float, z: float) -> void:
 	if is_logged_in:
 		_tx("c2s_dig", [x, z, "shovel"])
+
+
+func fill(x: float, z: float) -> void:
+	if is_logged_in:
+		_tx("c2s_fill", [x, z, "shovel"])
+
+
+func on_terrain(flat: PackedInt32Array) -> void:
+	if mirror == null:
+		return
+	mirror.world.edits.clear()
+	_apply_terrain(flat)
+
+
+func on_terrain_edit(flat: PackedInt32Array) -> void:
+	if mirror == null:
+		return
+	_apply_terrain(flat)
+
+
+func _apply_terrain(flat: PackedInt32Array) -> void:
+	if flat.size() < 3:
+		return
+	var st := FWConst.TERRAIN_EDIT_STEP
+	var lo := Vector2(INF, INF)
+	var hi := Vector2(-INF, -INF)
+	var i := 0
+	while i + 2 < flat.size():
+		mirror.world.set_edit(flat[i], flat[i + 1], flat[i + 2])
+		lo = Vector2(minf(lo.x, float(flat[i]) * st), minf(lo.y, float(flat[i + 1]) * st))
+		hi = Vector2(maxf(hi.x, float(flat[i]) * st), maxf(hi.y, float(flat[i + 1]) * st))
+		i += 3
+	terrain_changed.emit(lo.x - st, lo.y - st, hi.x + st, hi.y + st)
 
 
 func craft(recipe: String, times: int = 1) -> void:

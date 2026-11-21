@@ -1072,6 +1072,9 @@ func _on_notice(code: String, args: Dictionary) -> void:
 		"gathered":
 			Sfx.play(self, "coin")
 			toast(Loc.fmt("msg_gathered", [Loc.digits(str(args["count"])), Loc.t("item_" + str(args["item"]))]), Color("c8f08a"))
+		"filled":
+			Sfx.play(self, "click")
+			toast(Loc.fmt("msg_filled", [Loc.digits(str(args["count"])), Loc.t("item_" + str(args["item"]))]), Color("c8f08a"))
 		"npc_talk":
 			Sfx.play(self, "coin" if int(args["reward"]) > 0 else "click")
 			toast(Loc.fmt("msg_npc_talk", [str(args["npc"]), Loc.digits(str(args["reward"]))]) if int(args["reward"]) > 0 else Loc.fmt("msg_npc_talk0", [str(args["npc"])]), Color("c8f08a"))

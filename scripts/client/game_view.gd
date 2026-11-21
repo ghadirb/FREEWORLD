@@ -100,6 +100,7 @@ func setup(game_client, quality_level: int) -> void:
 	add_child(block_view)
 	block_view.setup(client)
 	client.resource_changed.connect(func(rx: int, rz: int, _alive: bool): streamer.refresh_resource(rx, rz))
+	client.terrain_changed.connect(streamer.invalidate_area)
 	client.god_changed.connect(_sync_god)
 	client.minigame_changed.connect(_sync_coins)
 	client.race_changed.connect(_sync_race)
@@ -553,6 +554,19 @@ func _tool_tap(pos: Vector2) -> void:
 				return
 			Sfx.play(self, "error")
 			_feedback("no_target")
+		"fill":
+			var fhit: Dictionary = block_view.raycast(o, d)
+			if fhit.get("kind", "") != "ground":
+				Sfx.play(self, "error")
+				_feedback("no_target")
+				return
+			var fpt: Vector3 = fhit["point"]
+			if Vector2(my_pos.x, my_pos.z).distance_to(Vector2(fpt.x, fpt.z)) > FWConst.GATHER_RANGE:
+				Sfx.play(self, "error")
+				_feedback("too_far")
+				return
+			Sfx.play(self, "click")
+			client.fill(fpt.x, fpt.z)
 		"hammer":
 			var hit: Dictionary = block_view.raycast(o, d)
 			if hit.is_empty():

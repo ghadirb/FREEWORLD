@@ -1,7 +1,7 @@
 extends RefCounted
 ## ثابت‌های مشترک بین سرور و کلاینت.
 
-const PROTOCOL_VERSION := 15
+const PROTOCOL_VERSION := 16
 # ترافیک شبکه با DTLS رمز می‌شود (نسخهٔ ۴ به بعد). فقط برای عیب‌یابی خاموش شود.
 const USE_DTLS := true
 const DEFAULT_PORT := 7777
@@ -215,7 +215,15 @@ const GOD_ANIMALS := {"sheep": 1.0, "deer": 2.2, "rabbit": 1.7}   # سرعت ر�
 const GOD_MAX := 150
 const GOD_REMOVE_RANGE := 3.0
 const GOD_MIN_HEIGHT := 0.3
-const TOOLS := ["hand", "axe", "pickaxe", "shovel", "hammer", "brush"]
+const TOOLS := ["hand", "axe", "pickaxe", "shovel", "fill", "hammer", "brush"]
+
+## تغییر زمین (پروتکل ۱۶): شبکهٔ ۲ متری، واحد ۱/۸ متر؛ هر بار کندن مرکز ۰٫۵ متر پایین می‌برد.
+const TERRAIN_EDIT_STEP := 2.0
+const TERRAIN_UNIT := 0.125
+const TERRAIN_MIN_UNITS := -40      # حداکثر ۵ متر عمق نسبت به زمین پایه
+const TERRAIN_MAX_UNITS := 24       # حداکثر ۳ متر بلندی
+const TERRAIN_MAX_EDITS := 6000     # سقف رأس‌های تغییرکرده در هر شهر
+const TERRAIN_DIG_STRENGTH := [4, 2, 1]  # مرکز، چهار همسایه، چهار گوشه
 
 
 static func role_rank(role: String) -> int:
