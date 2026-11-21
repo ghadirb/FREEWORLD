@@ -61,6 +61,7 @@ var npcs: Array = []
 var spawn: Vector2 = Vector2.ZERO
 ## کیف و قیمت فروش مواد (سرور می‌فرستد).
 var inv: Dictionary = {}
+var friends: Dictionary = {}
 var sell_prices: Dictionary = {}
 var is_logged_in: bool = false
 var last_tick_msec: int = 0
@@ -283,6 +284,11 @@ func craft(recipe: String, times: int = 1) -> void:
 		_tx("c2s_craft", [recipe, times])
 
 
+func npc_interact(npc_id: int, item: String = "") -> void:
+	if is_logged_in:
+		_tx("c2s_npc", [npc_id, item])
+
+
 func trade(item: String, n: int, buy: bool) -> void:
 	if is_logged_in:
 		_tx("c2s_trade", [item, n, buy])
@@ -321,6 +327,7 @@ func block_preview_error(v: Vector3i, type: String) -> String:
 func on_inv(data: Dictionary) -> void:
 	inv = data.get("inv", {})
 	sell_prices = data.get("sell", {})
+	friends = data.get("friends", {})
 	inventory_changed.emit()
 
 

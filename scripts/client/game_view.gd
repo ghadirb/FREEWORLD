@@ -15,6 +15,7 @@ const Streamer = preload("res://scripts/client/terrain_streamer.gd")
 const BlockView = preload("res://scripts/client/block_view.gd")
 
 signal building_tapped(id: int)
+signal npc_tapped(id: int)
 signal ghost_changed(error: String)
 signal mode_changed(new_mode: String)
 signal tool_changed
@@ -616,6 +617,20 @@ func _tap(pos: Vector2) -> void:
 		_tool_tap(pos)
 		return
 	if mode == "life" and tool == "hand" and build_type == "":
+		var ro: Vector3 = cam.camera.project_ray_origin(pos)
+		var rd: Vector3 = cam.camera.project_ray_normal(pos)
+		var best_npc := -1
+		var best_t := 1.0e9
+		for nid in npc_avatars:
+			var c: Vector3 = npc_avatars[nid].position + Vector3(0, 1.0, 0)
+			var t := (c - ro).dot(rd)
+			if t > 0.0 and (c - (ro + rd * t)).length() <= 1.1 and t < best_t:
+				best_t = t
+				best_npc = int(nid)
+		if best_npc >= 0:
+			Sfx.play(self, "click")
+			npc_tapped.emit(best_npc)
+			return
 		var chest := _pick_resource(cam.camera.project_ray_origin(pos), cam.camera.project_ray_normal(pos), "chest")
 		if not chest.is_empty():
 			if Vector2(my_pos.x, my_pos.z).distance_to(Vector2(chest["x"], chest["z"])) > FWConst.GATHER_RANGE:

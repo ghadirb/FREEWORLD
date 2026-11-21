@@ -117,6 +117,12 @@ func c2s_craft(recipe: String, times: int) -> void:
 
 
 @rpc("any_peer", "call_remote", "reliable")
+func c2s_npc(npc_id: int, item: String) -> void:
+	if server:
+		server.on_npc(multiplayer.get_remote_sender_id(), npc_id, item)
+
+
+@rpc("any_peer", "call_remote", "reliable")
 func c2s_trade(item: String, n: int, buy: bool) -> void:
 	if server:
 		server.on_trade(multiplayer.get_remote_sender_id(), item, n, buy)

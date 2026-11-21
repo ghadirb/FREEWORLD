@@ -60,6 +60,11 @@ var _color_row: HBoxContainer
 var _color_btns: Array = []
 var _inv_panel: PanelContainer
 var _inv_rows: Dictionary = {}
+var _npc_panel: PanelContainer
+var _npc_title: Label
+var _npc_body: Label
+var _npc_item: OptionButton
+var _npc_id: int = -1
 var _offer_panel: PanelContainer
 var _offer_label: Label
 var _offer_queue: Array = []
@@ -111,6 +116,7 @@ func setup(game_client, game_view) -> void:
 	_build_inventory_panel()
 	_build_offer_panel()
 	_build_info_panel()
+	_build_npc_panel()
 	_build_leave_button()
 	_build_toasts()
 	_build_chat()
@@ -118,6 +124,8 @@ func setup(game_client, game_view) -> void:
 	_build_menu_panel()
 	view.is_over_ui = Callable(self, "is_over_ui")
 	view.building_tapped.connect(_on_building_tapped)
+	view.npc_tapped.connect(_on_npc_tapped)
+	client.inventory_changed.connect(_fill_npc)
 	view.ghost_changed.connect(_on_ghost_changed)
 	view.mode_changed.connect(_on_mode_changed)
 	view.tool_changed.connect(_refresh_tools)
@@ -609,6 +617,62 @@ func _build_info_panel() -> void:
 	v.add_child(_info_job)
 
 
+func _build_npc_panel() -> void:
+	_npc_panel = _panel(0.5, 1.0)
+	_npc_panel.visible = false
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 8)
+	_npc_panel.add_child(v)
+	_npc_title = _label("", 28, Color("ffd24a"))
+	_npc_body = _label("", 22)
+	v.add_child(_npc_title)
+	v.add_child(_npc_body)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	v.add_child(row)
+	var talk := UiTheme.button(Loc.t("npc_talk"), Vector2(190, 64))
+	talk.pressed.connect(func(): client.npc_interact(_npc_id, ""))
+	var close := UiTheme.button("✕", Vector2(64, 64))
+	close.pressed.connect(func(): _npc_panel.visible = false)
+	row.add_child(talk)
+	row.add_child(close)
+	var grow := HBoxContainer.new()
+	grow.add_theme_constant_override("separation", 8)
+	v.add_child(grow)
+	_npc_item = OptionButton.new()
+	_npc_item.custom_minimum_size = Vector2(170, 56)
+	for it in FWConst.ITEM_ORDER:
+		_npc_item.add_item(Loc.t("item_" + it))
+	grow.add_child(_npc_item)
+	var gift := UiTheme.button(Loc.t("npc_gift"), Vector2(0, 56))
+	gift.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	gift.pressed.connect(func(): client.npc_interact(_npc_id, str(FWConst.ITEM_ORDER[_npc_item.selected])))
+	grow.add_child(gift)
+
+
+func _on_npc_tapped(id: int) -> void:
+	_npc_id = id
+	_info.visible = false
+	_fill_npc()
+	_npc_panel.visible = true
+
+
+func _fill_npc() -> void:
+	if _npc_panel == null or not _npc_panel.visible and _npc_id < 0:
+		return
+	var nm := ""
+	for n in client.npcs:
+		if int(n[0]) == _npc_id:
+			nm = str(n[4])
+	_npc_title.text = nm
+	var pts: int = int(client.friends.get(str(_npc_id), 0))
+	var lv := 0
+	for t in FWConst.FRIEND_LEVELS:
+		if pts >= int(t):
+			lv += 1
+	_npc_body.text = "%s: %s (%s/%s)" % [Loc.t("npc_friendship"), Loc.t("npc_level_%d" % lv), Loc.digits(str(pts)), Loc.digits(str(FWConst.FRIEND_MAX))]
+
+
 func _build_leave_button() -> void:
 	_leave_btn = UiTheme.button(Loc.t("leave"), Vector2(260, 76))
 	_leave_btn.visible = false
@@ -797,6 +861,12 @@ func _on_notice(code: String, args: Dictionary) -> void:
 		"gathered":
 			Sfx.play(self, "coin")
 			toast(Loc.fmt("msg_gathered", [Loc.digits(str(args["count"])), Loc.t("item_" + str(args["item"]))]), Color("c8f08a"))
+		"npc_talk":
+			Sfx.play(self, "coin" if int(args["reward"]) > 0 else "click")
+			toast(Loc.fmt("msg_npc_talk", [str(args["npc"]), Loc.digits(str(args["reward"]))]) if int(args["reward"]) > 0 else Loc.fmt("msg_npc_talk0", [str(args["npc"])]), Color("c8f08a"))
+		"npc_gift":
+			Sfx.play(self, "coin")
+			toast(Loc.fmt("msg_npc_gift", [str(args["npc"]), Loc.t("item_" + str(args["item"]))]), Color("ffd84a"))
 		"upgraded":
 			Sfx.play(self, "coin")
 			toast(Loc.fmt("msg_upgraded", [Loc.t("tool_" + str(args["tool"]))]), Color("ffd84a"))

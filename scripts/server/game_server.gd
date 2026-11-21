@@ -20,7 +20,7 @@ const LOCAL_PID := 1
 const LOCAL_METHODS := [
 	"c2s_login", "c2s_move", "c2s_place", "c2s_remove", "c2s_collect",
 	"c2s_chat", "c2s_set_role", "c2s_get_audit", "c2s_job", "c2s_set_world", "c2s_enter", "c2s_leave",
-	"c2s_place_block", "c2s_remove_block", "c2s_paint_block", "c2s_gather", "c2s_dig", "c2s_craft", "c2s_trade", "c2s_offer", "c2s_offer_answer",
+	"c2s_place_block", "c2s_remove_block", "c2s_paint_block", "c2s_gather", "c2s_dig", "c2s_craft", "c2s_trade", "c2s_offer", "c2s_offer_answer", "c2s_npc",
 ]
 
 var net: Node
@@ -801,6 +801,28 @@ func on_craft(pid: int, recipe: String, times: int) -> void:
 		_notice(pid, "upgraded", {"tool": res["upgrade"]})
 	else:
 		_notice(pid, "crafted", {"item": res["item"], "count": res["count"]})
+	_dirty = true
+
+
+func on_npc(pid: int, npc_id: int, item: String) -> void:
+	var p := _player_of(pid)
+	if p.is_empty():
+		return
+	if not _allow_action(p):
+		_notice(pid, "rate_limited")
+		return
+	if int(p.get("inside", 0)) > 0:
+		return
+	var pos: Vector3 = p["pos"]
+	var res: Dictionary = cs.npc_interact(p["name"], npc_id, item, Vector2(pos.x, pos.z))
+	if not res["ok"]:
+		_notice(pid, str(res["error"]))
+		return
+	_push_inv(pid, p["name"])
+	if int(res["reward"]) > 0:
+		_send(pid, "s2c_money", int(res["money"]))
+	_notice(pid, "npc_talk" if res["kind"] == "talk" else "npc_gift",
+		{"npc": res["npc"], "points": res["points"], "level": res["level"], "reward": res["reward"], "item": res["item"]})
 	_dirty = true
 
 

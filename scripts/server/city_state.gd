@@ -22,6 +22,7 @@ var world_time: float = 8.0 * 3600.0
 var wheat_price: float = FWConst.WHEAT_BASE_PRICE
 ## ابزارهای World Mode: ضریب سرعت گذر زمان و آب‌وهوا (هر دو ذخیره می‌شوند).
 var time_speed: float = 1.0
+var day_count: int = 0
 var weather: String = "clear"
 var bread_price: float = FWConst.BREAD_BASE_PRICE
 ## موجودی بازار مشترک شهر: کالایی که کشاورزان فروخته‌اند و هنوز مصرف نشده.
@@ -664,7 +665,10 @@ func inv_public(player_name: String) -> Dictionary:
 	if accounts.has(player_name):
 		for tl in FWConst.TOOL_UPGRADES:
 			tools[tl] = tool_tier(accounts[player_name], tl)
-	return {"inv": inv, "sell": sell, "tools": tools}
+	var friends: Dictionary = {}
+	if accounts.has(player_name) and accounts[player_name].get("friends") is Dictionary:
+		friends = accounts[player_name]["friends"].duplicate()
+	return {"inv": inv, "sell": sell, "tools": tools, "friends": friends}
 
 
 ## خطای کد برای قرار دادن یک بلوک (رشتهٔ خالی = مجاز). موجودی و سقف‌ها جداگانه بررسی می‌شوند.
@@ -772,6 +776,62 @@ func paint_block(player_name: String, x: int, y: int, z: int, color: int) -> Dic
 func tool_tier(acc: Dictionary, tool: String) -> int:
 	var t: Variant = acc.get("tools", {})
 	return 2 if (t is Dictionary and bool(t.get(tool, false))) else 1
+
+
+static func friend_level(points: int) -> int:
+	var lv := 0
+	for t in FWConst.FRIEND_LEVELS:
+		if points >= int(t):
+			lv += 1
+	return lv
+
+
+func friendship_of(acc: Dictionary, npc_id: int) -> int:
+	var f: Variant = acc.get("friends", {})
+	return int(f.get(str(npc_id), 0)) if f is Dictionary else 0
+
+
+## صحبت (item خالی) یا هدیه دادن یک واحد کالا به NPC نزدیک. هرکدام روزی یک بار برای هر NPC.
+func npc_interact(player_name: String, npc_id: int, item: String, pos: Vector2) -> Dictionary:
+	if not accounts.has(player_name):
+		return {"ok": false, "error": "no_account"}
+	var npc: Dictionary = {}
+	for n in npcs:
+		if int(n["id"]) == npc_id:
+			npc = n
+			break
+	if npc.is_empty():
+		return {"ok": false, "error": "no_npc"}
+	if pos.distance_to(Vector2(float(npc["x"]), float(npc["z"]))) > FWConst.NPC_TALK_RANGE:
+		return {"ok": false, "error": "too_far"}
+	var acc: Dictionary = accounts[player_name]
+	if not (acc.get("friends") is Dictionary):
+		acc["friends"] = {}
+	if not (acc.get("npc_day") is Dictionary):
+		acc["npc_day"] = {}
+	var kind := "talk" if item == "" else "gift"
+	var dkey := "%d:%s" % [npc_id, kind]
+	if int(acc["npc_day"].get(dkey, -1)) == day_count:
+		return {"ok": false, "error": "already_talked" if kind == "talk" else "already_gifted"}
+	var pts := friendship_of(acc, npc_id)
+	var gain := 0
+	var reward := 0
+	if kind == "talk":
+		gain = FWConst.FRIEND_TALK_POINTS
+		var want: int = int(FWConst.FRIEND_REWARD[friend_level(pts)])
+		reward = mini(want, int(npc["money"]))
+		npc["money"] = int(npc["money"]) - reward
+		acc["money"] = int(acc["money"]) + reward
+	else:
+		if not FWConst.ITEMS.has(item) or int(acc["inv"].get(item, 0)) < 1:
+			return {"ok": false, "error": "no_items"}
+		acc["inv"][item] = int(acc["inv"][item]) - 1
+		gain = clampi(int(ceil(float(FWConst.ITEMS[item]) * 0.5)), 1, 15)
+	acc["npc_day"][dkey] = day_count
+	var np: int = mini(FWConst.FRIEND_MAX, pts + gain)
+	acc["friends"][str(npc_id)] = np
+	return {"ok": true, "kind": kind, "npc": str(npc["name"]), "npc_id": npc_id, "points": np, "level": friend_level(np),
+		"reward": reward, "item": item, "money": int(acc["money"])}
 
 
 func gather(player_name: String, rx: int, rz: int, tool: String, pos: Vector2) -> Dictionary:
@@ -954,7 +1014,10 @@ func depleted_flat() -> PackedInt32Array:
 
 func tick(delta: float) -> void:
 	_tick_resources(delta)
+	var prev_time := world_time
 	world_time = fposmod(world_time + delta * FWConst.TIME_SCALE * time_speed, 86400.0)
+	if world_time < prev_time:
+		day_count += 1
 	wheat_price = minf(FWConst.WHEAT_BASE_PRICE, wheat_price + FWConst.WHEAT_RECOVER_PER_SEC * delta)
 	bread_price = move_toward(bread_price, FWConst.BREAD_BASE_PRICE, FWConst.BREAD_RECOVER_PER_SEC * delta)
 	for id in buildings:
@@ -1072,6 +1135,7 @@ func to_dict() -> Dictionary:
 		"city_id": city_id,
 		"seed": seed_value,
 		"world_time": world_time,
+		"day_count": day_count,
 		"wheat_price": wheat_price,
 		"time_speed": time_speed,
 		"weather": weather,
@@ -1090,6 +1154,22 @@ func to_dict() -> Dictionary:
 
 
 ## حساب‌های قدیمی بدون کیف، مواد اولیه می‌گیرند تا بتوانند فوراً بسازند.
+static func _load_friends(v) -> Dictionary:
+	var out: Dictionary = {}
+	if v is Dictionary:
+		for k in v:
+			out[str(k)] = clampi(int(v[k]), 0, FWConst.FRIEND_MAX)
+	return out
+
+
+static func _load_npc_day(v) -> Dictionary:
+	var out: Dictionary = {}
+	if v is Dictionary:
+		for k in v:
+			out[str(k)] = int(v[k])
+	return out
+
+
 static func _load_tools(v) -> Dictionary:
 	var out: Dictionary = {}
 	if v is Dictionary:
@@ -1126,6 +1206,7 @@ static func from_dict(d: Dictionary):
 		return null
 	var cs = load("res://scripts/server/city_state.gd").new(int(d["seed"]), str(d["city_id"]))
 	cs.world_time = float(d.get("world_time", 8.0 * 3600.0))
+	cs.day_count = int(d.get("day_count", 0))
 	cs.wheat_price = float(d.get("wheat_price", FWConst.WHEAT_BASE_PRICE))
 	cs.bread_price = float(d.get("bread_price", FWConst.BREAD_BASE_PRICE))
 	var mk = d.get("market", {})
@@ -1163,6 +1244,8 @@ static func from_dict(d: Dictionary):
 			"energy": clampf(float(a.get("energy", FWConst.ENERGY_MAX)), 0.0, FWConst.ENERGY_MAX),
 			"inv": _load_inv(a.get("inv", null)),
 			"tools": _load_tools(a.get("tools", null)),
+			"friends": _load_friends(a.get("friends", null)),
+			"npc_day": _load_npc_day(a.get("npc_day", null)),
 		}
 	for b in d["buildings"]:
 		if not (b.has("id") and b.has("type") and b.has("owner") and b.has("cx") and b.has("cz")):

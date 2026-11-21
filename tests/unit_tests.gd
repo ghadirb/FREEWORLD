@@ -41,6 +41,7 @@ func _init() -> void:
 	test_interiors()
 	test_blocks_and_resources()
 	test_exploration()
+	test_npc_friendship()
 	test_stairs_and_floors()
 	test_p2p_trade()
 	test_world_slots()
@@ -939,6 +940,47 @@ func test_exploration() -> void:
 	check(cs.tool_tier(acc, "axe") == 1 and cs.inv_public("digger")["tools"]["pickaxe"] == 2, "tiers are reported per tool")
 	var cs3 = CityState.from_dict(cs.to_dict())
 	check(cs3 != null and cs3.tool_tier(cs3.accounts["digger"], "pickaxe") == 2, "tool upgrades survive a save/load")
+
+
+func test_npc_friendship() -> void:
+	print("== NPC friendship ==")
+	var NpcSim = load("res://scripts/server/npc_sim.gd")
+	var cs = CityState.new(4242)
+	_login(cs, "pal")
+	NpcSim.ensure_npcs(cs)
+	var npc: Dictionary = cs.npcs[0]
+	var at := Vector2(float(npc["x"]), float(npc["z"]))
+	var acc: Dictionary = cs.accounts["pal"]
+	check(cs.npc_interact("pal", 99, "", at)["error"] == "no_npc", "unknown NPC is rejected")
+	check(cs.npc_interact("pal", int(npc["id"]), "", at + Vector2(FWConst.NPC_TALK_RANGE + 2.0, 0))["error"] == "too_far", "talking needs closeness")
+	var r: Dictionary = cs.npc_interact("pal", int(npc["id"]), "", at)
+	check(r["ok"] and r["points"] == FWConst.FRIEND_TALK_POINTS and r["level"] == 0 and r["reward"] == 0, "first chat gives points, no reward yet")
+	check(cs.npc_interact("pal", int(npc["id"]), "", at)["error"] == "already_talked", "one chat per day")
+	var w0: int = int(acc["inv"]["wood"])
+	var g: Dictionary = cs.npc_interact("pal", int(npc["id"]), "wood", at)
+	check(g["ok"] and int(acc["inv"]["wood"]) == w0 - 1 and g["points"] == FWConst.FRIEND_TALK_POINTS + 2, "gift consumes the item and adds points")
+	check(cs.npc_interact("pal", int(npc["id"]), "wood", at)["error"] == "already_gifted", "one gift per day")
+	acc["inv"]["gold"] = 1
+	cs.day_count += 1
+	var g2: Dictionary = cs.npc_interact("pal", int(npc["id"]), "gold", at)
+	check(g2["ok"] and g2["points"] == FWConst.FRIEND_TALK_POINTS + 2 + 15, "valuable gifts give more points")
+	check(cs.npc_interact("pal", int(npc["id"]), "gold", at)["error"] != "", "no gift without the item")
+	acc["friends"][str(npc["id"])] = FWConst.FRIEND_LEVELS[0]
+	cs.day_count += 1
+	var m0: int = int(acc["money"])
+	var npc_m0: int = int(npc["money"])
+	var r2: Dictionary = cs.npc_interact("pal", int(npc["id"]), "", at)
+	check(r2["ok"] and r2["level"] == 1 and r2["reward"] == FWConst.FRIEND_REWARD[1] and int(acc["money"]) == m0 + int(r2["reward"]), "a friend gives a daily reward")
+	check(int(npc["money"]) == npc_m0 - int(r2["reward"]), "the reward is paid from the NPC's own money")
+	acc["friends"][str(npc["id"])] = FWConst.FRIEND_MAX - 1
+	cs.day_count += 1
+	check(cs.npc_interact("pal", int(npc["id"]), "", at)["points"] == FWConst.FRIEND_MAX, "friendship is capped")
+	var cs2 = CityState.from_dict(cs.to_dict())
+	check(cs2 != null and cs2.friendship_of(cs2.accounts["pal"], int(npc["id"])) == FWConst.FRIEND_MAX and cs2.day_count == cs.day_count, "friendship and day count survive save/load")
+	check(cs.inv_public("pal")["friends"].has(str(npc["id"])), "friendship is reported to the client")
+	cs.world_time = 86399.0
+	cs.tick(1.0)
+	check(cs.day_count == cs2.day_count + 1, "day counter advances when the clock wraps")
 
 
 func test_stairs_and_floors() -> void:

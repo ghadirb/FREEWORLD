@@ -1,7 +1,7 @@
 extends RefCounted
 ## ثابت‌های مشترک بین سرور و کلاینت.
 
-const PROTOCOL_VERSION := 9
+const PROTOCOL_VERSION := 10
 # ترافیک شبکه با DTLS رمز می‌شود (نسخهٔ ۴ به بعد). فقط برای عیب‌یابی خاموش شود.
 const USE_DTLS := true
 const DEFAULT_PORT := 7777
@@ -175,6 +175,12 @@ const TOOL_UPGRADES := ["axe", "pickaxe", "shovel"]
 const OFFER_TTL := 60.0
 const OFFER_MAX_PENDING := 5
 const OFFER_MAX_PRICE := 100000
+# دوستی با NPC: هر روز بازی یک بار صحبت و یک بار هدیه. هدیه به ارزش کالا امتیاز می‌دهد.
+const NPC_TALK_RANGE := 7.0
+const FRIEND_MAX := 100
+const FRIEND_LEVELS := [25, 70]          # آستانهٔ «دوست» و «دوست صمیمی»
+const FRIEND_TALK_POINTS := 2
+const FRIEND_REWARD := [0, 10, 25]       # پاداش روزانهٔ صحبت (از پول خود NPC پرداخت می‌شود)
 const TOOLS := ["hand", "axe", "pickaxe", "shovel", "hammer", "brush"]
 
 
