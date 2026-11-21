@@ -43,6 +43,9 @@ var wage_interval: float = FWConst.WAGE_INTERVAL
 var _audit_counter: int = 0
 ## با هر تغییر در ساختمان‌ها زیاد می‌شود تا شبکهٔ مسیریابی دوباره ساخته شود (ذخیره نمی‌شود).
 var nav_version: int = 0
+## خانه‌های ۲×۲ که بلوک دیوار دارند (NPCها از آن‌ها رد نمی‌شوند). فقط سرور لازم دارد.
+var walled: Dictionary = {}
+var track_nav: bool = true
 var nav
 ## مسیر فعلی هر NPC (حافظهٔ موقت؛ ذخیره نمی‌شود): id -> {goal: Vector2i, ver: int, pts: Array}
 var npc_paths: Dictionary = {}
@@ -540,6 +543,34 @@ func blocks_in_footprint(type: String, cx: int, cz: int) -> bool:
 	return false
 
 
+## خانه دیوار دارد اگر در یکی از چهار ستونش بلوک پر در ارتفاع سر باشد (یک بلوک تکی قابل‌قدم‌گذاشتن است).
+func _cell_walled(cx: int, cz: int) -> bool:
+	if not block_cells.has(Placement.cell_key(cx, cz)):
+		return false
+	for dx in range(2):
+		for dz in range(2):
+			var bx := cx * 2 + dx
+			var bz := cz * 2 + dz
+			var lv := maxi(0, int(floor(world.height_at(float(bx) + 0.5, float(bz) + 0.5))))
+			if _solid_at(bx, lv + 1, bz):
+				return true
+	return false
+
+
+func _refresh_walled(cx: int, cz: int) -> void:
+	if not track_nav:
+		return
+	var key := Placement.cell_key(cx, cz)
+	var now := _cell_walled(cx, cz)
+	if now == walled.has(key):
+		return
+	if now:
+		walled[key] = true
+	else:
+		walled.erase(key)
+	nav_version += 1
+
+
 func _add_block(v: Vector3i, type: String, color: int, owner_name: String) -> void:
 	if blocks.has(v):
 		return
@@ -547,6 +578,7 @@ func _add_block(v: Vector3i, type: String, color: int, owner_name: String) -> vo
 	var k := Placement.cell_key(v.x >> 1, v.z >> 1)
 	block_cells[k] = int(block_cells.get(k, 0)) + 1
 	block_owner_count[owner_name] = int(block_owner_count.get(owner_name, 0)) + 1
+	_refresh_walled(v.x >> 1, v.z >> 1)
 
 
 func _del_block(v: Vector3i) -> void:
@@ -561,6 +593,7 @@ func _del_block(v: Vector3i) -> void:
 	else:
 		block_cells[k] = left
 	block_owner_count[owner_name] = maxi(0, int(block_owner_count.get(owner_name, 0)) - 1)
+	_refresh_walled(v.x >> 1, v.z >> 1)
 
 
 ## اعمال تغییر بلوک روی نسخهٔ محلی کلاینت: type_id < 0 یعنی حذف.
@@ -1060,10 +1093,15 @@ static func from_dict(d: Dictionary):
 				"goods_day": int(n.get("goods_day", -1)),
 			})
 	var bl = d.get("blocks", [])
+	cs.track_nav = false
 	if bl is Array:
 		for e in bl:
 			if e is Array and e.size() >= 6 and FWConst.BLOCK_TYPES.has(str(e[3])):
 				cs._add_block(Vector3i(int(e[0]), int(e[1]), int(e[2])), str(e[3]), int(e[4]) if FWConst.meta_valid(int(e[4])) else 0, str(e[5]))
+	cs.track_nav = true
+	for k in cs.block_cells.keys():
+		var kp: PackedStringArray = str(k).split(",")
+		cs._refresh_walled(int(kp[0]), int(kp[1]))
 	var dp = d.get("depleted", {})
 	if dp is Dictionary:
 		for k in dp:

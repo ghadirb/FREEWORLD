@@ -382,6 +382,7 @@ func on_login_result(ok: bool, error: String, info: Dictionary) -> void:
 	job_id = int(info.get("job", 0))
 	spawn = Vector2(info["pos"][0], info["pos"][1])
 	mirror = CityState.new(int(info["seed"]), str(info["city_id"]))
+	mirror.track_nav = false
 	is_logged_in = true
 	logged_in.emit()
 

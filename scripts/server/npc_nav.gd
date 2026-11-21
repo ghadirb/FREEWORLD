@@ -46,6 +46,8 @@ func _cell_free(cx: int, cz: int) -> bool:
 	if not _terrain_walkable(cx, cz):
 		return false
 	var key := "%d,%d" % [cx, cz]
+	if _cs.walled.has(key):
+		return false
 	if _cs.occupied.has(key):
 		var t: String = _cs.buildings[_cs.occupied[key]]["type"]
 		return t == "road" or t == "well"

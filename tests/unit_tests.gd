@@ -11,6 +11,7 @@ const GameView = preload("res://scripts/client/game_view.gd")
 const TlsSetup = preload("res://scripts/networking/tls_setup.gd")
 const GameClient = preload("res://scripts/networking/game_client.gd")
 const Settings = preload("res://scripts/client/settings.gd")
+const NpcNav = preload("res://scripts/server/npc_nav.gd")
 
 var _fail := 0
 var _pass := 0
@@ -813,6 +814,20 @@ func test_blocks_and_resources() -> void:
 	cs.place_block("builder", 24, w.x, w.y + 2, w.z, "wood", 0)
 	check(cs.is_walkable(wx, wz), "a lintel above a doorway does not block")
 	check(is_equal_approx(cs.ground_height(wx, wz), h0), "walking through a door keeps the ground height")
+
+	# --- NPCها: دیوار بلوکی مسیر را می‌بندد ---
+	var nv0: int = cs.nav_version
+	var nav = NpcNav.new(cs)
+	var wc := Vector2i(70 >> 1, 90 >> 1)
+	var wl: int = maxi(0, int(floor(cs.world.height_at(70.5, 90.5))))
+	var pre: bool = nav._cell_free(wc.x, wc.y)
+	cs._add_block(Vector3i(70, wl, 90), "stone", 0, "builder")
+	check(nav._cell_free(wc.x, wc.y) == pre, "a single block does not wall off a cell for NPCs")
+	cs._add_block(Vector3i(70, wl + 1, 90), "stone", 0, "builder")
+	check(cs.nav_version > nv0 and not nav._cell_free(wc.x, wc.y), "a two-high wall closes the cell for NPC paths")
+	cs._del_block(Vector3i(70, wl + 1, 90))
+	check(nav._cell_free(wc.x, wc.y) == pre, "removing the wall reopens the cell")
+	cs._del_block(Vector3i(70, wl, 90))
 
 	# --- ساختمان روی بلوک‌ها ممنوع ---
 	var bc := Vector2i(cell.x >> 1, cell.z >> 1)
