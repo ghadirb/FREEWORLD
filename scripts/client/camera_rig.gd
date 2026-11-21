@@ -18,6 +18,9 @@ var _cur_focus: Vector3 = Vector3.ZERO
 var _cur_yaw: float = 0.0
 var _cur_pitch: float = LIFE_PITCH
 var _cur_dist: float = 9.0
+## دید اول‌شخص (فقط در حالت زندگی): دوربین در چشم شخصیت است.
+var first_person: bool = false
+var fp_pitch: float = 0.0  # درجه؛ مثبت = نگاه به بالا
 
 
 func setup(world_gen) -> void:
@@ -39,7 +42,9 @@ func snap(f: Vector3) -> void:
 
 func rotate_by(dx: float, dy: float) -> void:
 	yaw -= dx
-	if mode == "life":
+	if first_person and mode == "life":
+		fp_pitch = clampf(fp_pitch - dy * 40.0, -80.0, 80.0)
+	elif mode == "life":
 		life_pitch_offset = clampf(life_pitch_offset - dy * 30.0, -20.0, 45.0)
 	else:
 		world_pitch_offset = clampf(world_pitch_offset - dy * 30.0, -25.0, 20.0)
@@ -50,6 +55,8 @@ var world_pitch_offset: float = 0.0
 
 
 func zoom_by(factor: float) -> void:
+	if first_person and mode == "life":
+		return
 	if mode == "life":
 		life_distance = clampf(life_distance * factor, 4.0, 22.0)
 	else:
@@ -80,6 +87,11 @@ func right_flat() -> Vector3:
 
 
 func _process(delta: float) -> void:
+	if first_person and mode == "life":
+		_cur_focus = focus
+		_cur_yaw = yaw
+		_apply()
+		return
 	var k := 1.0 - exp(-9.0 * delta)
 	var target_pitch := (LIFE_PITCH + life_pitch_offset) if mode == "life" else (WORLD_PITCH + world_pitch_offset)
 	var target_dist := life_distance if mode == "life" else world_distance
@@ -91,6 +103,15 @@ func _process(delta: float) -> void:
 
 
 func _apply() -> void:
+	if first_person and mode == "life":
+		var p := deg_to_rad(fp_pitch)
+		var look := Vector3(-sin(_cur_yaw) * cos(p), sin(p), -cos(_cur_yaw) * cos(p))
+		var eye := _cur_focus + Vector3(0, 0.3, 0)
+		camera.fov = 78.0
+		camera.global_position = eye
+		camera.look_at(eye + look, Vector3.UP)
+		return
+	camera.fov = 65.0
 	var pitch := deg_to_rad(_cur_pitch)
 	var dir := Vector3(sin(_cur_yaw) * cos(pitch), -sin(pitch), cos(_cur_yaw) * cos(pitch))
 	var pos := _cur_focus + dir * _cur_dist

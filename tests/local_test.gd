@@ -208,6 +208,18 @@ func _run() -> void:
 	gv._long_press(Vector2(640, 360))
 	gv._check_long_press()
 	ok(true, "ui: long press and hold check do not crash")
+	gv.set_first_person(true)
+	await create_timer(0.2).timeout
+	ok(gv.cam.first_person and not gv.my_avatar.visible, "ui: first person hides the avatar and moves the camera into the head")
+	var eye: Vector3 = gv.cam.camera.global_position
+	ok(eye.distance_to(gv.my_pos + Vector3(0, 1.6, 0)) < 0.2, "ui: first-person camera sits at eye height")
+	gv.cam.rotate_by(0.0, -0.5)
+	ok(gv.cam.fp_pitch > 0.0, "ui: dragging up looks up")
+	gv.set_mode("world")
+	ok(not gv.cam.first_person and gv.my_avatar.visible, "ui: world mode returns to the normal camera")
+	gv.set_mode("life")
+	gv.set_first_person(false)
+	ok(gv.my_avatar.visible, "ui: third person shows the avatar again")
 	gv.set_tool("hand")
 	var node_found := false
 	for rx in range(-40, 40):

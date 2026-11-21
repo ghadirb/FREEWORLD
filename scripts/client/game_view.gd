@@ -18,6 +18,7 @@ signal building_tapped(id: int)
 signal ghost_changed(error: String)
 signal mode_changed(new_mode: String)
 signal tool_changed
+signal perspective_changed
 
 const HEIGHTS := {"house": 4.4, "shop": 4.0, "farm": 1.3, "road": 0.2, "well": 2.5, "bakery": 4.4, "coop": 2.6, "barn": 4.0}
 
@@ -52,6 +53,7 @@ var ghost_err: String = "not_ready"
 var is_over_ui: Callable = func(_p): return false
 ## ابزار دست در حالت زندگی: hand | axe | pickaxe | shovel | hammer | brush
 const LONG_PRESS_MS := 450
+var first_person: bool = false
 var tool: String = "hand"
 var block_type: String = "wood"
 var paint_color: int = 0
@@ -258,6 +260,7 @@ func set_mode(m: String) -> void:
 		return
 	mode = m
 	cam.mode = m
+	_apply_perspective()
 	if m == "life":
 		cam.set_life_focus(my_pos)
 		joy = Vector2.ZERO
@@ -411,6 +414,22 @@ func confirm_build() -> bool:
 
 
 # ---------------- ابزارهای دست (تبر، کلنگ، بیل، چکش، قلم‌مو) ----------------
+
+## جابه‌جایی بین دید سوم‌شخص و اول‌شخص (فقط در حالت زندگی و بیرون از ساختمان).
+func set_first_person(on: bool) -> void:
+	first_person = on
+	_apply_perspective()
+	perspective_changed.emit()
+
+
+func _apply_perspective() -> void:
+	var fp := first_person and mode == "life" and inside_id == 0
+	cam.first_person = fp
+	if fp:
+		cam.fp_pitch = 0.0
+	if my_avatar != null:
+		my_avatar.visible = not fp
+
 
 func set_tool(t: String) -> void:
 	if not FWConst.TOOLS.has(t):
@@ -851,6 +870,7 @@ func _enter_interior(id: int) -> void:
 	var type: String = str(client.mirror.buildings[id]["type"])
 	_outside_pos = my_pos
 	inside_id = id
+	_apply_perspective()
 	build_type = ""
 	_ghost.visible = false
 	if _interior != null:
@@ -880,6 +900,7 @@ func _exit_interior() -> void:
 	if inside_id == 0:
 		return
 	inside_id = 0
+	_apply_perspective()
 	if _interior != null:
 		_interior.queue_free()
 		_interior = null

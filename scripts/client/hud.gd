@@ -48,6 +48,7 @@ var _admin_target: LineEdit
 var _admin_log: RichTextLabel
 var _menu_panel: PanelContainer
 var _tools_btn: Button
+var _view_btn: Button
 var _inv_btn: Button
 var _tools_panel: PanelContainer
 var _hint_panel: PanelContainer
@@ -112,6 +113,8 @@ func setup(game_client, game_view) -> void:
 	view.ghost_changed.connect(_on_ghost_changed)
 	view.mode_changed.connect(_on_mode_changed)
 	view.tool_changed.connect(_refresh_tools)
+	view.perspective_changed.connect(_update_view_btn)
+	_update_view_btn()
 	client.inventory_changed.connect(func():
 		_refresh_inventory()
 		_refresh_tools())
@@ -211,6 +214,10 @@ func _build_side_buttons() -> void:
 	_mode_btn.pressed.connect(func(): Sfx.play(self, "click"); view.toggle_mode())
 	_build_btn = UiTheme.button(Loc.t("build"), Vector2(180, 58))
 	_build_btn.pressed.connect(_toggle_build)
+	_view_btn = UiTheme.button("", Vector2(180, 58))
+	_view_btn.pressed.connect(func():
+		Sfx.play(self, "click")
+		view.set_first_person(not view.first_person))
 	_tools_btn = UiTheme.button(Loc.t("tools"), Vector2(180, 58))
 	_tools_btn.pressed.connect(_toggle_tools)
 	_inv_btn = UiTheme.button(Loc.t("inventory"), Vector2(180, 58))
@@ -223,7 +230,7 @@ func _build_side_buttons() -> void:
 	_admin_btn.pressed.connect(func(): _admin_panel.visible = not _admin_panel.visible)
 	var menu_btn := UiTheme.button(Loc.t("menu"), Vector2(180, 58))
 	menu_btn.pressed.connect(func(): _menu_panel.visible = not _menu_panel.visible)
-	for b in [_mode_btn, _build_btn, _tools_btn, _inv_btn, chat_btn, _admin_btn, menu_btn]:
+	for b in [_mode_btn, _view_btn, _build_btn, _tools_btn, _inv_btn, chat_btn, _admin_btn, menu_btn]:
 		v.add_child(b)
 		_interactive.append(b)
 	_update_mode_btn()
@@ -729,8 +736,14 @@ func _update_mode_btn() -> void:
 	_mode_btn.text = Loc.t("world_mode") if view.mode == "life" else Loc.t("life_mode")
 
 
+func _update_view_btn() -> void:
+	_view_btn.text = Loc.t("view_third") if view.first_person else Loc.t("view_first")
+	_view_btn.visible = view.mode == "life"
+
+
 func _on_mode_changed(_m: String) -> void:
 	_update_mode_btn()
+	_update_view_btn()
 	_tools_btn.visible = view.mode == "life"
 	if view.mode == "world":
 		_set_tools_visible(false)
