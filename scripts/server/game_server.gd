@@ -20,7 +20,7 @@ const LOCAL_PID := 1
 const LOCAL_METHODS := [
 	"c2s_login", "c2s_move", "c2s_place", "c2s_remove", "c2s_collect",
 	"c2s_chat", "c2s_set_role", "c2s_get_audit", "c2s_job", "c2s_set_world", "c2s_enter", "c2s_leave",
-	"c2s_place_block", "c2s_remove_block", "c2s_paint_block", "c2s_gather", "c2s_dig", "c2s_craft", "c2s_trade", "c2s_offer", "c2s_offer_answer", "c2s_npc",
+	"c2s_place_block", "c2s_remove_block", "c2s_paint_block", "c2s_gather", "c2s_dig", "c2s_craft", "c2s_trade", "c2s_offer", "c2s_offer_answer", "c2s_npc", "c2s_god",
 ]
 
 var net: Node
@@ -36,6 +36,7 @@ var _name_re := RegEx.new()
 var _dirty: bool = false
 var _last_save_msec: int = 0
 var _tick_acc: float = 0.0
+var _god_acc: float = 0.0
 var _stock_acc: float = 0.0
 var _autosave_acc: float = 0.0
 var _last_stocks: Dictionary = {}
@@ -206,6 +207,12 @@ func _process(delta: float) -> void:
 		cs.respawned.clear()
 		_dirty = true
 	NpcSim.step(cs, dt)
+	cs.god_step(dt)
+	_god_acc += dt
+	if _god_acc >= 1.0:
+		_god_acc = 0.0
+		if cs.god_has_animals():
+			_broadcast("s2c_god", cs.god_public())
 	_work_step(dt)
 	var now := Time.get_ticks_msec()
 	for pid in peers.keys():
@@ -434,6 +441,7 @@ func on_login(pid: int, player_name: String, token: String, proto: int) -> void:
 	for batch in cs.block_batches():
 		_send(pid, "s2c_blocks", batch)
 	_send(pid, "s2c_depleted", cs.depleted_flat())
+	_send(pid, "s2c_god", cs.god_public())
 	p["last_inv"] = cs.inv_public(player_name)
 	_send(pid, "s2c_inv", p["last_inv"])
 	_broadcast("s2c_player_joined", player_name, acc["role"], pid)
@@ -801,6 +809,21 @@ func on_craft(pid: int, recipe: String, times: int) -> void:
 		_notice(pid, "upgraded", {"tool": res["upgrade"]})
 	else:
 		_notice(pid, "crafted", {"item": res["item"], "count": res["count"]})
+	_dirty = true
+
+
+func on_god(pid: int, action: String, kind: String, x: float, z: float) -> void:
+	var p := _player_of(pid)
+	if p.is_empty():
+		return
+	if not _allow_action(p):
+		_notice(pid, "rate_limited")
+		return
+	var res: Dictionary = cs.god_action(p["name"], action, kind, x, z)
+	if not res["ok"]:
+		_notice(pid, str(res["error"]))
+		return
+	_broadcast("s2c_god", cs.god_public())
 	_dirty = true
 
 

@@ -42,6 +42,7 @@ func _init() -> void:
 	test_blocks_and_resources()
 	test_exploration()
 	test_npc_friendship()
+	test_god_tools()
 	test_stairs_and_floors()
 	test_p2p_trade()
 	test_world_slots()
@@ -981,6 +982,54 @@ func test_npc_friendship() -> void:
 	cs.world_time = 86399.0
 	cs.tick(1.0)
 	check(cs.day_count == cs2.day_count + 1, "day counter advances when the clock wraps")
+
+
+func test_god_tools() -> void:
+	print("== god tools ==")
+	var cs = CityState.new(31337)
+	_login(cs, "mortal")
+	cs.provision_admin("maker", "secret-secret-1", FWConst.ROLE_CITY_ADMIN)
+	var land := Vector2.ZERO
+	for i in range(40, 200, 3):
+		if cs.world.height_at(float(i), 70.0) > 1.5 and not cs.occupied.has(Placement.cell_key(i / 2, 35)):
+			land = Vector2(float(i), 70.0)
+			break
+	check(land != Vector2.ZERO, "found land for the god tools")
+	check(cs.god_action("mortal", "add", "tree", land.x, land.y)["error"] == "forbidden", "players cannot create creatures")
+	check(cs.god_action("maker", "add", "dragon", land.x, land.y)["error"] == "bad_request", "unknown kinds are rejected")
+	check(cs.god_action("maker", "add", "tree", NAN, 1.0)["error"] == "bad_request", "non-finite positions are rejected")
+	check(cs.god_action("maker", "add", "tree", 99999.0, 0.0)["error"] == "bad_place", "outside the world is rejected")
+	var water := Vector2.ZERO
+	for i in range(0, 800, 4):
+		if cs.world.height_at(float(i) - 300.0, 40.0) < 0.0:
+			water = Vector2(float(i) - 300.0, 40.0)
+			break
+	if water != Vector2.ZERO:
+		check(cs.god_action("maker", "add", "sheep", water.x, water.y)["error"] == "bad_place", "creatures cannot be placed in water")
+	var tr: Dictionary = cs.god_action("maker", "add", "tree", land.x, land.y)
+	check(tr["ok"] and cs.god.size() == 1, "an admin plants a tree")
+	var sh: Dictionary = cs.god_action("maker", "add", "sheep", land.x + 3.0, land.y)
+	check(sh["ok"], "an admin creates a sheep")
+	var p0 := Vector2(float(cs.god[sh["id"]]["x"]), float(cs.god[sh["id"]]["z"]))
+	for i in range(400):
+		cs.god_step(0.25)
+	var p1 := Vector2(float(cs.god[sh["id"]]["x"]), float(cs.god[sh["id"]]["z"]))
+	check(p0.distance_to(p1) > 0.5, "animals wander")
+	check(cs.world.height_at(p1.x, p1.y) >= FWConst.GOD_MIN_HEIGHT, "wandering animals stay on land")
+	check(Vector2(float(cs.god[tr["id"]]["x"]), float(cs.god[tr["id"]]["z"])) == land, "trees do not move")
+	check(cs.god_public().size() == 2 and cs.god_has_animals(), "public list reports both")
+	var cs2 = CityState.from_dict(cs.to_dict())
+	check(cs2 != null and cs2.god.size() == 2 and cs2.next_god_id == cs.next_god_id, "creatures survive save/load")
+	check(cs.god_action("mortal", "remove", "", land.x, land.y)["error"] == "forbidden", "players cannot remove creatures")
+	check(cs.god_action("maker", "remove", "", land.x + 500.0, land.y)["error"] == "bad_place", "far removal is rejected")
+	check(cs.god_action("maker", "remove", "", land.x, land.y)["ok"] and not cs.god.has(tr["id"]), "an admin removes the tree")
+	for i in range(FWConst.GOD_MAX):
+		cs.god[1000 + i] = {"id": 1000 + i, "kind": "tree", "x": land.x, "z": land.y, "tx": 0.0, "tz": 0.0, "wait": 0.0}
+	check(cs.god_action("maker", "add", "tree", land.x, land.y)["error"] == "god_full", "the creature limit is enforced")
+	var audit_kinds := []
+	for e in cs.audit:
+		audit_kinds.append(str(e["action"]))
+	check(audit_kinds.has("god_add") and audit_kinds.has("god_remove"), "god actions are audited")
 
 
 func test_stairs_and_floors() -> void:

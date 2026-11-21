@@ -23,6 +23,9 @@ var wheat_price: float = FWConst.WHEAT_BASE_PRICE
 ## ابزارهای World Mode: ضریب سرعت گذر زمان و آب‌وهوا (هر دو ذخیره می‌شوند).
 var time_speed: float = 1.0
 var day_count: int = 0
+var god: Dictionary = {}
+var next_god_id: int = 1
+var _god_rng := RandomNumberGenerator.new()
 var weather: String = "clear"
 var bread_price: float = FWConst.BREAD_BASE_PRICE
 ## موجودی بازار مشترک شهر: کالایی که کشاورزان فروخته‌اند و هنوز مصرف نشده.
@@ -778,6 +781,91 @@ func tool_tier(acc: Dictionary, tool: String) -> int:
 	return 2 if (t is Dictionary and bool(t.get(tool, false))) else 1
 
 
+## ابزارهای خلقت. action: "add" یا "remove". فقط مدیران.
+func god_action(actor: String, action: String, kind: String, x: float, z: float) -> Dictionary:
+	if not FWConst.is_admin(role_of(actor)):
+		return {"ok": false, "error": "forbidden"}
+	if not (is_finite(x) and is_finite(z)):
+		return {"ok": false, "error": "bad_request"}
+	var half := FWConst.CITY_SIZE * 0.5
+	if absf(x - half) > FWConst.WORLD_LIMIT or absf(z - half) > FWConst.WORLD_LIMIT:
+		return {"ok": false, "error": "bad_place"}
+	if action == "remove":
+		var best := -1
+		var best_d := FWConst.GOD_REMOVE_RANGE
+		for id in god:
+			var d := Vector2(float(god[id]["x"]), float(god[id]["z"])).distance_to(Vector2(x, z))
+			if d <= best_d:
+				best_d = d
+				best = id
+		if best < 0:
+			return {"ok": false, "error": "no_target"}
+		var k: String = str(god[best]["kind"])
+		god.erase(best)
+		_log(actor, "god_remove", {"kind": k})
+		return {"ok": true}
+	if action != "add" or not (FWConst.GOD_STATIC.has(kind) or FWConst.GOD_ANIMALS.has(kind)):
+		return {"ok": false, "error": "bad_request"}
+	if god.size() >= FWConst.GOD_MAX:
+		return {"ok": false, "error": "god_full"}
+	if not _god_spot_ok(x, z):
+		return {"ok": false, "error": "bad_place"}
+	var id := next_god_id
+	next_god_id += 1
+	god[id] = {"id": id, "kind": kind, "x": x, "z": z, "tx": x, "tz": z, "wait": 1.0}
+	_log(actor, "god_add", {"kind": kind})
+	return {"ok": true, "id": id}
+
+
+func _god_spot_ok(x: float, z: float) -> bool:
+	if world.height_at(x, z) < FWConst.GOD_MIN_HEIGHT:
+		return false
+	return not occupied.has(Placement.cell_key(int(floor(x / FWConst.CELL_SIZE)), int(floor(z / FWConst.CELL_SIZE))))
+
+
+## حیوانات آرام راه می‌روند: هدف تصادفی نزدیک، فقط روی خشکی و بیرون از ساختمان‌ها.
+func god_step(dt: float) -> void:
+	for id in god:
+		var g: Dictionary = god[id]
+		if not FWConst.GOD_ANIMALS.has(str(g["kind"])):
+			continue
+		var pos := Vector2(float(g["x"]), float(g["z"]))
+		var target := Vector2(float(g["tx"]), float(g["tz"]))
+		if pos.distance_to(target) < 0.3:
+			g["wait"] = float(g["wait"]) - dt
+			if float(g["wait"]) <= 0.0:
+				var a := _god_rng.randf() * TAU
+				var r := 2.0 + _god_rng.randf() * 6.0
+				g["tx"] = pos.x + cos(a) * r
+				g["tz"] = pos.y + sin(a) * r
+				g["wait"] = 2.0 + _god_rng.randf() * 5.0
+			continue
+		var step: Vector2 = pos.move_toward(target, float(FWConst.GOD_ANIMALS[str(g["kind"])]) * dt)
+		if _god_spot_ok(step.x, step.y):
+			g["x"] = step.x
+			g["z"] = step.y
+		else:
+			g["tx"] = pos.x
+			g["tz"] = pos.y
+
+
+func god_public() -> Array:
+	var out: Array = []
+	var ids: Array = god.keys()
+	ids.sort()
+	for id in ids:
+		var g: Dictionary = god[id]
+		out.append([int(id), str(g["kind"]), snappedf(float(g["x"]), 0.05), snappedf(float(g["z"]), 0.05)])
+	return out
+
+
+func god_has_animals() -> bool:
+	for id in god:
+		if FWConst.GOD_ANIMALS.has(str(god[id]["kind"])):
+			return true
+	return false
+
+
 static func friend_level(points: int) -> int:
 	var lv := 0
 	for t in FWConst.FRIEND_LEVELS:
@@ -1136,6 +1224,8 @@ func to_dict() -> Dictionary:
 		"seed": seed_value,
 		"world_time": world_time,
 		"day_count": day_count,
+		"god": god.values(),
+		"next_god_id": next_god_id,
 		"wheat_price": wheat_price,
 		"time_speed": time_speed,
 		"weather": weather,
@@ -1207,6 +1297,16 @@ static func from_dict(d: Dictionary):
 	var cs = load("res://scripts/server/city_state.gd").new(int(d["seed"]), str(d["city_id"]))
 	cs.world_time = float(d.get("world_time", 8.0 * 3600.0))
 	cs.day_count = int(d.get("day_count", 0))
+	cs.next_god_id = maxi(1, int(d.get("next_god_id", 1)))
+	var gl = d.get("god", [])
+	if gl is Array:
+		for g in gl:
+			if g is Dictionary and g.has("id") and g.has("kind") and g.has("x") and g.has("z") and cs.god.size() < FWConst.GOD_MAX:
+				var gk := str(g["kind"])
+				if FWConst.GOD_STATIC.has(gk) or FWConst.GOD_ANIMALS.has(gk):
+					var gid := int(g["id"])
+					cs.god[gid] = {"id": gid, "kind": gk, "x": float(g["x"]), "z": float(g["z"]), "tx": float(g["x"]), "tz": float(g["z"]), "wait": 1.0}
+					cs.next_god_id = maxi(cs.next_god_id, gid + 1)
 	cs.wheat_price = float(d.get("wheat_price", FWConst.WHEAT_BASE_PRICE))
 	cs.bread_price = float(d.get("bread_price", FWConst.BREAD_BASE_PRICE))
 	var mk = d.get("market", {})

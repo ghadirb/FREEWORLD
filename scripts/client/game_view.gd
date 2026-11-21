@@ -40,6 +40,10 @@ var water: MeshInstance3D
 var my_avatar
 var avatars: Dictionary = {}
 var npc_avatars: Dictionary = {}
+var god_kind: String = ""
+var god_nodes: Dictionary = {}
+var _god_meshes: Dictionary = {}
+var _god_mat: StandardMaterial3D
 var building_nodes: Dictionary = {}
 var mode: String = "life"
 var my_pos: Vector3 = Vector3.ZERO
@@ -90,6 +94,7 @@ func setup(game_client, quality_level: int) -> void:
 	add_child(block_view)
 	block_view.setup(client)
 	client.resource_changed.connect(func(rx: int, rz: int, _alive: bool): streamer.refresh_resource(rx, rz))
+	client.god_changed.connect(_sync_god)
 	cam = CameraRig.new()
 	cam.name = "CameraRig"
 	add_child(cam)
@@ -357,6 +362,8 @@ func _refresh_stock_labels() -> void:
 # ---------------- حالت ساخت ----------------
 
 func set_build_type(t: String) -> void:
+	if t != "":
+		god_kind = ""
 	build_type = t
 	ghost_cell = Vector2i(-1, -1)
 	_ghost.visible = false
@@ -615,6 +622,15 @@ func _tap(pos: Vector2) -> void:
 		return
 	if mode == "life" and tool != "hand" and build_type == "":
 		_tool_tap(pos)
+		return
+	if mode == "world" and god_kind != "" and build_type == "":
+		var gh = ground_hit(pos)
+		if gh != null:
+			Sfx.play(self, "click")
+			if god_kind == "remove":
+				client.god("remove", "", gh.x, gh.z)
+			else:
+				client.god("add", god_kind, gh.x, gh.z)
 		return
 	if mode == "life" and tool == "hand" and build_type == "":
 		var ro: Vector3 = cam.camera.project_ray_origin(pos)
@@ -948,7 +964,90 @@ func _on_teleported(p: Vector2) -> void:
 	_last_sent = p
 
 
+func set_god_kind(k: String) -> void:
+	god_kind = k
+	if k != "":
+		set_build_type("")
+
+
+func _god_mesh(kind: String) -> ArrayMesh:
+	if _god_meshes.has(kind):
+		return _god_meshes[kind]
+	var mb := MeshBuilder.new()
+	match kind:
+		"sheep":
+			mb.add_box(Vector3(0, 0.55, 0), Vector3(0.7, 0.55, 1.0), Color("f2f0e8"))
+			mb.add_box(Vector3(0, 0.75, 0.6), Vector3(0.35, 0.35, 0.35), Color("3a3a3a"))
+			for lx in [-0.22, 0.22]:
+				for lz in [-0.35, 0.35]:
+					mb.add_box(Vector3(lx, 0.15, lz), Vector3(0.12, 0.3, 0.12), Color("3a3a3a"))
+		"deer":
+			mb.add_box(Vector3(0, 1.0, 0), Vector3(0.55, 0.6, 1.3), Color("a8703c"))
+			mb.add_box(Vector3(0, 1.55, 0.75), Vector3(0.28, 0.6, 0.28), Color("a8703c"))
+			mb.add_box(Vector3(0, 1.95, 0.8), Vector3(0.3, 0.3, 0.4), Color("8f5a2c"))
+			for lx in [-0.18, 0.18]:
+				for lz in [-0.5, 0.5]:
+					mb.add_box(Vector3(lx, 0.35, lz), Vector3(0.1, 0.7, 0.1), Color("6b4a2d"))
+		"rabbit":
+			mb.add_box(Vector3(0, 0.22, 0), Vector3(0.3, 0.3, 0.45), Color("d9cfc0"))
+			mb.add_box(Vector3(0, 0.4, 0.25), Vector3(0.22, 0.22, 0.22), Color("d9cfc0"))
+			mb.add_box(Vector3(-0.06, 0.65, 0.25), Vector3(0.06, 0.28, 0.06), Color("d9cfc0"))
+			mb.add_box(Vector3(0.06, 0.65, 0.25), Vector3(0.06, 0.28, 0.06), Color("d9cfc0"))
+		"tree":
+			_god_meshes[kind] = streamer._tree_mesh
+			return streamer._tree_mesh
+		_:
+			_god_meshes[kind] = streamer._rock_mesh
+			return streamer._rock_mesh
+	var m := mb.build()
+	_god_meshes[kind] = m
+	return m
+
+
+func _sync_god() -> void:
+	if _god_mat == null:
+		_god_mat = MeshBuilder.material()
+	var seen := {}
+	for e in client.god_list:
+		var id := int(e[0])
+		seen[id] = true
+		var kind := str(e[1])
+		var gx := float(e[2])
+		var gz := float(e[3])
+		var node: MeshInstance3D = god_nodes.get(id)
+		if node == null:
+			node = MeshInstance3D.new()
+			node.mesh = _god_mesh(kind)
+			node.material_override = _god_mat
+			node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			node.position = Vector3(gx, world.height_at(gx, gz) - 0.1, gz)
+			node.set_meta("kind", kind)
+			add_child(node)
+			god_nodes[id] = node
+		node.set_meta("tx", gx)
+		node.set_meta("tz", gz)
+	for id in god_nodes.keys():
+		if not seen.has(id):
+			god_nodes[id].queue_free()
+			god_nodes.erase(id)
+
+
+func _update_god(dt: float) -> void:
+	for node in god_nodes.values():
+		if not FWConst.GOD_ANIMALS.has(str(node.get_meta("kind"))):
+			continue
+		var tx: float = float(node.get_meta("tx"))
+		var tz: float = float(node.get_meta("tz"))
+		var cur := Vector2(node.position.x, node.position.z)
+		var tgt := Vector2(tx, tz)
+		if cur.distance_to(tgt) > 0.02:
+			var nxt: Vector2 = cur.move_toward(tgt, float(FWConst.GOD_ANIMALS[str(node.get_meta("kind"))]) * 1.3 * dt)
+			node.rotation.y = lerp_angle(node.rotation.y, atan2(nxt.x - cur.x, nxt.y - cur.y), minf(dt * 8.0, 1.0))
+			node.position = Vector3(nxt.x, world.height_at(nxt.x, nxt.y) - 0.05, nxt.y)
+
+
 func _sync_remote(_dt: float) -> void:
+	_update_god(_dt)
 	for pname in client.players:
 		if pname == client.my_name:
 			continue

@@ -60,6 +60,9 @@ var _color_row: HBoxContainer
 var _color_btns: Array = []
 var _inv_panel: PanelContainer
 var _inv_rows: Dictionary = {}
+var _god_panel: PanelContainer
+var _god_btn: Button
+var _god_btns: Dictionary = {}
 var _npc_panel: PanelContainer
 var _npc_title: Label
 var _npc_body: Label
@@ -117,6 +120,7 @@ func setup(game_client, game_view) -> void:
 	_build_offer_panel()
 	_build_info_panel()
 	_build_npc_panel()
+	_build_god_panel()
 	_build_leave_button()
 	_build_toasts()
 	_build_chat()
@@ -248,7 +252,9 @@ func _build_side_buttons() -> void:
 	_admin_btn.pressed.connect(func(): _admin_panel.visible = not _admin_panel.visible)
 	var menu_btn := UiTheme.button(Loc.t("menu"), Vector2(180, 58))
 	menu_btn.pressed.connect(func(): _menu_panel.visible = not _menu_panel.visible)
-	for b in [_mode_btn, _view_btn, _build_btn, _tools_btn, _inv_btn, chat_btn, _admin_btn, menu_btn]:
+	_god_btn = UiTheme.button(Loc.t("god_tools"), Vector2(180, 58))
+	_god_btn.pressed.connect(_toggle_god)
+	for b in [_mode_btn, _view_btn, _build_btn, _tools_btn, _inv_btn, chat_btn, _admin_btn, _god_btn, menu_btn]:
 		v.add_child(b)
 		_interactive.append(b)
 	_update_mode_btn()
@@ -617,6 +623,51 @@ func _build_info_panel() -> void:
 	v.add_child(_info_job)
 
 
+func _build_god_panel() -> void:
+	_god_panel = _panel(0.5, 1.0)
+	_god_panel.visible = false
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 8)
+	_god_panel.add_child(v)
+	v.add_child(_label(Loc.t("god_hint"), 22, Color("d6e4ff")))
+	var row := GridContainer.new()
+	row.columns = 3
+	row.add_theme_constant_override("h_separation", 8)
+	row.add_theme_constant_override("v_separation", 8)
+	v.add_child(row)
+	for k in FWConst.GOD_STATIC + FWConst.GOD_ANIMALS.keys() + ["remove"]:
+		var b := UiTheme.button(Loc.t("god_" + str(k)), Vector2(120, 70))
+		b.add_theme_font_size_override("font_size", 22)
+		b.toggle_mode = true
+		b.pressed.connect(func(): _select_god(str(k)))
+		row.add_child(b)
+		_god_btns[str(k)] = b
+
+
+func _select_god(k: String) -> void:
+	Sfx.play(self, "click")
+	for t in _god_btns:
+		_god_btns[t].button_pressed = (t == k and view.god_kind != k)
+	for t in _type_btns:
+		_type_btns[t].button_pressed = false
+	view.set_god_kind("" if view.god_kind == k else k)
+
+
+func _toggle_god() -> void:
+	Sfx.play(self, "click")
+	var on := not _god_panel.visible
+	_god_panel.visible = on
+	_info.visible = false
+	_npc_panel.visible = false
+	if on:
+		_palette.visible = false
+		view.set_build_type("")
+	else:
+		view.set_god_kind("")
+		for t in _god_btns:
+			_god_btns[t].button_pressed = false
+
+
 func _build_npc_panel() -> void:
 	_npc_panel = _panel(0.5, 1.0)
 	_npc_panel.visible = false
@@ -919,6 +970,9 @@ func _refresh_stats() -> void:
 func _refresh_role() -> void:
 	_role.text = Loc.role_name(client.role)
 	_admin_btn.visible = FWConst.is_admin(client.role)
+	_god_btn.visible = FWConst.is_admin(client.role) and view.mode == "world"
+	if not _god_btn.visible and _god_panel.visible:
+		_toggle_god()
 
 
 func _process(delta: float) -> void:
@@ -941,6 +995,7 @@ func _on_mode_changed(_m: String) -> void:
 	_update_mode_btn()
 	_update_view_btn()
 	_tools_btn.visible = view.mode == "life"
+	_refresh_role()
 	if view.mode == "world":
 		_set_tools_visible(false)
 	if view.mode == "world":
@@ -966,6 +1021,11 @@ func _toggle_build() -> void:
 
 func _select_type(t: String) -> void:
 	Sfx.play(self, "click")
+	if t != "":
+		_god_panel.visible = false
+		view.set_god_kind("")
+		for g in _god_btns:
+			_god_btns[g].button_pressed = false
 	for k in _type_btns:
 		_type_btns[k].button_pressed = (k == t)
 	view.set_build_type(t)

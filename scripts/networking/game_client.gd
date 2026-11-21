@@ -30,6 +30,7 @@ signal role_changed(role: String)
 signal audit_received(entries: Array)
 signal teleported(pos: Vector2)
 signal ticked
+signal god_changed
 signal inventory_changed
 signal offer_received(data: Dictionary)
 signal block_changed(pos: Vector3i, type_id: int, color: int)
@@ -62,6 +63,7 @@ var spawn: Vector2 = Vector2.ZERO
 ## کیف و قیمت فروش مواد (سرور می‌فرستد).
 var inv: Dictionary = {}
 var friends: Dictionary = {}
+var god_list: Array = []
 var sell_prices: Dictionary = {}
 var is_logged_in: bool = false
 var last_tick_msec: int = 0
@@ -282,6 +284,16 @@ func dig(x: float, z: float) -> void:
 func craft(recipe: String, times: int = 1) -> void:
 	if is_logged_in:
 		_tx("c2s_craft", [recipe, times])
+
+
+func god(action: String, kind: String, x: float, z: float) -> void:
+	if is_logged_in:
+		_tx("c2s_god", [action, kind, x, z])
+
+
+func on_god(list: Array) -> void:
+	god_list = list
+	god_changed.emit()
 
 
 func npc_interact(npc_id: int, item: String = "") -> void:
