@@ -98,8 +98,6 @@ jobs:
     name: Export ${{ matrix.preset }}
     needs: tests
     runs-on: ubuntu-latest
-    env:
-      HAS_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
     strategy:
       fail-fast: false
       matrix:
@@ -158,12 +156,17 @@ jobs:
           test -s "${{ matrix.output }}"
           ls -la "$(dirname '${{ matrix.output }}')"
       - name: Export signed release APK (only when the keystore secrets exist)
-        if: matrix.preset == 'Android' && env.HAS_KEYSTORE == 'true'
+        if: matrix.preset == 'Android'
         env:
           KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           GODOT_ANDROID_KEYSTORE_RELEASE_USER: ${{ secrets.ANDROID_KEY_ALIAS }}
           GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
         run: |
+          if [ -z "$KEYSTORE_B64" ]; then
+            echo "::notice title=release signing skipped::secret ANDROID_KEYSTORE_BASE64 is empty or missing"
+            exit 0
+          fi
+          echo "secret lengths: keystore=${#KEYSTORE_B64} alias=${#GODOT_ANDROID_KEYSTORE_RELEASE_USER} password=${#GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD}"
           set -o pipefail
           echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.keystore"
           export GODOT_ANDROID_KEYSTORE_RELEASE_PATH="$RUNNER_TEMP/release.keystore"
