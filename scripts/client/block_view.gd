@@ -12,7 +12,7 @@ const REINDEX_INTERVAL := 0.3
 const BASE := {
 	"dirt": Color("8b6a47"), "wood": Color("b98a55"), "stone": Color("8f9298"), "brick": Color("b5543f"),
 	"glass": Color(0.66, 0.85, 0.94, 0.42), "window": Color(0.45, 0.72, 0.92, 0.5), "door": Color("7a4f2a"),
-	"roof": Color("c4553c"), "fence": Color("a87a48"), "road": Color("6e6e74"), "stairs": Color("c19a62"), "lamp": Color("ffe9a6"),
+	"roof": Color("c4553c"), "fence": Color("a87a48"), "road": Color("6e6e74"), "stairs": Color("c19a62"), "lamp": Color("ffe9a6"), "rail": Color("8a8f98"),
 }
 ## رنگ‌های ابزار رنگ‌آمیزی؛ اندیس ۰ = رنگ طبیعی بلوک.
 const TINTS := [
@@ -138,6 +138,10 @@ func _rebuild(key: Vector2i) -> void:
 				_door(solid, v, c, col)
 			"road":
 				solid.add_box(Vector3(c.x, v.y + 0.075, c.z), Vector3(1.0, 0.15, 1.0), col)
+			"rail":
+				solid.add_box(Vector3(c.x, v.y + 0.04, c.z), Vector3(1.0, 0.08, 1.0), Color("6b4a2b"))
+				solid.add_box(Vector3(c.x - 0.28, v.y + 0.12, c.z), Vector3(0.1, 0.1, 1.0), col)
+				solid.add_box(Vector3(c.x + 0.28, v.y + 0.12, c.z), Vector3(0.1, 0.1, 1.0), col)
 			"stairs":
 				_stairs(solid, v, c, col, FWConst.meta_facing(int(b[1])))
 			"lamp":

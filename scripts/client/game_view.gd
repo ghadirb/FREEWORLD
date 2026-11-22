@@ -1155,8 +1155,7 @@ func _move_player(dt: float, input: Vector2) -> void:
 		speed_mult = FWConst.BOAT_SPEED_MULT
 	elif client.driving:
 		speed_mult = FWConst.CAR_SPEED_MULT
-		if client.mirror.is_road_at(my_pos.x, my_pos.z):
-			speed_mult *= FWConst.CAR_ROAD_MULT
+		speed_mult *= client.mirror.car_surface_mult(my_pos.x, my_pos.z)
 	elif client.mounted:
 		speed_mult = FWConst.HORSE_SPEED_MULT
 	var step := dir * FWConst.PLAYER_SPEED * speed_mult * (FWConst.FLY_SPEED_MULT if my_alt > FWConst.FLY_MIN_ALT else 1.0) * len * dt

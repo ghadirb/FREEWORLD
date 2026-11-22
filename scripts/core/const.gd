@@ -141,7 +141,7 @@ const SELL_RECOVER_PER_SEC := 0.01
 const START_ITEMS := {"wood": 24, "stone": 12, "dirt": 12, "glass": 2, "brick": 4}
 
 # نوع بلوک‌ها. cost = مواد لازم برای هر بلوک. passable = بازیکن می‌تواند از آن عبور کند.
-const BLOCK_ORDER := ["dirt", "wood", "stone", "brick", "glass", "window", "door", "roof", "fence", "road", "stairs", "lamp"]
+const BLOCK_ORDER := ["dirt", "wood", "stone", "brick", "glass", "window", "door", "roof", "fence", "road", "stairs", "lamp", "rail"]
 const BLOCK_TYPES := {
 	"dirt": {"cost": {"dirt": 1}},
 	"wood": {"cost": {"wood": 1}},
@@ -155,6 +155,7 @@ const BLOCK_TYPES := {
 	"road": {"cost": {"stone": 1}, "passable": true},
 	"stairs": {"cost": {"wood": 2}},
 	"lamp": {"cost": {"glass": 1, "wood": 1}},
+	"rail": {"cost": {"iron": 1}, "passable": true},
 }
 
 # دستورهای ساخت مواد: ورودی ← خروجی
@@ -176,6 +177,8 @@ const CAR_SPEED_MULT := 3.0
 ## ضریب اضافهٔ سرعت ماشین روی جاده (ساختمان جاده یا بلوک جاده)؛ NPCها هم مسیر جاده‌دار را ترجیح می‌دهند.
 const CAR_ROAD_MULT := 1.5
 const NPC_ROAD_WEIGHT := 0.5
+## ریل (بلوک «ریل» روی سطح زمین): ماشین روی آن حتی از جاده سریع‌تر است.
+const CAR_RAIL_MULT := 2.0
 # ماهیگیری: کنار آب یا از روی قایق؛ هر بار ۰ تا ۲ ماهی، با فاصلهٔ زمانی بین دو بار.
 const FISH_COOLDOWN_MS := 3000
 const FISH_RANGE := 4.0
