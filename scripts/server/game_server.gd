@@ -22,7 +22,7 @@ const LOCAL_PID := 1
 const LOCAL_METHODS := [
 	"c2s_login", "c2s_move", "c2s_place", "c2s_remove", "c2s_collect",
 	"c2s_chat", "c2s_set_role", "c2s_get_audit", "c2s_job", "c2s_set_world", "c2s_enter", "c2s_leave",
-	"c2s_place_block", "c2s_remove_block", "c2s_paint_block", "c2s_build_region", "c2s_paste", "c2s_bp_save", "c2s_bp_op", "c2s_undo", "c2s_gather", "c2s_dig", "c2s_fill", "c2s_craft", "c2s_trade", "c2s_offer", "c2s_offer_answer", "c2s_npc", "c2s_npc_sell", "c2s_npc_buy", "c2s_furn_place", "c2s_furn_remove", "c2s_minigame_start", "c2s_race_start", "c2s_grace", "c2s_boat", "c2s_horse", "c2s_car", "c2s_fish", "c2s_disaster", "c2s_god",
+	"c2s_place_block", "c2s_remove_block", "c2s_paint_block", "c2s_build_region", "c2s_paste", "c2s_bp_save", "c2s_bp_op", "c2s_arena_create", "c2s_arena_op", "c2s_undo", "c2s_gather", "c2s_dig", "c2s_fill", "c2s_craft", "c2s_trade", "c2s_offer", "c2s_offer_answer", "c2s_npc", "c2s_npc_sell", "c2s_npc_buy", "c2s_furn_place", "c2s_furn_remove", "c2s_minigame_start", "c2s_race_start", "c2s_grace", "c2s_boat", "c2s_horse", "c2s_car", "c2s_fish", "c2s_disaster", "c2s_god",
 	"c2s_mine_enter", "c2s_mine_leave", "c2s_mine_gather",
 ]
 
@@ -269,6 +269,10 @@ func _minigame_step(dt: float) -> void:
 		if ev["kind"] == "end":
 			if int(ev["reward"]) > 0:
 				_send(pid, "s2c_money", int(ev["money"]))
+				if ev.has("arena") and by_name.has(str(ev["owner"])):
+					_send(by_name[str(ev["owner"])], "s2c_money", cs.money_of(str(ev["owner"])))
+			if ev.has("arena"):
+				_broadcast_arenas()
 			_notice(pid, "minigame_end", {"score": ev["score"], "best": ev["best"], "new_best": ev["new_best"], "reward": ev["reward"]})
 			_dirty = true
 	# بازیکنی که خارج شد و دورش لغو شد، در حالت‌های بعدی وضعیت تازه می‌گیرد؛ نیازی به ارسال نیست.
@@ -524,6 +528,68 @@ func on_fish(pid: int) -> void:
 	_dirty = true
 
 
+func _broadcast_arenas() -> void:
+	var list: Array = cs.arenas_public()
+	for q in _auth_peers():
+		_send(q, "s2c_arenas", list)
+
+
+## ساخت میدان در موقعیت فعلی بازیکن (پروتکل ۳۱).
+func on_arena_create(pid: int, arena_name: String, radius: float, coins: int, time: float, reward: int) -> void:
+	var p := _player_of(pid)
+	if p.is_empty():
+		return
+	if not _allow_action(p):
+		_notice(pid, "rate_limited")
+		return
+	if _indoors(p):
+		return
+	var pos: Vector3 = p["pos"]
+	var res: Dictionary = cs.arena_create(p["name"], arena_name, Vector2(pos.x, pos.z), radius, coins, time, reward)
+	if not bool(res["ok"]):
+		_notice(pid, str(res["error"]))
+		return
+	_send(pid, "s2c_money", int(res["money"]))
+	_notice(pid, "arena_created")
+	_dirty = true
+	_broadcast_arenas()
+
+
+## op: list | play | delete
+func on_arena_op(pid: int, op: String, id: int) -> void:
+	var p := _player_of(pid)
+	if p.is_empty():
+		return
+	match op:
+		"list":
+			_send(pid, "s2c_arenas", cs.arenas_public())
+		"play":
+			if not _allow_action(p):
+				_notice(pid, "rate_limited")
+				return
+			if _indoors(p):
+				return
+			var pos: Vector3 = p["pos"]
+			var res: Dictionary = cs.arena_play(p["name"], id, Vector2(pos.x, pos.z))
+			if not bool(res["ok"]):
+				_notice(pid, str(res["error"]))
+				return
+			_send(pid, "s2c_minigame", cs.minigame.public_state(p["name"]))
+		"delete":
+			if not _allow_action(p):
+				_notice(pid, "rate_limited")
+				return
+			var err: String = cs.arena_remove(p["name"], id)
+			if err != "":
+				_notice(pid, err)
+				return
+			_dirty = true
+			_notice(pid, "arena_deleted")
+			_broadcast_arenas()
+			for q in _auth_peers():
+				_send(q, "s2c_minigame", cs.minigame.public_state(peers[q]["name"]))
+
+
 func on_minigame_start(pid: int) -> void:
 	var p := _player_of(pid)
 	if p.is_empty():
@@ -755,6 +821,7 @@ func on_login(pid: int, player_name: String, token: String, proto: int) -> void:
 	_send(pid, "s2c_god", cs.god_public())
 	_send(pid, "s2c_fire", cs.nfire_flat())
 	_send(pid, "s2c_minigame", cs.minigame.public_state(player_name))
+	_send(pid, "s2c_arenas", cs.arenas_public())
 	_send(pid, "s2c_disaster", cs.disaster_public())
 	_send(pid, "s2c_race", cs.race.public_state(player_name))
 	p["last_inv"] = cs.inv_public(player_name)

@@ -4,10 +4,12 @@ extends RefCounted
 ## دورهای در حال اجرا ذخیره نمی‌شوند؛ فقط بهترین امتیاز هر بازیکن (جدول امتیاز) ذخیره می‌شود.
 
 const FWConst = preload("res://scripts/core/const.gd")
+const Arenas = preload("res://scripts/server/arenas.gd")
 
 var runs: Dictionary = {}    # نام بازیکن ← {"t": float, "score": int, "coins": Array[Vector2]}
 var scores: Dictionary = {}  # نام بازیکن ← بهترین امتیاز
 var plays: Dictionary = {}   # نام بازیکن ← {"day": int, "n": int} تعداد دورهای جایزه‌دار امروز
+var arena_scores: Dictionary = {}   # شناسهٔ میدان ← {نام بازیکن ← بهترین امتیاز}
 var _counter: int = 0
 
 
@@ -44,6 +46,27 @@ func start(world, seed_value: int, player_name: String, pos: Vector2) -> Diction
 	return {"ok": true}
 
 
+## شروع دور در میدان ساخته‌شدهٔ بازیکن؛ ظرف، زمان و جایزه از تعریف میدان می‌آید.
+func start_arena(world, seed_value: int, player_name: String, arena: Dictionary) -> Dictionary:
+	if runs.has(player_name):
+		return {"ok": false, "error": "mg_running"}
+	_counter += 1
+	var coins := Arenas.make_coins(world, seed_value, player_name, _counter, arena)
+	if coins.size() < FWConst.ARENA_COINS_MIN:
+		return {"ok": false, "error": "mg_no_space"}
+	runs[player_name] = {"t": float(arena["time"]), "score": 0, "coins": coins, "arena": int(arena["id"]),
+		"total": coins.size(), "owner": str(arena["owner"]), "per_coin": int(arena["reward"])}
+	return {"ok": true}
+
+
+## میدان حذف شد: رکوردها پاک و دورهای در حال اجرای آن لغو می‌شوند.
+func arena_removed(id: int) -> void:
+	arena_scores.erase(id)
+	for nm in runs.keys():
+		if int(runs[nm].get("arena", 0)) == id:
+			runs.erase(nm)
+
+
 func cancel(player_name: String) -> void:
 	runs.erase(player_name)
 
@@ -77,6 +100,8 @@ func _finish(player_name: String, day: int) -> Dictionary:
 	var run: Dictionary = runs[player_name]
 	runs.erase(player_name)
 	var score: int = int(run["score"])
+	if run.has("arena"):
+		return _finish_arena(player_name, run)
 	var best: int = int(scores.get(player_name, 0))
 	var new_best := score > best
 	if new_best:
@@ -93,6 +118,25 @@ func _finish(player_name: String, day: int) -> Dictionary:
 	p["n"] = int(p["n"]) + 1
 	plays[player_name] = p
 	return {"name": player_name, "kind": "end", "score": score, "best": best, "new_best": new_best, "reward": reward}
+
+
+## پایان دور میدان ساخته‌شده: رکورد جدا برای هر میدان، بدون شمارندهٔ روزانه. جایزه (پیش از سقف پول سازنده) را cs می‌پردازد.
+func _finish_arena(player_name: String, run: Dictionary) -> Dictionary:
+	var id: int = int(run["arena"])
+	var score: int = int(run["score"])
+	var sc: Dictionary = arena_scores.get(id, {})
+	var best: int = int(sc.get(player_name, 0))
+	var new_best := score > best
+	if new_best:
+		if sc.size() < 500 or sc.has(player_name):
+			sc[player_name] = score
+		best = score
+	arena_scores[id] = sc
+	var reward := 0
+	if player_name != str(run["owner"]):
+		reward = score * int(run["per_coin"])
+	return {"name": player_name, "kind": "end", "score": score, "best": best, "new_best": new_best,
+		"reward": reward, "arena": id, "owner": str(run["owner"])}
 
 
 func board() -> Array:
@@ -119,14 +163,25 @@ func public_state(player_name: String) -> Dictionary:
 
 
 func to_dict() -> Dictionary:
-	return {"scores": scores.duplicate(), "plays": plays.duplicate(true)}
+	return {"scores": scores.duplicate(), "plays": plays.duplicate(true), "arena_scores": arena_scores.duplicate(true)}
 
 
 func load_dict(d: Variant) -> void:
 	scores.clear()
 	plays.clear()
+	arena_scores.clear()
 	if not (d is Dictionary):
 		return
+	var asc: Variant = d.get("arena_scores", {})
+	if asc is Dictionary:
+		for k in asc:
+			var row: Variant = asc[k]
+			if row is Dictionary and int(k) > 0 and arena_scores.size() < FWConst.ARENA_MAX_TOTAL:
+				var clean: Dictionary = {}
+				for pn in row:
+					if clean.size() < 500:
+						clean[str(pn)] = clampi(int(row[pn]), 0, FWConst.ARENA_COINS_MAX)
+				arena_scores[int(k)] = clean
 	var s: Variant = d.get("scores", {})
 	if s is Dictionary:
 		for k in s:

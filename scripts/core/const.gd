@@ -1,7 +1,7 @@
 extends RefCounted
 ## ثابت‌های مشترک بین سرور و کلاینت.
 
-const PROTOCOL_VERSION := 30
+const PROTOCOL_VERSION := 31
 # ترافیک شبکه با DTLS رمز می‌شود (نسخهٔ ۴ به بعد). فقط برای عیب‌یابی خاموش شود.
 const USE_DTLS := true
 const DEFAULT_PORT := 7777
@@ -245,6 +245,20 @@ const MINIGAME_REWARD_PER_COIN := 2
 const MINIGAME_FULL_BONUS := 10
 const MINIGAME_REWARDED_RUNS := 3
 const MINIGAME_BOARD_SIZE := 10
+## میدان‌های ساخته‌شده توسط بازیکن (پروتکل ۳۱، docs/ARENAS.md)
+const ARENA_COST := 150
+const ARENA_MAX_PER_PLAYER := 3
+const ARENA_MAX_TOTAL := 30
+const ARENA_NAME_MAX := 24
+const ARENA_R_MIN := 6.0
+const ARENA_R_MAX := 20.0
+const ARENA_COINS_MIN := 5
+const ARENA_COINS_MAX := 30
+const ARENA_TIME_MIN := 20.0
+const ARENA_TIME_MAX := 120.0
+const ARENA_REWARD_MAX := 3
+const ARENA_SPACING := 12.0
+const ARENA_PLAY_MARGIN := 4.0
 # مسابقهٔ ایستگاه‌ها: ۶ ایستگاه به ترتیب روی حلقه، سقف زمان ۹۰ ثانیه، سرعت مجاز در طول مسابقه ۱٫۶ برابر.
 const RACE_GATES := 6
 const RACE_TIME := 90.0

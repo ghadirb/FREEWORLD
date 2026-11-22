@@ -48,6 +48,7 @@ func _init() -> void:
 	test_npc_buy()
 	test_furniture()
 	test_minigame()
+	test_arenas()
 	test_disasters()
 	test_race()
 	test_car_race()
@@ -1396,6 +1397,104 @@ func test_disasters() -> void:
 	check(logged, "disasters are written to the admin audit log")
 	var cs2 = CityState.from_dict(cs.to_dict())
 	check(cs2 != null and str(cs2.disaster["kind"]) == "", "an ongoing disaster is not saved")
+
+
+func test_arenas() -> void:
+	print("== Player arenas (creator layer) ==")
+	var cs = CityState.new(4244)
+	_login(cs, "maker")
+	_login(cs, "guest")
+	cs.accounts["maker"]["money"] = 1000
+	cs.accounts["guest"]["money"] = 0
+	var at := _mg_land_pos(cs)
+	check(cs.arena_create("ghost", "x", at, 10.0, 10, 40.0, 1)["error"] == "no_account", "unknown player cannot build an arena")
+	check(cs.arena_create("maker", "   ", at, 10.0, 10, 40.0, 1)["error"] == "arena_name", "an arena needs a name")
+	var r1: Dictionary = cs.arena_create("maker", "Gold Rush", at, 10.0, 10, 40.0, 2)
+	check(r1["ok"] and int(cs.accounts["maker"]["money"]) == 1000 - FWConst.ARENA_COST, "arena is built and costs coins")
+	check(cs.arena_create("maker", "Too Close", at + Vector2(5, 0), 10.0, 10, 40.0, 1)["error"] == "arena_close", "arenas cannot overlap")
+	var bad: Dictionary = cs.arena_create("maker", "Wet", Vector2(-300, -300), 10.0, 10, 40.0, 1)
+	check(not bad["ok"], "sea or out-of-land spots are refused (%s)" % str(bad.get("error", "")))
+	var id: int = int(r1["id"])
+	var a: Dictionary = cs.arenas.items[id]
+	var wide: Dictionary = cs.arena_create("guest", "Greedy", at + Vector2(200, 0), 999.0, 999, 9999.0, 99)
+	check(not wide["ok"] and wide["error"] == "arena_no_money", "a broke player cannot afford an arena")
+	cs.accounts["guest"]["money"] = 1000
+	var r3: Dictionary = cs.arena_create("guest", "Greedy", at + Vector2(200, 0), 999.0, 999, 9999.0, 99)
+	if r3["ok"]:
+		var g: Dictionary = cs.arenas.items[int(r3["id"])]
+		check(float(g["r"]) == FWConst.ARENA_R_MAX and int(g["coins"]) == FWConst.ARENA_COINS_MAX and float(g["time"]) == FWConst.ARENA_TIME_MAX and int(g["reward"]) == FWConst.ARENA_REWARD_MAX, "settings are clamped by the server")
+		cs.arena_remove("guest", int(r3["id"]))
+	cs.accounts["guest"]["money"] = 0
+	# بازی
+	check(cs.arena_play("guest", 999, at)["error"] == "arena_missing", "missing arena")
+	check(cs.arena_play("guest", id, at + Vector2(100, 100))["error"] == "arena_far", "must stand inside the arena")
+	check(cs.arena_play("guest", id, at)["ok"], "a guest starts an arena run")
+	check(cs.arena_play("guest", id, at)["error"] == "mg_running", "one run at a time")
+	var pub: Dictionary = cs.minigame.public_state("guest")
+	var coins: Array = pub["coins"]
+	var inside := true
+	for c in coins:
+		if Vector2(float(c[0]), float(c[1])).distance_to(at) > float(a["r"]) + 0.5:
+			inside = false
+	check(pub["active"] and coins.size() >= FWConst.ARENA_COINS_MIN and coins.size() <= 10 and inside, "arena coins stay inside the circle")
+	check(float(pub["t"]) <= 40.0 and float(pub["t"]) > 39.0, "run time comes from the arena")
+	var owner_m: int = int(cs.accounts["maker"]["money"])
+	var total: int = coins.size()
+	var end_ev: Dictionary = {}
+	for c in coins:
+		for ev in cs.minigame_step(0.1, {"guest": Vector2(float(c[0]), float(c[1])), "maker": at}):
+			if ev["kind"] == "end":
+				end_ev = ev
+	check(not end_ev.is_empty() and int(end_ev["score"]) == total and int(end_ev["arena"]) == id, "collecting all coins ends the arena run")
+	check(int(end_ev["reward"]) == total * 2 and int(cs.accounts["guest"]["money"]) == total * 2, "prize is paid to the guest")
+	check(int(cs.accounts["maker"]["money"]) == owner_m - total * 2, "prize comes out of the creator's money")
+	check(cs.minigame.board().is_empty(), "arena runs do not touch the global leaderboard")
+	check(int(cs.arenas_public()[0]["top"][1]) == total and cs.arenas_public()[0]["top"][0] == "guest", "arena keeps its own record")
+	# سازنده خودش جایزه نمی‌گیرد
+	cs.arena_play("maker", id, at)
+	var own_end: Dictionary = {}
+	for c in cs.minigame.public_state("maker")["coins"]:
+		for ev in cs.minigame_step(0.1, {"maker": Vector2(float(c[0]), float(c[1]))}):
+			if ev["kind"] == "end":
+				own_end = ev
+	check(not own_end.is_empty() and int(own_end["reward"]) == 0, "the creator earns no prize in their own arena")
+	# سازندهٔ ناتوان از پرداخت
+	cs.accounts["maker"]["money"] = 1
+	cs.arena_play("guest", id, at)
+	var poor_end: Dictionary = {}
+	var g_before: int = int(cs.accounts["guest"]["money"])
+	for c in cs.minigame.public_state("guest")["coins"]:
+		for ev in cs.minigame_step(0.1, {"guest": Vector2(float(c[0]), float(c[1]))}):
+			if ev["kind"] == "end":
+				poor_end = ev
+	check(not poor_end.is_empty() and int(poor_end["reward"]) <= 1 and int(cs.accounts["maker"]["money"]) >= 0, "prize never exceeds what the creator owns")
+	check(int(cs.accounts["guest"]["money"]) - g_before == int(poor_end["reward"]), "guest receives exactly what was paid")
+	# ماندگاری
+	cs.accounts["maker"]["money"] = 500
+	var cs2 = CityState.from_dict(cs.to_dict())
+	check(cs2.arenas.items.has(id) and cs2.arenas.items[id]["name"] == "Gold Rush", "arenas survive save and load")
+	check(int(cs2.minigame.arena_scores.get(id, {}).get("guest", 0)) == total, "arena records survive save and load")
+	# حذف
+	check(cs.arena_remove("guest", id) == "not_owner", "others cannot delete an arena")
+	cs.arena_play("guest", id, at)
+	check(cs.minigame.is_running("guest"), "a run is active before deletion")
+	check(cs.arena_remove("maker", id) == "" and not cs.arenas.items.has(id), "creator deletes the arena")
+	check(not cs.minigame.is_running("guest") and not cs.minigame.arena_scores.has(id), "deleting cancels runs and records")
+	check(cs.arena_remove("maker", id) == "arena_missing", "deleting twice reports missing")
+	# سقف تعداد برای هر بازیکن و خلاقانه
+	cs.accounts["maker"]["money"] = 100000
+	var made := 0
+	for i in range(6):
+		var rr: Dictionary = cs.arena_create("maker", "A%d" % i, at + Vector2(float(i) * 60.0, 0.0), 8.0, 6, 30.0, 0)
+		if rr["ok"]:
+			made += 1
+	check(made <= FWConst.ARENA_MAX_PER_PLAYER, "per-player arena limit holds (%d built)" % made)
+	var cr = CityState.new(4244)
+	cr.creative = true
+	_login(cr, "free")
+	cr.accounts["free"]["money"] = 0
+	var cres: Dictionary = cr.arena_create("free", "Free", at, 10.0, 8, 30.0, 3)
+	check(cres["ok"] and int(cr.accounts["free"]["money"]) == 0, "creative worlds build arenas for free")
 
 
 func test_minigame() -> void:

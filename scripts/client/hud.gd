@@ -66,6 +66,11 @@ var _inv_rows: Dictionary = {}
 var _god_panel: PanelContainer
 var _god_btn: Button
 var _mg_btn: Button
+var _arena_btn: Button
+var _arena_panel: PanelContainer
+var _arena_name: LineEdit
+var _arena_spin: Dictionary = {}
+var _arena_rows: VBoxContainer
 var _mg_panel: PanelContainer
 var _mg_status: Label
 var _mg_board: Label
@@ -149,6 +154,7 @@ func setup(game_client, game_view) -> void:
 	_build_npc_panel()
 	_build_furn_panel()
 	_build_bp_panel()
+	_build_arena_panel()
 	_build_god_panel()
 	_build_minigame()
 	_build_race()
@@ -157,7 +163,7 @@ func setup(game_client, game_view) -> void:
 	_build_chat()
 	_build_admin_panel()
 	_build_menu_panel()
-	for dp in [_palette, _tools_panel, _inv_panel, _offer_panel, _npc_panel, _furn_panel, _bp_panel, _god_panel, _mg_panel, _race_panel, _admin_panel, _menu_panel]:
+	for dp in [_palette, _tools_panel, _inv_panel, _offer_panel, _npc_panel, _furn_panel, _bp_panel, _arena_panel, _god_panel, _mg_panel, _race_panel, _admin_panel, _menu_panel]:
 		_dock(dp)
 	view.is_over_ui = Callable(self, "is_over_ui")
 	view.building_tapped.connect(_on_building_tapped)
@@ -175,6 +181,7 @@ func setup(game_client, game_view) -> void:
 	client.money_changed.connect(func(_m): _refresh_stats())
 	client.notice.connect(_on_notice)
 	client.blueprints_changed.connect(_fill_bp_list)
+	client.arenas_changed.connect(_fill_arena_list)
 	client.blueprint_loaded.connect(_on_bp_loaded)
 	client.inside_changed.connect(_on_inside_changed)
 	client.mine_changed.connect(_on_mine_changed)
@@ -359,6 +366,12 @@ func _build_side_buttons() -> void:
 	_god_btn.pressed.connect(_toggle_god)
 	_mg_btn = UiTheme.button(Loc.t("minigame"), SIDE_BTN)
 	_mg_btn.pressed.connect(func(): Sfx.play(self, "click"); _mg_panel.visible = not _mg_panel.visible; _refresh_minigame())
+	_arena_btn = UiTheme.button(Loc.t("arenas"), SIDE_BTN)
+	_arena_btn.pressed.connect(func():
+		Sfx.play(self, "click")
+		_arena_panel.visible = not _arena_panel.visible
+		if _arena_panel.visible:
+			client.arena_op("list"))
 	_race_btn = UiTheme.button(Loc.t("race"), SIDE_BTN)
 	_race_btn.pressed.connect(func(): Sfx.play(self, "click"); _race_panel.visible = not _race_panel.visible; _refresh_race())
 	_fly_btn = UiTheme.button(Loc.t("fly"), SIDE_BTN)
@@ -386,7 +399,7 @@ func _build_side_buttons() -> void:
 		_fly_pad.add_child(ab)
 		_interactive.append(ab)
 	view.fly_changed.connect(func(on: bool): _fly_btn.text = Loc.t("land") if on else Loc.t("fly"); _fly_pad.visible = on)
-	for b in [_mode_btn, _view_btn, _build_btn, _tools_btn, _inv_btn, chat_btn, _admin_btn, _god_btn, _mg_btn, _race_btn, _boat_btn, _horse_btn, _car_btn, _fish_btn, _fly_btn, menu_btn]:
+	for b in [_mode_btn, _view_btn, _build_btn, _tools_btn, _inv_btn, chat_btn, _admin_btn, _god_btn, _mg_btn, _arena_btn, _race_btn, _boat_btn, _horse_btn, _car_btn, _fish_btn, _fly_btn, menu_btn]:
 		b.add_theme_font_size_override("font_size", 19)
 		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		v.add_child(b)
@@ -1245,6 +1258,109 @@ func _fill_bp_list() -> void:
 			r.add_child(del)
 
 
+func _arena_spin_row(parent: Control, key: String, lo: float, hi: float, val: float) -> void:
+	var r := HBoxContainer.new()
+	parent.add_child(r)
+	var l := _label(Loc.t(key), 18, Color("d6e4ff"))
+	l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	r.add_child(l)
+	var sp := SpinBox.new()
+	sp.min_value = lo
+	sp.max_value = hi
+	sp.step = 1
+	sp.value = val
+	sp.custom_minimum_size = Vector2(150, 48)
+	r.add_child(sp)
+	_arena_spin[key] = sp
+
+
+func _build_arena_panel() -> void:
+	_arena_panel = _panel(0.5, 1.0)
+	_arena_panel.visible = false
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 8)
+	v.custom_minimum_size = Vector2(560, 0)
+	_arena_panel.add_child(v)
+	v.add_child(_label(Loc.t("arena_title"), 28, Color("ffd24a")))
+	var hint := _label(Loc.t("arena_hint"), 17, Color("d6e4ff"))
+	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	hint.custom_minimum_size = Vector2(540, 0)
+	v.add_child(hint)
+	_arena_name = LineEdit.new()
+	_arena_name.placeholder_text = Loc.t("arena_name_hint")
+	_arena_name.max_length = FWConst.ARENA_NAME_MAX
+	_arena_name.custom_minimum_size = Vector2(0, 56)
+	v.add_child(_arena_name)
+	_arena_spin_row(v, "arena_radius", FWConst.ARENA_R_MIN, FWConst.ARENA_R_MAX, 12)
+	_arena_spin_row(v, "arena_coins", FWConst.ARENA_COINS_MIN, FWConst.ARENA_COINS_MAX, 12)
+	_arena_spin_row(v, "arena_time", FWConst.ARENA_TIME_MIN, FWConst.ARENA_TIME_MAX, 45)
+	_arena_spin_row(v, "arena_reward", 0, FWConst.ARENA_REWARD_MAX, 1)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	v.add_child(row)
+	var cb := UiTheme.button(Loc.fmt("arena_create", [Loc.digits(str(FWConst.ARENA_COST))]), Vector2(0, 60))
+	cb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	cb.pressed.connect(func():
+		Sfx.play(self, "click")
+		client.arena_create(_arena_name.text, float(_arena_spin["arena_radius"].value), int(_arena_spin["arena_coins"].value),
+			float(_arena_spin["arena_time"].value), int(_arena_spin["arena_reward"].value))
+		_arena_name.text = "")
+	row.add_child(cb)
+	var close := UiTheme.button("✕", Vector2(64, 60))
+	close.pressed.connect(func(): _arena_panel.visible = false)
+	row.add_child(close)
+	var sc := ScrollContainer.new()
+	sc.custom_minimum_size = Vector2(0, 200)
+	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	v.add_child(sc)
+	_arena_rows = VBoxContainer.new()
+	_arena_rows.add_theme_constant_override("separation", 6)
+	_arena_rows.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	sc.add_child(_arena_rows)
+
+
+func _fill_arena_list() -> void:
+	if _arena_rows == null:
+		return
+	for c in _arena_rows.get_children():
+		c.queue_free()
+	if client.arenas.is_empty():
+		_arena_rows.add_child(_label(Loc.t("arena_empty"), 18, Color("aab6c8")))
+		return
+	var is_admin: bool = FWConst.is_admin(client.role)
+	for a in client.arenas:
+		var id: int = int(a["id"])
+		var mine: bool = str(a["owner"]) == client.my_name
+		var box := VBoxContainer.new()
+		_arena_rows.add_child(box)
+		box.add_child(_label(str(a["name"]), 22, Color("ffd24a")))
+		var top: Array = a["top"]
+		var sub := "%s: %s  ·  %s" % [Loc.t("arena_owner"), str(a["owner"]),
+			Loc.fmt("arena_info", [Loc.digits(str(a["coins"])), Loc.digits(str(int(a["time"]))), Loc.digits(str(a["reward"]))])]
+		if int(top[1]) > 0:
+			sub += "  ·  %s: %s %s" % [Loc.t("arena_top"), str(top[0]), Loc.digits(str(top[1]))]
+		var subl := _label(sub, 15, Color("aab6c8"))
+		subl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		subl.custom_minimum_size = Vector2(520, 0)
+		box.add_child(subl)
+		var r := HBoxContainer.new()
+		r.add_theme_constant_override("separation", 6)
+		box.add_child(r)
+		var play := UiTheme.button(Loc.t("arena_play"), Vector2(0, 48))
+		play.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		play.pressed.connect(func():
+			Sfx.play(self, "click")
+			client.arena_op("play", id)
+			_arena_panel.visible = false)
+		r.add_child(play)
+		if mine or is_admin:
+			var del := UiTheme.button("🗑", Vector2(64, 48))
+			del.pressed.connect(func():
+				Sfx.play(self, "click")
+				client.arena_op("delete", id))
+			r.add_child(del)
+
+
 func _on_bp_loaded(_id: int, data: PackedInt32Array) -> void:
 	view.clipboard = data
 	view.set_build_mode("paste")
@@ -1614,6 +1730,11 @@ func _on_notice(code: String, args: Dictionary) -> void:
 			if int(args.get("skipped", 0)) > 0:
 				bt += " " + Loc.fmt("msg_batch_skipped", [Loc.digits(str(args["skipped"]))])
 			toast(bt, Color("c8f08a"))
+		"arena_created":
+			Sfx.play(self, "place")
+			toast(Loc.t("msg_arena_created"), Color("c8f08a"))
+		"arena_deleted":
+			toast(Loc.t("msg_arena_deleted"))
 		"bp_saved":
 			Sfx.play(self, "place")
 			toast(Loc.t("msg_bp_saved"), Color("c8f08a"))
@@ -1685,6 +1806,7 @@ func _on_mode_changed(_m: String) -> void:
 	_tools_btn.visible = view.mode == "life"
 	_mg_btn.visible = view.mode == "life"
 	_race_btn.visible = view.mode == "life"
+	_arena_btn.visible = view.mode == "life"
 	_fly_btn.visible = view.mode == "life" and client.creative and not client.boating and not client.mounted and not client.driving
 	_boat_btn.visible = view.mode == "life"
 	_fish_btn.visible = view.mode == "life"

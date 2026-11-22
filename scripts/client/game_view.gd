@@ -139,6 +139,7 @@ func setup(game_client, quality_level: int) -> void:
 	client.god_changed.connect(_sync_god)
 	client.fire_changed.connect(_sync_nfire)
 	client.minigame_changed.connect(_sync_coins)
+	client.arenas_changed.connect(_sync_arenas)
 	client.race_changed.connect(_sync_race)
 	client.boat_changed.connect(func(): my_avatar.set_boat(client.boating))
 	client.horse_changed.connect(func(): my_avatar.set_horse(client.mounted))
@@ -997,6 +998,46 @@ func _long_press(pos: Vector2) -> void:
 	Input.vibrate_handheld(35)
 	Sfx.play(self, "click")
 	client.remove_block(hit["hit"])
+
+
+## نشانگر حلقه‌ای و ستون نور برای هر میدان ساخته‌شدهٔ بازیکنان (پروتکل ۳۱).
+var _arena_marks: Node3D = null
+
+
+func _sync_arenas() -> void:
+	if _arena_marks != null:
+		_arena_marks.queue_free()
+	_arena_marks = Node3D.new()
+	add_child(_arena_marks)
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.albedo_color = Color(1.0, 0.82, 0.25, 0.75)
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	for a in client.arenas:
+		var x: float = float(a["x"])
+		var z: float = float(a["z"])
+		var r: float = float(a["r"])
+		var ring := MeshInstance3D.new()
+		var tm := TorusMesh.new()
+		tm.inner_radius = maxf(0.1, r - 0.35)
+		tm.outer_radius = r
+		tm.rings = 32
+		tm.ring_segments = 4
+		ring.mesh = tm
+		ring.material_override = mat
+		ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		ring.position = Vector3(x, client.mirror.ground_height(x, z) + 0.25, z)
+		_arena_marks.add_child(ring)
+		var pillar := MeshInstance3D.new()
+		var cm := CylinderMesh.new()
+		cm.top_radius = 0.2
+		cm.bottom_radius = 0.2
+		cm.height = 10.0
+		pillar.mesh = cm
+		pillar.material_override = mat
+		pillar.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		pillar.position = Vector3(x, client.mirror.ground_height(x, z) + 5.0, z)
+		_arena_marks.add_child(pillar)
 
 
 func _process(delta: float) -> void:

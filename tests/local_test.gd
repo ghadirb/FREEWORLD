@@ -273,6 +273,20 @@ func _run() -> void:
 	ok(await wait_until(func(): return not bool(c.blueprints[0]["shared"]), 3.0), "unshare updates the list")
 	c.bp_op("delete", int(c.blueprints[0]["id"]))
 	ok(await wait_until(func(): return c.blueprints.is_empty() and server.cs.blueprints.items.is_empty(), 3.0), "delete removes the blueprint")
+	# میدان‌های ساخته‌شده توسط بازیکن (پروتکل ۳۱): ساخت ← فهرست ← بازی ← حذف
+	server.cs.accounts[c.my_name]["money"] = 1000
+	c.arena_create("   ", 10.0, 10, 40.0, 1)
+	await create_timer(0.4).timeout
+	ok(server.cs.arenas.items.is_empty(), "server refuses an unnamed arena")
+	c.arena_create("Test Arena", 10.0, 10, 40.0, 1)
+	ok(await wait_until(func(): return c.arenas.size() == 1 and server.cs.arenas.items.size() == 1, 3.0), "arena is built and listed on the client")
+	ok(int(server.cs.accounts[c.my_name]["money"]) == (1000 if server.cs.creative else 1000 - FWConst.ARENA_COST), "building an arena costs coins (free in creative worlds)")
+	ok(str(c.arenas[0]["owner"]) == c.my_name and int(c.arenas[0]["coins"]) == 10, "list entry has owner and settings")
+	c.arena_op("play", int(c.arenas[0]["id"]))
+	ok(await wait_until(func(): return bool(c.minigame.get("active", false)) and c.minigame["coins"].size() >= FWConst.ARENA_COINS_MIN, 3.0), "playing the arena starts a coin run on the client")
+	c.arena_op("delete", int(c.arenas[0]["id"]))
+	ok(await wait_until(func(): return c.arenas.is_empty() and server.cs.arenas.items.is_empty(), 3.0), "deleting the arena clears it everywhere")
+	ok(await wait_until(func(): return not bool(c.minigame.get("active", false)), 3.0), "deleting the arena cancels the running run")
 	c.disconnect_from_server()
 	server.stop()
 	server.queue_free()

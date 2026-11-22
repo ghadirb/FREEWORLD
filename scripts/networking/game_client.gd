@@ -42,6 +42,7 @@ signal horse_changed
 signal car_changed
 signal inventory_changed
 signal blueprints_changed
+signal arenas_changed
 signal blueprint_loaded(id: int, data: PackedInt32Array)
 signal offer_received(data: Dictionary)
 signal block_changed(pos: Vector3i, type_id: int, color: int)
@@ -325,6 +326,25 @@ func copy_region(a: Vector3i, b: Vector3i) -> PackedInt32Array:
 func paste_blocks(origin: Vector3i, data: PackedInt32Array) -> void:
 	if is_logged_in and data.size() > 0:
 		_tx("c2s_paste", [origin.x, origin.y, origin.z, data])
+
+
+## میدان‌های ساخته‌شده توسط بازیکن (پروتکل ۳۱)
+var arenas: Array = []   # {id, name, owner, x, z, r, coins, time, reward, top: [نام, امتیاز]}
+
+
+func arena_create(arena_name: String, radius: float, coins: int, time: float, reward: int) -> void:
+	if is_logged_in:
+		_tx("c2s_arena_create", [arena_name, radius, coins, time, reward])
+
+
+func arena_op(op: String, id: int = 0) -> void:
+	if is_logged_in:
+		_tx("c2s_arena_op", [op, id])
+
+
+func on_arenas(list: Array) -> void:
+	arenas = list
+	arenas_changed.emit()
 
 
 ## کتابخانهٔ سازه‌ها

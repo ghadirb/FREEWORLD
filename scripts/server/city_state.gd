@@ -9,6 +9,7 @@ const NpcNav = preload("res://scripts/server/npc_nav.gd")
 const Minigame = preload("res://scripts/server/minigame.gd")
 const Race = preload("res://scripts/server/race.gd")
 const Blueprints = preload("res://scripts/server/blueprints.gd")
+const Arenas = preload("res://scripts/server/arenas.gd")
 const Mine = preload("res://scripts/shared/mine.gd")
 
 const SAVE_VERSION := 1
@@ -54,6 +55,7 @@ var npcs: Array = []
 var minigame = Minigame.new()
 var race = Race.new()
 var blueprints = Blueprints.new()
+var arenas = Arenas.new()
 ## ساخت بلوکی: Vector3i -> [نوع, رنگ, مالک]. block_cells شمارندهٔ بلوک در هر خانهٔ ۲×۲ شبکهٔ ساختمان است.
 var blocks: Dictionary = {}
 var block_cells: Dictionary = {}
@@ -1546,6 +1548,50 @@ func minigame_start(player_name: String, pos: Vector2) -> Dictionary:
 	return minigame.start(world, seed_value, player_name, pos)
 
 
+## --- میدان‌های ساخته‌شده توسط بازیکن (پروتکل ۳۱) ---
+func arenas_public() -> Array:
+	return arenas.list_public(minigame.arena_scores)
+
+
+## ساخت میدان در موقعیت بازیکن؛ هزینه ARENA_COST (در جهان خلاقانه رایگان).
+func arena_create(player_name: String, arena_name: String, pos: Vector2, radius: float, coins: int, time: float, reward: int) -> Dictionary:
+	if not accounts.has(player_name):
+		return {"ok": false, "error": "no_account"}
+	var res: Dictionary = arenas.validate_new(world, seed_value, player_name, arena_name, pos, radius, coins, time, reward)
+	if not bool(res["ok"]):
+		return res
+	if not _pay(accounts[player_name], FWConst.ARENA_COST):
+		return {"ok": false, "error": "arena_no_money"}
+	var a: Dictionary = arenas.add(res["arena"])
+	_log(player_name, "arena_create", {"id": a["id"], "name": a["name"], "coins": a["coins"], "reward": a["reward"]})
+	return {"ok": true, "id": a["id"], "money": money_of(player_name)}
+
+
+func arena_remove(player_name: String, id: int) -> String:
+	if not accounts.has(player_name):
+		return "no_account"
+	var err: String = arenas.remove(player_name, id, FWConst.is_admin(role_of(player_name)))
+	if err != "":
+		return err
+	minigame.arena_removed(id)
+	_log(player_name, "arena_delete", {"id": id})
+	return ""
+
+
+## شروع دور در میدان؛ بازیکن باید داخل دایره (به‌علاوهٔ حاشیه) باشد.
+func arena_play(player_name: String, id: int, pos: Vector2) -> Dictionary:
+	if not accounts.has(player_name):
+		return {"ok": false, "error": "no_account"}
+	if not arenas.items.has(id):
+		return {"ok": false, "error": "arena_missing"}
+	var a: Dictionary = arenas.items[id]
+	if pos.distance_to(Vector2(float(a["x"]), float(a["z"]))) > float(a["r"]) + FWConst.ARENA_PLAY_MARGIN:
+		return {"ok": false, "error": "arena_far"}
+	if race.is_running(player_name):
+		return {"ok": false, "error": "mg_running"}
+	return minigame.start_arena(world, seed_value, player_name, a)
+
+
 ## شروع مسابقهٔ ایستگاه‌ها. هم‌زمان با سکه‌یاب ممکن نیست.
 func race_start(player_name: String, pos: Vector2, boat: bool = false, car: bool = false) -> Dictionary:
 	if not accounts.has(player_name):
@@ -1584,7 +1630,20 @@ func minigame_step(dt: float, positions: Dictionary) -> Array:
 	for ev in events:
 		if ev["kind"] == "end":
 			var nm: String = ev["name"]
-			if int(ev["reward"]) > 0 and accounts.has(nm):
+			if ev.has("arena"):
+				# جایزهٔ میدان از پول سازنده پرداخت می‌شود و از موجودی او بیشتر نمی‌شود؛ در جهان خلاقانه سکه‌ای نیست.
+				var owner_name: String = str(ev["owner"])
+				var paid := 0
+				if not creative and int(ev["reward"]) > 0 and accounts.has(owner_name) and accounts.has(nm):
+					paid = mini(int(ev["reward"]), int(accounts[owner_name]["money"]))
+					if paid > 0 and _pay(accounts[owner_name], paid):
+						_gain(accounts[nm], paid)
+					else:
+						paid = 0
+				ev["reward"] = paid
+				if paid > 0:
+					_log(nm, "arena_reward", {"arena": ev["arena"], "owner": owner_name, "score": ev["score"], "reward": paid})
+			elif int(ev["reward"]) > 0 and accounts.has(nm):
 				_gain(accounts[nm], int(ev["reward"]))
 				_log(nm, "minigame_reward", {"score": ev["score"], "reward": ev["reward"]})
 			ev["money"] = money_of(nm)
@@ -2191,6 +2250,7 @@ func to_dict() -> Dictionary:
 		"minigame": minigame.to_dict(),
 		"race": race.to_dict(),
 		"blueprints": blueprints.to_dict(),
+		"arenas": arenas.to_dict(),
 	}
 
 
@@ -2294,6 +2354,7 @@ static func from_dict(d: Dictionary):
 	cs.minigame.load_dict(d.get("minigame", {}))
 	cs.race.load_dict(d.get("race", {}))
 	cs.blueprints.load_dict(d.get("blueprints", {}))
+	cs.arenas.load_dict(d.get("arenas", {}))
 	cs.wheat_price = float(d.get("wheat_price", FWConst.WHEAT_BASE_PRICE))
 	cs.bread_price = float(d.get("bread_price", FWConst.BREAD_BASE_PRICE))
 	var mk = d.get("market", {})
