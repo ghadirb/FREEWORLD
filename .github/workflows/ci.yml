@@ -98,6 +98,8 @@ jobs:
     name: Export ${{ matrix.preset }}
     needs: tests
     runs-on: ubuntu-latest
+    env:
+      HAS_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
     strategy:
       fail-fast: false
       matrix:
@@ -155,6 +157,21 @@ jobs:
           godot --headless --path . --export-debug "${{ matrix.preset }}" "${{ matrix.output }}" 2>&1 | tee export.log
           test -s "${{ matrix.output }}"
           ls -la "$(dirname '${{ matrix.output }}')"
+      - name: Export signed release APK (only when the keystore secrets exist)
+        if: matrix.preset == 'Android' && env.HAS_KEYSTORE == 'true'
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          GODOT_ANDROID_KEYSTORE_RELEASE_USER: ${{ secrets.ANDROID_KEY_ALIAS }}
+          GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          set -o pipefail
+          echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.keystore"
+          export GODOT_ANDROID_KEYSTORE_RELEASE_PATH="$RUNNER_TEMP/release.keystore"
+          godot --headless --path . --export-release Android build/android/freeworld-release.apk 2>&1 | tee export-release.log
+          test -s build/android/freeworld-release.apk
+          SDK="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          "$SDK/build-tools/34.0.0/apksigner" verify --print-certs build/android/freeworld-release.apk | grep -E "Signer #1 certificate (DN|SHA-256)"
+          rm -f "$RUNNER_TEMP/release.keystore"
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
