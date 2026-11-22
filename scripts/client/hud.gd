@@ -74,6 +74,7 @@ var _mg_bar: Label
 var _was_disaster: bool = false
 var _race_btn: Button
 var _fly_btn: Button
+var _forest_btn: Button
 var _fly_pad: HBoxContainer
 var _race_panel: PanelContainer
 var _race_best: Label
@@ -269,7 +270,10 @@ func _build_side_buttons() -> void:
 	var chat_btn := UiTheme.button(Loc.t("chat"), Vector2(180, 58))
 	chat_btn.pressed.connect(_toggle_chat)
 	_admin_btn = UiTheme.button(Loc.t("admin"), Vector2(180, 58))
-	_admin_btn.pressed.connect(func(): _admin_panel.visible = not _admin_panel.visible)
+	_admin_btn.pressed.connect(func():
+		_admin_panel.visible = not _admin_panel.visible
+		if _forest_btn != null:
+			_forest_btn.button_pressed = client.forest_growth)
 	var menu_btn := UiTheme.button(Loc.t("menu"), Vector2(180, 58))
 	menu_btn.pressed.connect(func(): _menu_panel.visible = not _menu_panel.visible)
 	_god_btn = UiTheme.button(Loc.t("god_tools"), Vector2(180, 58))
@@ -703,7 +707,7 @@ func _build_god_panel() -> void:
 	row.add_theme_constant_override("h_separation", 8)
 	row.add_theme_constant_override("v_separation", 8)
 	v.add_child(row)
-	for k in FWConst.GOD_STATIC + FWConst.GOD_ANIMALS.keys() + FWConst.GOD_SHAPES + ["remove"]:
+	for k in FWConst.GOD_STATIC + FWConst.GOD_ANIMALS.keys() + FWConst.GOD_SHAPES + FWConst.GOD_POWERS + ["remove"]:
 		var b := UiTheme.button(Loc.t("god_" + str(k)), Vector2(120, 70))
 		b.add_theme_font_size_override("font_size", 22)
 		b.toggle_mode = true
@@ -1053,6 +1057,12 @@ func _build_admin_panel() -> void:
 		wb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		wb.pressed.connect(func(): client.set_world("weather", w))
 		wrow.add_child(wb)
+	v.add_child(_label(Loc.t("world_laws"), 22, Color("c8f08a")))
+	_forest_btn = UiTheme.button(Loc.t("law_forest_growth"), Vector2(0, 56))
+	_forest_btn.toggle_mode = true
+	_forest_btn.pressed.connect(func(): client.set_world("forest_growth", not client.forest_growth))
+	v.add_child(_forest_btn)
+	client.world_changed.connect(func(): _forest_btn.button_pressed = client.forest_growth)
 	v.add_child(_label(Loc.t("disasters"), 22, Color("c8f08a")))
 	var drow := HBoxContainer.new()
 	drow.add_theme_constant_override("separation", 8)

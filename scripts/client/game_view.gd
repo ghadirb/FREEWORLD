@@ -743,6 +743,10 @@ func _tap(pos: Vector2) -> void:
 				client.god("remove", "", gh.x, gh.z)
 			elif FWConst.GOD_SHAPES.has(god_kind):
 				client.god("shape", god_kind, gh.x, gh.z)
+			elif god_kind == "fire":
+				client.god("ignite", "fire", gh.x, gh.z)
+			elif god_kind == "grove":
+				client.god("grove", "grove", gh.x, gh.z)
 			else:
 				client.god("add", god_kind, gh.x, gh.z)
 		return
@@ -1327,6 +1331,31 @@ func _god_mesh(kind: String) -> ArrayMesh:
 	return m
 
 
+## شعلهٔ ساده روی درخت در حال سوختن: دو جعبهٔ نارنجی روشن و یک نور؛ در _update_god سوسو می‌زند.
+func _make_flame() -> Node3D:
+	var f := Node3D.new()
+	f.name = "Fire"
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.albedo_color = Color(1.0, 0.45, 0.08)
+	for i in range(2):
+		var mi := MeshInstance3D.new()
+		var bm := BoxMesh.new()
+		bm.size = Vector3(0.9, 1.4, 0.9) * (1.0 - 0.35 * float(i))
+		mi.mesh = bm
+		mi.material_override = mat
+		mi.position = Vector3(0.0, 1.6 + 0.7 * float(i), 0.0)
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		f.add_child(mi)
+	var l := OmniLight3D.new()
+	l.light_color = Color(1.0, 0.55, 0.2)
+	l.omni_range = 9.0
+	l.light_energy = 1.6
+	l.position = Vector3(0.0, 2.2, 0.0)
+	f.add_child(l)
+	return f
+
+
 func _sync_god() -> void:
 	if _god_mat == null:
 		_god_mat = MeshBuilder.material()
@@ -1349,6 +1378,12 @@ func _sync_god() -> void:
 			god_nodes[id] = node
 		node.set_meta("tx", gx)
 		node.set_meta("tz", gz)
+		var burning: bool = e.size() > 4 and int(e[4]) == 1
+		var flame: Node = node.get_node_or_null("Fire")
+		if burning and flame == null:
+			node.add_child(_make_flame())
+		elif not burning and flame != null:
+			flame.queue_free()
 	for id in god_nodes.keys():
 		if not seen.has(id):
 			god_nodes[id].queue_free()
@@ -1425,7 +1460,11 @@ func _update_god(dt: float) -> void:
 	_update_disaster(dt)
 	for n in coin_nodes:
 		n.rotation.y += dt * 3.0
+	var flick: float = Time.get_ticks_msec() / 1000.0
 	for node in god_nodes.values():
+		var flame: Node3D = node.get_node_or_null("Fire")
+		if flame != null:
+			flame.scale = Vector3.ONE * (1.0 + 0.25 * sin(flick * 14.0 + node.position.x))
 		if not FWConst.GOD_ANIMALS.has(str(node.get_meta("kind"))):
 			continue
 		var tx: float = float(node.get_meta("tx"))

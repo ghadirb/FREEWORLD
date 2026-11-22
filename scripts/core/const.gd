@@ -1,7 +1,7 @@
 extends RefCounted
 ## ثابت‌های مشترک بین سرور و کلاینت.
 
-const PROTOCOL_VERSION := 21
+const PROTOCOL_VERSION := 22
 # ترافیک شبکه با DTLS رمز می‌شود (نسخهٔ ۴ به بعد). فقط برای عیب‌یابی خاموش شود.
 const USE_DTLS := true
 const DEFAULT_PORT := 7777
@@ -236,6 +236,18 @@ const TERRAIN_ADMIN_MIN_UNITS := -80   # ابزار مدیر: تا ۱۰ متر �
 const TERRAIN_ADMIN_MAX_UNITS := 160   # ابزار مدیر: تا ۲۰ متر بلندی
 ## ابزار شکل‌دهی زمین برای مدیر (World Mode): کوه، دریاچه، صاف کردن
 const GOD_SHAPES := ["mountain", "lake", "flatten"]
+# قوانین جهان (پروتکل ۲۲، حس WorldBox): آتش‌سوزی درخت‌ها و رشد جنگل. فقط روی درخت‌های ساخته‌شده/کاشته‌شده (god) اثر دارد.
+const GOD_POWERS := ["fire", "grove"]
+const FIRE_BURN_SECONDS := 8.0
+const FIRE_SPREAD_RANGE := 5.0
+const FIRE_SPREAD_CHANCE := 0.25     # احتمال در هر ثانیه برای هر درخت همسایه
+const FIRE_IGNITE_RANGE := 4.0
+const FIRE_RAIN_SPREAD := 0.25       # باران احتمال گسترش را ضرب می‌کند
+const FIRE_RAIN_DECAY := 2.0         # باران آتش را دو برابر سریع خاموش می‌کند
+const GROW_INTERVAL := 15.0
+const GROW_CHANCE := 0.12            # احتمال زاد و ولد هر درخت در هر دوره
+const GROW_CAP := 100                # سقف درخت‌های جهان برای قانون رشد (بقیهٔ ظرفیت god برای حیوانات)
+const GROVE_SIZE := 6
 const SHAPE_RADIUS := 5                # شعاع به رأس (هر رأس ۲ متر → ۱۰ متر)
 const SHAPE_MOUNTAIN_UNITS := 64       # هر بار بلندی مرکز کوه (۸ متر)
 const SHAPE_LAKE_FLOOR := -1.5         # کف دریاچه (متر)؛ آب زیر ۰٫۲ متر است

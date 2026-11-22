@@ -217,6 +217,9 @@ func _process(delta: float) -> void:
 		_dirty = true
 	NpcSim.step(cs, dt)
 	cs.god_step(dt)
+	if cs.fire_step(dt) or cs.growth_step(dt):
+		_broadcast("s2c_god", cs.god_public())
+		_dirty = true
 	_god_acc += dt
 	if _god_acc >= 1.0:
 		_god_acc = 0.0
@@ -1184,6 +1187,14 @@ func on_god(pid: int, action: String, kind: String, x: float, z: float) -> void:
 			sflat.append(int(c[1]))
 			sflat.append(int(c[2]))
 		_broadcast("s2c_terrain_edit", sflat)
+		_dirty = true
+		return
+	if action == "ignite" or action == "grove":
+		var pres: Dictionary = cs.ignite(p["name"], x, z) if action == "ignite" else cs.plant_grove(p["name"], x, z)
+		if not pres["ok"]:
+			_notice(pid, str(pres["error"]))
+			return
+		_broadcast("s2c_god", cs.god_public())
 		_dirty = true
 		return
 	var res: Dictionary = cs.god_action(p["name"], action, kind, x, z)

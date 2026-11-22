@@ -37,6 +37,10 @@ var _god_rng := RandomNumberGenerator.new()
 var weather: String = "clear"
 var disaster: Dictionary = {"kind": "", "t": 0.0}   # حادثهٔ جاری؛ موقت و ذخیره‌نشده
 var disaster_cooldown: float = 0.0
+var forest_growth: bool = false              # قانون جهان: درخت‌ها خودبه‌خود تکثیر می‌شوند (ذخیره می‌شود)
+var fire: Dictionary = {}                    # شناسهٔ درخت در حال سوختن -> ثانیهٔ باقی‌مانده؛ موقت و ذخیره‌نشده
+var _fire_acc: float = 0.0
+var _grow_acc: float = 0.0
 var bread_price: float = FWConst.BREAD_BASE_PRICE
 ## موجودی بازار مشترک شهر: کالایی که کشاورزان فروخته‌اند و هنوز مصرف نشده.
 var market: Dictionary = {"wheat": 0.0, "flour": 0.0, "bread": 0.0, "egg": 0.0, "milk": 0.0, "cheese": 0.0}
@@ -537,6 +541,8 @@ func set_world(actor: String, key: String, value: Variant) -> Dictionary:
 			if not FWConst.WEATHERS.has(str(value)):
 				return {"ok": false, "error": "bad_request"}
 			weather = str(value)
+		"forest_growth":
+			forest_growth = bool(value)
 		_:
 			return {"ok": false, "error": "bad_request"}
 	_log(actor, "set_world", {"key": key, "value": value})
@@ -576,7 +582,7 @@ func disaster_public() -> Dictionary:
 
 
 func world_public() -> Dictionary:
-	return {"time_speed": time_speed, "weather": weather, "creative": creative}
+	return {"time_speed": time_speed, "weather": weather, "creative": creative, "forest_growth": forest_growth}
 
 
 func set_role(actor: String, target: String, role: String) -> Dictionary:
@@ -1023,6 +1029,140 @@ func seed_village_life() -> int:
 	return added
 
 
+func _in_world(x: float, z: float) -> bool:
+	var half := FWConst.CITY_SIZE * 0.5
+	return is_finite(x) and is_finite(z) and absf(x - half) <= FWConst.WORLD_LIMIT and absf(z - half) <= FWConst.WORLD_LIMIT
+
+
+## یک درخت تازه نزدیک (x, z) می‌کارد؛ true اگر جای مناسب پیدا شد.
+func _spawn_tree_near(x: float, z: float, min_r: float, max_r: float) -> bool:
+	if god.size() >= FWConst.GOD_MAX:
+		return false
+	for _try in range(5):
+		var a := _god_rng.randf() * TAU
+		var r := min_r + _god_rng.randf() * (max_r - min_r)
+		var tx := x + cos(a) * r
+		var tz := z + sin(a) * r
+		if not _in_world(tx, tz) or not _god_spot_ok(tx, tz):
+			continue
+		var crowded := false
+		for gid in god:
+			if Vector2(float(god[gid]["x"]), float(god[gid]["z"])).distance_to(Vector2(tx, tz)) < 1.2:
+				crowded = true
+				break
+		if crowded:
+			continue
+		var id := next_god_id
+		next_god_id += 1
+		god[id] = {"id": id, "kind": "tree", "x": tx, "z": tz, "tx": tx, "tz": tz, "wait": 1.0}
+		return true
+	return false
+
+
+## قدرت «آتش»: نزدیک‌ترین درخت (تا FIRE_IGNITE_RANGE) را آتش می‌زند. فقط مدیران.
+func ignite(actor: String, x: float, z: float) -> Dictionary:
+	if not FWConst.is_admin(role_of(actor)):
+		return {"ok": false, "error": "forbidden"}
+	if not _in_world(x, z):
+		return {"ok": false, "error": "bad_request"}
+	var best := -1
+	var best_d := FWConst.FIRE_IGNITE_RANGE
+	for id in god:
+		if str(god[id]["kind"]) != "tree" or fire.has(id):
+			continue
+		var d := Vector2(float(god[id]["x"]), float(god[id]["z"])).distance_to(Vector2(x, z))
+		if d <= best_d:
+			best_d = d
+			best = id
+	if best < 0:
+		return {"ok": false, "error": "no_target"}
+	fire[best] = FWConst.FIRE_BURN_SECONDS
+	_log(actor, "fire", {"id": best})
+	return {"ok": true, "id": best}
+
+
+## قدرت «جنگل»: تا GROVE_SIZE درخت دور نقطه می‌کارد. فقط مدیران.
+func plant_grove(actor: String, x: float, z: float) -> Dictionary:
+	if not FWConst.is_admin(role_of(actor)):
+		return {"ok": false, "error": "forbidden"}
+	if not _in_world(x, z):
+		return {"ok": false, "error": "bad_request"}
+	if god.size() >= FWConst.GOD_MAX:
+		return {"ok": false, "error": "god_full"}
+	var planted := 0
+	for _i in range(FWConst.GROVE_SIZE * 2):
+		if planted >= FWConst.GROVE_SIZE:
+			break
+		if _spawn_tree_near(x, z, 0.0, 6.0):
+			planted += 1
+	if planted == 0:
+		return {"ok": false, "error": "bad_place"}
+	_log(actor, "grove", {"n": planted})
+	return {"ok": true, "planted": planted}
+
+
+## گام آتش‌سوزی؛ true اگر مجموعهٔ درخت‌ها یا درخت‌های در حال سوختن تغییر کرد (باید برای کلاینت‌ها فرستاده شود).
+## آتش به درخت‌های همسایه سرایت می‌کند و بعد از FIRE_BURN_SECONDS درخت را از بین می‌برد.
+## به ساختمان، بازیکن و حیوان آسیبی نمی‌رساند. باران سرایت را کم و سوختن را تند می‌کند.
+func fire_step(dt: float) -> bool:
+	if fire.is_empty():
+		_fire_acc = 0.0
+		return false
+	var changed := false
+	var raining: bool = weather == "rain" or str(disaster["kind"]) == "storm"
+	var decay: float = dt * (FWConst.FIRE_RAIN_DECAY if raining else 1.0)
+	for id in fire.keys():
+		if not god.has(id):
+			fire.erase(id)
+			changed = true
+			continue
+		fire[id] = float(fire[id]) - decay
+		if float(fire[id]) <= 0.0:
+			god.erase(id)
+			fire.erase(id)
+			changed = true
+	_fire_acc += dt
+	while _fire_acc >= 1.0:
+		_fire_acc -= 1.0
+		var chance: float = FWConst.FIRE_SPREAD_CHANCE * (FWConst.FIRE_RAIN_SPREAD if raining else 1.0)
+		var newly: Array = []
+		for id in fire:
+			var gp := Vector2(float(god[id]["x"]), float(god[id]["z"]))
+			for oid in god:
+				if fire.has(oid) or newly.has(oid) or str(god[oid]["kind"]) != "tree":
+					continue
+				if gp.distance_to(Vector2(float(god[oid]["x"]), float(god[oid]["z"]))) <= FWConst.FIRE_SPREAD_RANGE and _god_rng.randf() < chance:
+					newly.append(oid)
+		for oid in newly:
+			fire[oid] = FWConst.FIRE_BURN_SECONDS
+			changed = true
+	return changed
+
+
+## قانون «رشد جنگل»: هر GROW_INTERVAL ثانیه هر درخت با احتمالی نزدیک خودش درخت تازه می‌کارد (تا سقف GROW_CAP).
+func growth_step(dt: float) -> bool:
+	if not forest_growth:
+		return false
+	_grow_acc += dt
+	if _grow_acc < FWConst.GROW_INTERVAL:
+		return false
+	_grow_acc = 0.0
+	var chance: float = FWConst.GROW_CHANCE * (2.0 if weather == "rain" else 1.0)
+	var parents: Array = []
+	for id in god:
+		if str(god[id]["kind"]) == "tree" and not fire.has(id):
+			parents.append(id)
+	var changed := false
+	for id in parents:
+		if god.size() >= FWConst.GROW_CAP:
+			break
+		if _god_rng.randf() >= chance:
+			continue
+		if _spawn_tree_near(float(god[id]["x"]), float(god[id]["z"]), 2.0, 5.0):
+			changed = true
+	return changed
+
+
 func _god_spot_ok(x: float, z: float) -> bool:
 	if world.height_at(x, z) < FWConst.GOD_MIN_HEIGHT:
 		return false
@@ -1063,7 +1203,7 @@ func god_public() -> Array:
 	ids.sort()
 	for id in ids:
 		var g: Dictionary = god[id]
-		out.append([int(id), str(g["kind"]), snappedf(float(g["x"]), 0.05), snappedf(float(g["z"]), 0.05)])
+		out.append([int(id), str(g["kind"]), snappedf(float(g["x"]), 0.05), snappedf(float(g["z"]), 0.05), 1 if fire.has(id) else 0])
 	return out
 
 
@@ -1750,6 +1890,7 @@ func to_dict() -> Dictionary:
 		"creative": creative,
 		"villages_seeded": villages_seeded,
 		"weather": weather,
+		"forest_growth": forest_growth,
 		"bread_price": bread_price,
 		"market": market,
 		"prices": prices,
@@ -1853,6 +1994,7 @@ static func from_dict(d: Dictionary):
 	cs.time_speed = ts if FWConst.TIME_SPEEDS.has(ts) else 1.0
 	var wt := str(d.get("weather", "clear"))
 	cs.weather = wt if FWConst.WEATHERS.has(wt) else "clear"
+	cs.forest_growth = bool(d.get("forest_growth", false))
 	cs.next_building_id = int(d["next_building_id"])
 	for name in d["accounts"]:
 		var a: Dictionary = d["accounts"][name]

@@ -55,6 +55,7 @@ func _init() -> void:
 	test_terrain()
 	test_mines()
 	test_creative()
+	test_world_rules()
 	test_batch_build()
 	test_terrain_shapes()
 	test_villages()
@@ -1809,6 +1810,77 @@ func test_tls_pinning() -> void:
 			d.remove(f)
 		DirAccess.remove_absolute(dir)
 	Settings.clear_pins()
+
+
+func test_world_rules() -> void:
+	print("[world rules]")
+	var cs = CityState.new(31337)
+	_login(cs, "mortal")
+	cs.provision_admin("maker", "secret-secret-1", FWConst.ROLE_CITY_ADMIN)
+	var land := Vector2.ZERO
+	for i in range(40, 200, 3):
+		if cs.world.height_at(float(i), 70.0) > 1.5 and cs._god_spot_ok(float(i), 70.0):
+			land = Vector2(float(i), 70.0)
+			break
+	check(land != Vector2.ZERO, "found land for world rules")
+	check(cs.ignite("mortal", land.x, land.y)["error"] == "forbidden", "players cannot start fires")
+	check(cs.plant_grove("mortal", land.x, land.y)["error"] == "forbidden", "players cannot plant groves")
+	check(cs.ignite("maker", land.x, land.y)["error"] == "no_target", "fire needs a tree")
+	check(cs.ignite("maker", NAN, 1.0)["error"] == "bad_request", "fire rejects non-finite positions")
+	var gr: Dictionary = cs.plant_grove("maker", land.x, land.y)
+	check(gr["ok"] and int(gr["planted"]) > 0 and cs.god.size() == int(gr["planted"]), "grove plants trees")
+	for id in cs.god:
+		check(str(cs.god[id]["kind"]) == "tree", "grove only plants trees")
+		break
+	check(cs.god_public()[0].size() == 5 and int(cs.god_public()[0][4]) == 0, "public list carries a fire flag (off)")
+	# آتش: یک درخت می‌سوزد، به همسایه‌ها سرایت می‌کند و همه می‌سوزند.
+	var first_id: int = cs.god.keys()[0]
+	var fx: float = float(cs.god[first_id]["x"])
+	var fz: float = float(cs.god[first_id]["z"])
+	check(cs.ignite("maker", fx, fz)["ok"] and cs.fire.has(first_id), "an admin ignites a tree")
+	check(int(cs.god_public()[0][4]) == 1 or cs.god_public().any(func(e): return int(e[4]) == 1), "burning tree is flagged")
+	var any_change := false
+	for i in range(60):
+		if cs.fire_step(1.0):
+			any_change = true
+	check(any_change, "fire changes the world")
+	check(cs.fire.is_empty(), "fire burns out")
+	check(cs.god.size() < int(gr["planted"]), "burned trees are gone")
+	# باران آتش را زود خاموش می‌کند و سرایت را کم می‌کند.
+	var dry = CityState.new(31337)
+	var wet = CityState.new(31337)
+	for c in [dry, wet]:
+		c.provision_admin("maker", "secret-secret-1", FWConst.ROLE_CITY_ADMIN)
+		c.plant_grove("maker", land.x, land.y)
+		c.ignite("maker", float(c.god[c.god.keys()[0]]["x"]), float(c.god[c.god.keys()[0]]["z"]))
+	wet.weather = "rain"
+	var before_n: int = dry.god.size()
+	for i in range(4):
+		dry.fire_step(1.0)
+		wet.fire_step(1.0)
+	check(before_n > 0 and wet.fire.size() <= dry.fire.size(), "rain does not make fire worse")
+	for i in range(8):
+		wet.fire_step(1.0)
+	check(wet.fire.is_empty(), "rain puts the fire out quickly")
+	# قانون رشد جنگل
+	var gz = CityState.new(31337)
+	gz.provision_admin("maker", "secret-secret-1", FWConst.ROLE_CITY_ADMIN)
+	gz.plant_grove("maker", land.x, land.y)
+	var n0: int = gz.god.size()
+	check(not gz.growth_step(1000.0) and gz.god.size() == n0, "no growth while the law is off")
+	_login(gz, "mortal")
+	check(gz.set_world("mortal", "forest_growth", true)["error"] == "forbidden", "players cannot change world laws")
+	check(gz.set_world("maker", "forest_growth", true)["ok"] and gz.forest_growth and bool(gz.world_public()["forest_growth"]), "admin enables forest growth")
+	for i in range(80):
+		gz.growth_step(FWConst.GROW_INTERVAL)
+	check(gz.god.size() > n0, "forests spread with the law on")
+	check(gz.god.size() <= FWConst.GROW_CAP, "growth respects the cap")
+	for id in gz.god:
+		check(gz._god_spot_ok(float(gz.god[id]["x"]), float(gz.god[id]["z"])), "grown trees stand on valid ground")
+		break
+	var back = CityState.from_dict(JSON.parse_string(JSON.stringify(gz.to_dict())))
+	check(back != null and back.forest_growth and back.god.size() == gz.god.size(), "law and trees survive save and load")
+	check(not CityState.from_dict(JSON.parse_string(JSON.stringify(cs.to_dict()))).forest_growth, "law defaults to off")
 
 
 func test_creative() -> void:
