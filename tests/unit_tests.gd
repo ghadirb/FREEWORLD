@@ -1862,6 +1862,45 @@ func test_world_rules() -> void:
 	for i in range(8):
 		wet.fire_step(1.0)
 	check(wet.fire.is_empty(), "rain puts the fire out quickly")
+	# درخت‌های طبیعی Seed هم می‌سوزند و بعد دوباره می‌رویند.
+	var nat = CityState.new(31337)
+	nat.provision_admin("maker", "secret-secret-1", FWConst.ROLE_CITY_ADMIN)
+	var spot := Vector2.ZERO
+	var cluster := 0
+	for rx in range(60, 140):
+		for rz in range(60, 140):
+			var nd: Dictionary = nat.world.resource_in_cell(rx, rz)
+			if nd.is_empty() or str(nd["kind"]) != "tree":
+				continue
+			var cnt := 0
+			for ox in range(-2, 3):
+				for oz in range(-2, 3):
+					var o2: Dictionary = nat.world.resource_in_cell(rx + ox, rz + oz)
+					if not o2.is_empty() and str(o2["kind"]) == "tree":
+						cnt += 1
+			if cnt > cluster:
+				cluster = cnt
+				spot = Vector2(float(nd["x"]), float(nd["z"]))
+	check(cluster >= 5, "found a dense natural forest")
+	var ni: Dictionary = nat.ignite("maker", spot.x, spot.y)
+	check(ni["ok"] and ni.has("natural") and nat.nfire.size() == 1 and nat.nfire_dirty, "natural tree ignites")
+	check(nat.nfire_flat().size() == 2, "natural fire is exported")
+	for i in range(60):
+		nat.fire_step(1.0)
+	check(nat.nfire.is_empty(), "natural fire burns out")
+	check(nat.depleted.size() >= 1 and nat.burned.size() == nat.depleted.size(), "burned trees vanish like chopped ones")
+	check(nat.depleted.size() > 1, "fire spreads through a natural forest")
+	check(nat.nfire.size() <= FWConst.NFIRE_MAX, "natural fire respects the cap")
+	var first_key: String = nat.burned[0]
+	check(float(nat.depleted[first_key]) > 200.0, "burned trees regrow only after a long time")
+	# قطع‌کردن درخت در حال سوختن آتش را قطع می‌کند.
+	var chop = CityState.new(31337)
+	chop.provision_admin("maker", "secret-secret-1", FWConst.ROLE_CITY_ADMIN)
+	chop.ignite("maker", spot.x, spot.y)
+	var ck: String = chop.nfire.keys()[0]
+	chop.depleted[ck] = 5.0
+	chop.fire_step(1.0)
+	check(chop.nfire.is_empty(), "a chopped burning tree stops burning")
 	# قانون رشد جنگل
 	var gz = CityState.new(31337)
 	gz.provision_admin("maker", "secret-secret-1", FWConst.ROLE_CITY_ADMIN)

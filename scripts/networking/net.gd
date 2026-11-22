@@ -393,6 +393,12 @@ func s2c_resource(data: PackedInt32Array) -> void:
 
 ## فهرست منابع برداشت‌شدهٔ فعلی: جفت‌های rx, rz
 @rpc("authority", "call_remote", "reliable")
+func s2c_fire(flat: PackedInt32Array) -> void:
+	if client:
+		client.on_fire(flat)
+
+
+@rpc("authority", "call_remote", "reliable")
 func s2c_depleted(flat: PackedInt32Array) -> void:
 	if client:
 		client.on_depleted(flat)

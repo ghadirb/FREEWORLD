@@ -220,6 +220,7 @@ func _process(delta: float) -> void:
 	if cs.fire_step(dt) or cs.growth_step(dt):
 		_broadcast("s2c_god", cs.god_public())
 		_dirty = true
+	_flush_fire()
 	_god_acc += dt
 	if _god_acc >= 1.0:
 		_god_acc = 0.0
@@ -552,6 +553,7 @@ func on_login(pid: int, player_name: String, token: String, proto: int) -> void:
 	_send(pid, "s2c_depleted", cs.depleted_flat())
 	_send(pid, "s2c_terrain", cs.terrain_flat())
 	_send(pid, "s2c_god", cs.god_public())
+	_send(pid, "s2c_fire", cs.nfire_flat())
 	_send(pid, "s2c_minigame", cs.minigame.public_state(player_name))
 	_send(pid, "s2c_disaster", cs.disaster_public())
 	_send(pid, "s2c_race", cs.race.public_state(player_name))
@@ -1169,6 +1171,19 @@ func on_craft(pid: int, recipe: String, times: int) -> void:
 	_dirty = true
 
 
+## درخت‌های طبیعیِ سوخته را مثل درخت قطع‌شده حذف و فهرست درخت‌های در حال سوختن را پخش می‌کند.
+func _flush_fire() -> void:
+	if not cs.burned.is_empty():
+		for key in cs.burned:
+			var parts: PackedStringArray = str(key).split(",")
+			_broadcast("s2c_resource", PackedInt32Array([int(parts[0]), int(parts[1]), 0]))
+		cs.burned.clear()
+		_dirty = true
+	if cs.nfire_dirty:
+		cs.nfire_dirty = false
+		_broadcast("s2c_fire", cs.nfire_flat())
+
+
 func on_god(pid: int, action: String, kind: String, x: float, z: float) -> void:
 	var p := _player_of(pid)
 	if p.is_empty():
@@ -1195,6 +1210,7 @@ func on_god(pid: int, action: String, kind: String, x: float, z: float) -> void:
 			_notice(pid, str(pres["error"]))
 			return
 		_broadcast("s2c_god", cs.god_public())
+		_flush_fire()
 		_dirty = true
 		return
 	var res: Dictionary = cs.god_action(p["name"], action, kind, x, z)

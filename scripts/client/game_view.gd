@@ -60,6 +60,7 @@ var my_pos: Vector3 = Vector3.ZERO
 var my_yaw: float = 0.0
 var joy: Vector2 = Vector2.ZERO
 # پرواز خلاقانه: my_alt ارتفاع بالای زمین است؛ my_pos همیشه روی زمین می‌ماند.
+var _nfire_nodes: Dictionary = {}
 var flying: bool = false
 var my_alt: float = 0.0
 var fly_vert: float = 0.0  # دکمه‌های HUD: +۱ بالا، −۱ پایین
@@ -130,6 +131,7 @@ func setup(game_client, quality_level: int) -> void:
 	client.resource_changed.connect(func(rx: int, rz: int, _alive: bool): streamer.refresh_resource(rx, rz))
 	client.terrain_changed.connect(streamer.invalidate_area)
 	client.god_changed.connect(_sync_god)
+	client.fire_changed.connect(_sync_nfire)
 	client.minigame_changed.connect(_sync_coins)
 	client.race_changed.connect(_sync_race)
 	cam = CameraRig.new()
@@ -1356,6 +1358,24 @@ func _make_flame() -> Node3D:
 	return f
 
 
+func _sync_nfire() -> void:
+	for key in _nfire_nodes.keys():
+		if not client.nfire.has(key):
+			_nfire_nodes[key].queue_free()
+			_nfire_nodes.erase(key)
+	for key in client.nfire:
+		if _nfire_nodes.has(key):
+			continue
+		var parts: PackedStringArray = str(key).split(",")
+		var n: Dictionary = world.resource_in_cell(int(parts[0]), int(parts[1]))
+		if n.is_empty():
+			continue
+		var f := _make_flame()
+		f.position = Vector3(float(n["x"]), float(n["y"]) - 0.1, float(n["z"]))
+		add_child(f)
+		_nfire_nodes[key] = f
+
+
 func _sync_god() -> void:
 	if _god_mat == null:
 		_god_mat = MeshBuilder.material()
@@ -1461,6 +1481,8 @@ func _update_god(dt: float) -> void:
 	for n in coin_nodes:
 		n.rotation.y += dt * 3.0
 	var flick: float = Time.get_ticks_msec() / 1000.0
+	for f in _nfire_nodes.values():
+		f.scale = Vector3.ONE * (1.0 + 0.25 * sin(flick * 14.0 + f.position.x))
 	for node in god_nodes.values():
 		var flame: Node3D = node.get_node_or_null("Fire")
 		if flame != null:

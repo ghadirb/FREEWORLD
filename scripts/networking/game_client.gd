@@ -32,6 +32,7 @@ signal terrain_changed(x0: float, z0: float, x1: float, z1: float)
 signal teleported(pos: Vector2)
 signal ticked
 signal god_changed
+signal fire_changed
 signal minigame_changed
 signal disaster_changed
 signal race_changed
@@ -75,6 +76,7 @@ var spawn: Vector2 = Vector2.ZERO
 var inv: Dictionary = {}
 var friends: Dictionary = {}
 var god_list: Array = []
+var nfire: Dictionary = {}  # "rx,rz" درخت‌های طبیعیِ در حال سوختن
 var minigame: Dictionary = {"active": false, "t": 0.0, "score": 0, "coins": [], "best": 0, "board": []}
 var disaster: Dictionary = {"kind": "", "t": 0.0}
 var disaster_stamp: float = 0.0
@@ -371,6 +373,15 @@ func craft(recipe: String, times: int = 1) -> void:
 func god(action: String, kind: String, x: float, z: float) -> void:
 	if is_logged_in:
 		_tx("c2s_god", [action, kind, x, z])
+
+
+func on_fire(flat: PackedInt32Array) -> void:
+	nfire.clear()
+	var i := 0
+	while i + 1 < flat.size():
+		nfire["%d,%d" % [flat[i], flat[i + 1]]] = true
+		i += 2
+	fire_changed.emit()
 
 
 func on_god(list: Array) -> void:

@@ -39,6 +39,9 @@ var disaster: Dictionary = {"kind": "", "t": 0.0}   # حادثهٔ جاری؛ م
 var disaster_cooldown: float = 0.0
 var forest_growth: bool = false              # قانون جهان: درخت‌ها خودبه‌خود تکثیر می‌شوند (ذخیره می‌شود)
 var fire: Dictionary = {}                    # شناسهٔ درخت در حال سوختن -> ثانیهٔ باقی‌مانده؛ موقت و ذخیره‌نشده
+var nfire: Dictionary = {}                   # درخت‌های طبیعیِ در حال سوختن: "rx,rz" -> ثانیهٔ باقی‌مانده (موقت)
+var nfire_dirty: bool = false                # سرور بعد از پخش s2c_fire پاکش می‌کند
+var burned: Array = []                       # درخت‌های طبیعیِ تازه سوخته؛ سرور برای پخش حذفشان تخلیه می‌کند
 var _fire_acc: float = 0.0
 var _grow_acc: float = 0.0
 var bread_price: float = FWConst.BREAD_BASE_PRICE
@@ -1059,7 +1062,7 @@ func _spawn_tree_near(x: float, z: float, min_r: float, max_r: float) -> bool:
 	return false
 
 
-## قدرت «آتش»: نزدیک‌ترین درخت (تا FIRE_IGNITE_RANGE) را آتش می‌زند. فقط مدیران.
+## قدرت «آتش»: نزدیک‌ترین درخت (کاشته‌شده یا طبیعی، تا FIRE_IGNITE_RANGE) را آتش می‌زند. فقط مدیران.
 func ignite(actor: String, x: float, z: float) -> Dictionary:
 	if not FWConst.is_admin(role_of(actor)):
 		return {"ok": false, "error": "forbidden"}
@@ -1074,6 +1077,27 @@ func ignite(actor: String, x: float, z: float) -> Dictionary:
 		if d <= best_d:
 			best_d = d
 			best = id
+	var nbest := ""
+	var nbest_d := best_d
+	var rxc := int(floor(x / FWConst.RESOURCE_CELL))
+	var rzc := int(floor(z / FWConst.RESOURCE_CELL))
+	for rx in range(rxc - 2, rxc + 3):
+		for rz in range(rzc - 2, rzc + 3):
+			var key := "%d,%d" % [rx, rz]
+			if depleted.has(key) or nfire.has(key):
+				continue
+			var n: Dictionary = world.resource_in_cell(rx, rz)
+			if n.is_empty() or str(n["kind"]) != "tree":
+				continue
+			var nd := Vector2(float(n["x"]), float(n["z"])).distance_to(Vector2(x, z))
+			if nd <= nbest_d:
+				nbest_d = nd
+				nbest = key
+	if nbest != "" and nfire.size() < FWConst.NFIRE_MAX:
+		nfire[nbest] = FWConst.FIRE_BURN_SECONDS
+		nfire_dirty = true
+		_log(actor, "fire", {"natural": nbest})
+		return {"ok": true, "natural": nbest}
 	if best < 0:
 		return {"ok": false, "error": "no_target"}
 	fire[best] = FWConst.FIRE_BURN_SECONDS
@@ -1101,11 +1125,12 @@ func plant_grove(actor: String, x: float, z: float) -> Dictionary:
 	return {"ok": true, "planted": planted}
 
 
-## گام آتش‌سوزی؛ true اگر مجموعهٔ درخت‌ها یا درخت‌های در حال سوختن تغییر کرد (باید برای کلاینت‌ها فرستاده شود).
-## آتش به درخت‌های همسایه سرایت می‌کند و بعد از FIRE_BURN_SECONDS درخت را از بین می‌برد.
-## به ساختمان، بازیکن و حیوان آسیبی نمی‌رساند. باران سرایت را کم و سوختن را تند می‌کند.
+## گام آتش‌سوزی؛ true اگر مجموعهٔ درخت‌های کاشته‌شده یا در حال سوختن‌شان تغییر کرد (god_public باید پخش شود).
+## درخت‌های طبیعی در nfire می‌سوزند و با پایان آتش مثل درخت قطع‌شده ناپدید می‌شوند (depleted) و بعد از FIRE_REGROW ثانیه
+## دوباره می‌رویند؛ تغییرشان با nfire_dirty و burned به سرور اعلام می‌شود.
+## آتش به ساختمان، بازیکن و حیوان آسیبی نمی‌رساند. باران سرایت را کم و سوختن را تند می‌کند.
 func fire_step(dt: float) -> bool:
-	if fire.is_empty():
+	if fire.is_empty() and nfire.is_empty():
 		_fire_acc = 0.0
 		return false
 	var changed := false
@@ -1121,22 +1146,68 @@ func fire_step(dt: float) -> bool:
 			god.erase(id)
 			fire.erase(id)
 			changed = true
+	for key in nfire.keys():
+		if depleted.has(key):   # در حین سوختن قطع شد
+			nfire.erase(key)
+			nfire_dirty = true
+			continue
+		nfire[key] = float(nfire[key]) - decay
+		if float(nfire[key]) <= 0.0:
+			nfire.erase(key)
+			depleted[key] = FWConst.FIRE_REGROW
+			burned.append(key)
+			nfire_dirty = true
 	_fire_acc += dt
 	while _fire_acc >= 1.0:
 		_fire_acc -= 1.0
 		var chance: float = FWConst.FIRE_SPREAD_CHANCE * (FWConst.FIRE_RAIN_SPREAD if raining else 1.0)
-		var newly: Array = []
+		var sources: Array = []
 		for id in fire:
-			var gp := Vector2(float(god[id]["x"]), float(god[id]["z"]))
+			sources.append(Vector2(float(god[id]["x"]), float(god[id]["z"])))
+		for key in nfire:
+			var parts: PackedStringArray = str(key).split(",")
+			var nn: Dictionary = world.resource_in_cell(int(parts[0]), int(parts[1]))
+			if not nn.is_empty():
+				sources.append(Vector2(float(nn["x"]), float(nn["z"])))
+		var new_god: Array = []
+		var new_nat: Array = []
+		for gp in sources:
 			for oid in god:
-				if fire.has(oid) or newly.has(oid) or str(god[oid]["kind"]) != "tree":
+				if fire.has(oid) or new_god.has(oid) or str(god[oid]["kind"]) != "tree":
 					continue
 				if gp.distance_to(Vector2(float(god[oid]["x"]), float(god[oid]["z"]))) <= FWConst.FIRE_SPREAD_RANGE and _god_rng.randf() < chance:
-					newly.append(oid)
-		for oid in newly:
+					new_god.append(oid)
+			var rxc := int(floor(gp.x / FWConst.RESOURCE_CELL))
+			var rzc := int(floor(gp.y / FWConst.RESOURCE_CELL))
+			var reach := int(ceil(FWConst.FIRE_SPREAD_RANGE / FWConst.RESOURCE_CELL)) + 1
+			for rx in range(rxc - reach, rxc + reach + 1):
+				for rz in range(rzc - reach, rzc + reach + 1):
+					var nk := "%d,%d" % [rx, rz]
+					if depleted.has(nk) or nfire.has(nk) or new_nat.has(nk):
+						continue
+					var cand: Dictionary = world.resource_in_cell(rx, rz)
+					if cand.is_empty() or str(cand["kind"]) != "tree":
+						continue
+					if gp.distance_to(Vector2(float(cand["x"]), float(cand["z"]))) <= FWConst.FIRE_SPREAD_RANGE and _god_rng.randf() < chance:
+						new_nat.append(nk)
+		for oid in new_god:
 			fire[oid] = FWConst.FIRE_BURN_SECONDS
 			changed = true
+		for nk in new_nat:
+			if nfire.size() >= FWConst.NFIRE_MAX:
+				break
+			nfire[nk] = FWConst.FIRE_BURN_SECONDS
+			nfire_dirty = true
 	return changed
+
+
+func nfire_flat() -> PackedInt32Array:
+	var out := PackedInt32Array()
+	for key in nfire:
+		var parts: PackedStringArray = str(key).split(",")
+		out.append(int(parts[0]))
+		out.append(int(parts[1]))
+	return out
 
 
 ## قانون «رشد جنگل»: هر GROW_INTERVAL ثانیه هر درخت با احتمالی نزدیک خودش درخت تازه می‌کارد (تا سقف GROW_CAP).
