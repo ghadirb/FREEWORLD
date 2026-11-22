@@ -75,6 +75,7 @@ var _was_disaster: bool = false
 var _race_btn: Button
 var _fly_btn: Button
 var _boat_btn: Button
+var _fish_btn: Button
 var _race_title: Label
 var _race_start_btn: Button
 var _forest_btn: Button
@@ -290,6 +291,8 @@ func _build_side_buttons() -> void:
 	_fly_btn.pressed.connect(func(): Sfx.play(self, "click"); view.toggle_flight())
 	_boat_btn = UiTheme.button(Loc.t("boat"), Vector2(180, 58))
 	_boat_btn.pressed.connect(func(): Sfx.play(self, "click"); client.toggle_boat())
+	_fish_btn = UiTheme.button(Loc.t("fish"), Vector2(180, 58))
+	_fish_btn.pressed.connect(func(): client.fish())
 	client.boat_changed.connect(_on_boat_changed)
 	_fly_pad = HBoxContainer.new()
 	_fly_pad.add_theme_constant_override("separation", 12)
@@ -303,7 +306,7 @@ func _build_side_buttons() -> void:
 		_fly_pad.add_child(ab)
 		_interactive.append(ab)
 	view.fly_changed.connect(func(on: bool): _fly_btn.text = Loc.t("land") if on else Loc.t("fly"); _fly_pad.visible = on)
-	for b in [_mode_btn, _view_btn, _build_btn, _tools_btn, _inv_btn, chat_btn, _admin_btn, _god_btn, _mg_btn, _race_btn, _boat_btn, _fly_btn, menu_btn]:
+	for b in [_mode_btn, _view_btn, _build_btn, _tools_btn, _inv_btn, chat_btn, _admin_btn, _god_btn, _mg_btn, _race_btn, _boat_btn, _fish_btn, _fly_btn, menu_btn]:
 		v.add_child(b)
 		_interactive.append(b)
 	_update_mode_btn()
@@ -1310,6 +1313,12 @@ func _on_notice(code: String, args: Dictionary) -> void:
 		"npc_gift":
 			Sfx.play(self, "coin")
 			toast(Loc.fmt("msg_npc_gift", [str(args["npc"]), Loc.t("item_" + str(args["item"]))]), Color("ffd84a"))
+		"unlocked":
+			Sfx.play(self, "coin")
+			toast(Loc.t("msg_unlocked_" + str(args["what"])), Color("ffd84a"))
+		"fished":
+			Sfx.play(self, "coin")
+			toast(Loc.fmt("msg_fished", [Loc.digits(str(args["count"]))]), Color("8fd8ff"))
 		"upgraded":
 			Sfx.play(self, "coin")
 			toast(Loc.fmt("msg_upgraded", [Loc.t("tool_" + str(args["tool"]))]), Color("ffd84a"))
@@ -1413,6 +1422,7 @@ func _on_mode_changed(_m: String) -> void:
 	_race_btn.visible = view.mode == "life"
 	_fly_btn.visible = view.mode == "life" and client.creative and not client.boating
 	_boat_btn.visible = view.mode == "life"
+	_fish_btn.visible = view.mode == "life"
 	_refresh_role()
 	if view.mode == "world":
 		_set_tools_visible(false)

@@ -22,7 +22,7 @@ const LOCAL_PID := 1
 const LOCAL_METHODS := [
 	"c2s_login", "c2s_move", "c2s_place", "c2s_remove", "c2s_collect",
 	"c2s_chat", "c2s_set_role", "c2s_get_audit", "c2s_job", "c2s_set_world", "c2s_enter", "c2s_leave",
-	"c2s_place_block", "c2s_remove_block", "c2s_paint_block", "c2s_build_region", "c2s_paste", "c2s_undo", "c2s_gather", "c2s_dig", "c2s_fill", "c2s_craft", "c2s_trade", "c2s_offer", "c2s_offer_answer", "c2s_npc", "c2s_npc_sell", "c2s_npc_buy", "c2s_furn_place", "c2s_furn_remove", "c2s_minigame_start", "c2s_race_start", "c2s_boat", "c2s_disaster", "c2s_god",
+	"c2s_place_block", "c2s_remove_block", "c2s_paint_block", "c2s_build_region", "c2s_paste", "c2s_undo", "c2s_gather", "c2s_dig", "c2s_fill", "c2s_craft", "c2s_trade", "c2s_offer", "c2s_offer_answer", "c2s_npc", "c2s_npc_sell", "c2s_npc_buy", "c2s_furn_place", "c2s_furn_remove", "c2s_minigame_start", "c2s_race_start", "c2s_boat", "c2s_fish", "c2s_disaster", "c2s_god",
 	"c2s_mine_enter", "c2s_mine_leave", "c2s_mine_gather",
 ]
 
@@ -354,6 +354,9 @@ func on_boat(pid: int) -> void:
 		if float(p.get("alt", 0.0)) > FWConst.FLY_MIN_ALT:
 			_notice(pid, "boat_busy")
 			return
+		if not cs.has_boat(cs.accounts[nm]):
+			_notice(pid, "need_boat")
+			return
 		var water: Vector2 = Boat.find_water_near(cs, here, FWConst.BOAT_BOARD_RANGE)
 		if not Boat.found(water):
 			_notice(pid, "boat_no_water")
@@ -362,6 +365,38 @@ func on_boat(pid: int) -> void:
 		p["pos"] = Vector3(water.x, FWConst.SEA_LEVEL, water.y)
 		_send(pid, "s2c_boat", true)
 		_send(pid, "s2c_teleport", water.x, water.y)
+	_dirty = true
+
+
+func on_fish(pid: int) -> void:
+	var p := _player_of(pid)
+	if p.is_empty():
+		return
+	if not _allow_action(p):
+		_notice(pid, "rate_limited")
+		return
+	var nm: String = p["name"]
+	var pos: Vector3 = p["pos"]
+	if _indoors(p) or str(p.get("mine", "")) != "" or float(p.get("alt", 0.0)) > FWConst.FLY_MIN_ALT:
+		_notice(pid, "fish_no_water")
+		return
+	if not bool(p.get("boat", false)) and not Boat.found(Boat.find_water_near(cs, Vector2(pos.x, pos.z), FWConst.FISH_RANGE)):
+		_notice(pid, "fish_no_water")
+		return
+	var now := Time.get_ticks_msec()
+	if now - int(p.get("last_fish", 0)) < FWConst.FISH_COOLDOWN_MS:
+		_notice(pid, "fish_wait")
+		return
+	p["last_fish"] = now
+	var res: Dictionary = cs.fish(nm, randf())
+	if not res["ok"]:
+		_notice(pid, str(res["error"]))
+		return
+	if int(res["count"]) == 0:
+		_notice(pid, "fish_none")
+		return
+	_push_inv(pid, nm)
+	_notice(pid, "fished", {"count": res["count"]})
 	_dirty = true
 
 
@@ -1240,7 +1275,9 @@ func on_craft(pid: int, recipe: String, times: int) -> void:
 		_notice(pid, str(res["error"]))
 		return
 	_push_inv(pid, p["name"])
-	if res.has("upgrade"):
+	if res.has("unlock"):
+		_notice(pid, "unlocked", {"what": res["unlock"]})
+	elif res.has("upgrade"):
 		_notice(pid, "upgraded", {"tool": res["upgrade"]})
 	else:
 		_notice(pid, "crafted", {"item": res["item"], "count": res["count"]})

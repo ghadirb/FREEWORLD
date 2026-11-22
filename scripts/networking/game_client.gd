@@ -425,6 +425,11 @@ func on_boat(on: bool) -> void:
 	boat_changed.emit()
 
 
+func fish() -> void:
+	if is_logged_in:
+		_tx("c2s_fish", [])
+
+
 func toggle_boat() -> void:
 	if is_logged_in:
 		_tx("c2s_boat", [])

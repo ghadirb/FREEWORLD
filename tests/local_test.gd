@@ -515,7 +515,8 @@ func _run() -> void:
 	ok(await wait_until(func(): return c.is_logged_in, 3.0), "boat test login")
 	c.toggle_boat()
 	await create_timer(0.3).timeout
-	ok(not c.boating and not bool(server.peers[1].get("boat", false)), "no boarding away from water")
+	ok(not c.boating and not bool(server.peers[1].get("boat", false)), "no boarding without a boat or away from water")
+	server.cs.accounts["hosty"]["boat"] = true
 	var sl_shore: Vector2 = Boat.find_land_near(server.cs, Vector2(-398.0, -386.0), 40.0)
 	ok(Boat.found(sl_shore), "found a shoreline for the test")
 	server.peers[1]["pos"] = Vector3(sl_shore.x, server.cs.ground_height(sl_shore.x, sl_shore.y), sl_shore.y)
@@ -576,6 +577,23 @@ func _run() -> void:
 	await create_timer(0.3).timeout
 	ok(c.boating and bool(server.peers[1]["boat"]), "cannot leave the boat during a race")
 	server.cs.race.runs.clear()
+	server.cs.accounts["hosty"]["inv"]["fish"] = 0
+	server.peers[1]["last_fish"] = 0
+	c.fish()
+	await create_timer(0.3).timeout
+	var fish_first: int = int(server.cs.accounts["hosty"]["inv"].get("fish", 0))
+	c.fish()
+	await create_timer(0.3).timeout
+	ok(int(server.cs.accounts["hosty"]["inv"].get("fish", 0)) == fish_first, "fishing has a cooldown")
+	server.peers[1]["last_fish"] = 0
+	server.peers[1]["pos"] = Vector3(sl_shore.x, 5.0, sl_shore.y)
+	server.peers[1]["boat"] = false
+	server.peers[1]["pos"] = Vector3(0.0, 2.0, 0.0)
+	c.fish()
+	await create_timer(0.3).timeout
+	ok(int(server.cs.accounts["hosty"]["inv"].get("fish", 0)) == fish_first, "no fishing away from water")
+	server.peers[1]["boat"] = true
+	server.peers[1]["pos"] = Vector3(sl_open.x, FWConst.SEA_LEVEL, sl_open.y)
 	server._sync_positions()
 	var sl_saved: Array = server.cs.accounts["hosty"]["pos"]
 	ok(not Boat.is_water(server.cs, float(sl_saved[0]), float(sl_saved[2])), "saved position of a sailor is on land")

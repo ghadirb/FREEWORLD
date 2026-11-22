@@ -225,6 +225,12 @@ func s2c_boat(on: bool) -> void:
 
 
 @rpc("any_peer", "call_remote", "reliable")
+func c2s_fish() -> void:
+	if server:
+		server.on_fish(multiplayer.get_remote_sender_id())
+
+
+@rpc("any_peer", "call_remote", "reliable")
 func c2s_disaster(kind: String) -> void:
 	if server:
 		server.on_disaster(multiplayer.get_remote_sender_id(), kind)

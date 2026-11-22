@@ -1,7 +1,7 @@
 extends RefCounted
 ## ثابت‌های مشترک بین سرور و کلاینت.
 
-const PROTOCOL_VERSION := 24
+const PROTOCOL_VERSION := 25
 # ترافیک شبکه با DTLS رمز می‌شود (نسخهٔ ۴ به بعد). فقط برای عیب‌یابی خاموش شود.
 const USE_DTLS := true
 const DEFAULT_PORT := 7777
@@ -131,9 +131,9 @@ const STEP_UP := 1.0  # بیشترین بالا رفتن در یک قدم
 # مواد: قیمت پایهٔ فروش. خرید از فروشگاه عمومی ۱٫۸ برابر است.
 const ITEMS := {
 	"wood": 4.0, "stone": 5.0, "clay": 4.0, "dirt": 1.0, "sand": 2.0, "brick": 10.0, "glass": 12.0,
-	"iron": 14.0, "gold": 40.0, "coal": 8.0, "gem": 60.0,
+	"iron": 14.0, "gold": 40.0, "coal": 8.0, "gem": 60.0, "fish": 8.0,
 }
-const ITEM_ORDER := ["wood", "stone", "clay", "dirt", "sand", "brick", "glass", "iron", "gold", "coal", "gem"]
+const ITEM_ORDER := ["wood", "stone", "clay", "dirt", "sand", "brick", "glass", "iron", "gold", "coal", "gem", "fish"]
 const BUY_MARKUP := 1.8
 const SELL_DROP := 0.04   # نسبت کاهش قیمت با هر فروش
 const SELL_FLOOR := 0.5   # حداقل قیمت نسبت به پایه
@@ -164,7 +164,14 @@ const RECIPES := {
 	"upgrade_axe": {"in": {"iron": 3, "wood": 4}, "upgrade": "axe"},
 	"upgrade_pickaxe": {"in": {"iron": 4, "wood": 2}, "upgrade": "pickaxe"},
 	"upgrade_shovel": {"in": {"iron": 2, "wood": 2}, "upgrade": "shovel"},
+	# قایق (پروتکل ۲۵): یک‌بار ساخته می‌شود و برای همیشه مال خود بازیکن است؛ در جهان خلاقانه رایگان است.
+	"boat": {"in": {"wood": 20, "iron": 2}, "unlock": "boat"},
 }
+# ماهیگیری: کنار آب یا از روی قایق؛ هر بار ۰ تا ۲ ماهی، با فاصلهٔ زمانی بین دو بار.
+const FISH_COOLDOWN_MS := 3000
+const FISH_RANGE := 4.0
+const FISH_MISS := 0.25
+const FISH_DOUBLE := 0.85
 
 # گره‌های منبع در جهان و ابزار مناسب هرکدام.
 const RESOURCE_CELL := 4.0

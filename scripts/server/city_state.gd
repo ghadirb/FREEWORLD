@@ -1821,6 +1821,23 @@ func fill(player_name: String, x: float, z: float, tool: String, pos: Vector2) -
 	return _terraform(player_name, x, z, tool, pos, 1)
 
 
+func has_boat(acc: Dictionary) -> bool:
+	return creative or bool(acc.get("boat", false))
+
+
+## ماهیگیری: r عدد تصادفی [۰،۱) از سرور است (برای قابل‌آزمون بودن از بیرون می‌آید).
+func fish(player_name: String, r: float) -> Dictionary:
+	if not accounts.has(player_name):
+		return {"ok": false, "error": "no_account"}
+	var n := 0 if r < FWConst.FISH_MISS else (1 if r < FWConst.FISH_DOUBLE else 2)
+	var acc: Dictionary = accounts[player_name]
+	if n > 0:
+		if int(acc["inv"].get("fish", 0)) >= FWConst.ITEM_CAP:
+			return {"ok": false, "error": "inv_full"}
+		_inv_add(acc, "fish", n)
+	return {"ok": true, "count": n}
+
+
 func craft(player_name: String, recipe: String, times: int) -> Dictionary:
 	if not accounts.has(player_name):
 		return {"ok": false, "error": "no_account"}
@@ -1828,6 +1845,19 @@ func craft(player_name: String, recipe: String, times: int) -> Dictionary:
 		return {"ok": false, "error": "bad_request"}
 	var r: Dictionary = FWConst.RECIPES[recipe]
 	var acc: Dictionary = accounts[player_name]
+	if r.has("unlock"):
+		var key: String = str(r["unlock"])
+		if times != 1:
+			return {"ok": false, "error": "bad_request"}
+		if has_boat(acc):
+			return {"ok": false, "error": "already_owned"}
+		if not has_items(acc["inv"], r["in"]):
+			return {"ok": false, "error": "no_items"}
+		for item in r["in"]:
+			acc["inv"][item] = int(acc["inv"][item]) - int(r["in"][item])
+		acc[key] = true
+		_log(player_name, "unlock", {"what": key})
+		return {"ok": true, "unlock": key}
 	if r.has("upgrade"):
 		var tl: String = str(r["upgrade"])
 		if times != 1:
@@ -2241,6 +2271,7 @@ static func from_dict(d: Dictionary):
 			"energy": clampf(float(a.get("energy", FWConst.ENERGY_MAX)), 0.0, FWConst.ENERGY_MAX),
 			"inv": _load_inv(a.get("inv", null)),
 			"tools": _load_tools(a.get("tools", null)),
+			"boat": bool(a.get("boat", false)),
 			"friends": _load_friends(a.get("friends", null)),
 			"npc_day": _load_npc_day(a.get("npc_day", null)),
 		}

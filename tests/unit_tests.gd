@@ -1162,6 +1162,36 @@ func test_boat() -> void:
 	bad["race"]["best_boat"] = {"x": 999999999}
 	var cs4 = CityState.from_dict(bad)
 	check(cs4 != null and int(cs4.race.best_boat["x"]) <= int(FWConst.BOAT_RACE_TIME * 100.0), "loaded boat times are clamped")
+	# مالکیت قایق و ماهیگیری (پروتکل ۲۵)
+	var ocs = CityState.new(4246)
+	_login(ocs, "builder")
+	ocs.creative = false
+	var oacc: Dictionary = ocs.accounts["builder"]
+	check(not ocs.has_boat(oacc), "a new survival player has no boat")
+	oacc["inv"]["wood"] = 5
+	oacc["inv"]["iron"] = 0
+	check(ocs.craft("builder", "boat", 1)["error"] == "no_items", "the boat needs materials")
+	oacc["inv"]["wood"] = 25
+	oacc["inv"]["iron"] = 3
+	check(ocs.craft("builder", "boat", 2)["error"] == "bad_request", "a boat is crafted once at a time")
+	var bres: Dictionary = ocs.craft("builder", "boat", 1)
+	check(bres["ok"] and ocs.has_boat(oacc), "crafting builds the boat")
+	check(int(oacc["inv"]["wood"]) == 5 and int(oacc["inv"]["iron"]) == 1, "the boat costs 20 wood and 2 iron")
+	check(ocs.craft("builder", "boat", 1)["error"] == "already_owned", "a second boat is refused")
+	var ocs2 = CityState.from_dict(ocs.to_dict())
+	check(ocs2 != null and ocs2.has_boat(ocs2.accounts["builder"]), "boat ownership survives save/load")
+	ocs.creative = true
+	check(ocs.has_boat({}), "creative worlds give everyone a boat")
+	ocs.creative = false
+	check(int(ocs.fish("builder", 0.1)["count"]) == 0, "a low roll catches nothing")
+	var f1: Dictionary = ocs.fish("builder", 0.5)
+	var f2: Dictionary = ocs.fish("builder", 0.95)
+	check(int(f1["count"]) == 1 and int(f2["count"]) == 2 and int(oacc["inv"]["fish"]) == 3, "fishing yields 1 or 2 fish and fills the inventory")
+	oacc["inv"]["fish"] = FWConst.ITEM_CAP
+	check(ocs.fish("builder", 0.9)["error"] == "inv_full", "a full inventory refuses more fish")
+	oacc["inv"]["fish"] = 4
+	var sold: Dictionary = ocs.trade("builder", "fish", 4, false)
+	check(sold["ok"] and int(sold["total"]) > 0, "fish can be sold at the market")
 	# مسابقهٔ پیاده روی خشکی هنوز مثل قبل
 	check(cs.race_start("walker", Vector2(FWConst.CITY_SIZE * 0.5, FWConst.CITY_SIZE * 0.5))["ok"] and not cs.race.is_boat_race("walker"), "walking races are unchanged")
 
