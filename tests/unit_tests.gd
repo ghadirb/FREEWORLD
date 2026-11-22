@@ -859,6 +859,25 @@ func test_blocks_and_resources() -> void:
 	var res: Dictionary = cs.place_building("builder", 30, "road", bc.x, bc.y)
 	check(res.get("error", "") == "blocks_in_way", "a building cannot be put on top of blocks")
 
+	# --- جاده: بلوک جاده سرعت ماشین را بالا می‌برد و NPC مسیر جاده‌دار را ترجیح می‌دهد ---
+	var rx := 100.5
+	var rz := 90.5
+	var rgy: int = maxi(0, int(floor(cs.world.height_at(rx, rz))))
+	check(not cs.is_road_at(rx, rz), "no road on bare ground")
+	cs._add_block(Vector3i(100, rgy, 90), "stone", 0, "builder")
+	check(not cs.is_road_at(rx, rz), "a stone block is not a road")
+	cs._del_block(Vector3i(100, rgy, 90))
+	cs._add_block(Vector3i(100, rgy, 90), "road", 0, "builder")
+	check(cs.is_road_at(rx, rz), "a road block on the ground is a road")
+	check(not cs.is_road_at(rx + 4.0, rz), "the neighbouring ground is not a road")
+	cs._del_block(Vector3i(100, rgy, 90))
+	check(not cs.is_road_at(rx, rz), "removing the road block removes the road")
+	check(FWConst.CAR_ROAD_MULT > 1.0 and FWConst.NPC_ROAD_WEIGHT < 1.0, "road constants favour roads")
+	var rnav = NpcNav.new(cs)
+	rnav._ensure_grid()
+	var rc := Vector2i(int(rx / FWConst.CELL_SIZE), int(rz / FWConst.CELL_SIZE))
+	check(is_equal_approx(rnav._grid.get_point_weight_scale(rc), 1.0) and not rnav._is_road_cell(rc.x, rc.y), "plain cells cost full for NPC paths")
+
 	# --- اقتصاد: ساخت مواد، فروش، خرید ---
 	cs.accounts["builder"]["inv"]["clay"] = 6
 	check(cs.craft("builder", "brick", 2)["ok"] and int(cs.accounts["builder"]["inv"]["brick"]) == int(FWConst.START_ITEMS["brick"]) + 4, "clay is fired into bricks")

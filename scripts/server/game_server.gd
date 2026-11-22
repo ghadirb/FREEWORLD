@@ -790,6 +790,8 @@ func on_move(pid: int, x: float, z: float, yaw: float, alt: float = 0.0) -> void
 		speed_mult = FWConst.BOAT_SPEED_MULT
 	elif driving:
 		speed_mult = FWConst.CAR_SPEED_MULT
+		if cs.is_road_at(x, z):
+			speed_mult *= FWConst.CAR_ROAD_MULT
 	elif mounted:
 		speed_mult = FWConst.HORSE_SPEED_MULT
 	if flying:

@@ -39,7 +39,14 @@ func _ensure_grid() -> void:
 	for i in range(n):
 		for j in range(n):
 			_grid.set_point_solid(Vector2i(i, j), not _cell_free(i, j))
+			_grid.set_point_weight_scale(Vector2i(i, j), FWConst.NPC_ROAD_WEIGHT if _is_road_cell(i, j) else 1.0)
 	_built_version = _cs.nav_version
+
+
+## سلول جاده‌ای (ساختمان جاده) هزینهٔ مسیر کمتری دارد تا NPCها در صورت امکان از جاده بروند.
+func _is_road_cell(cx: int, cz: int) -> bool:
+	var key := "%d,%d" % [cx, cz]
+	return _cs.occupied.has(key) and str(_cs.buildings[_cs.occupied[key]]["type"]) == "road"
 
 
 func _cell_free(cx: int, cz: int) -> bool:

@@ -173,6 +173,9 @@ const RECIPES := {
 }
 const HORSE_SPEED_MULT := 1.9
 const CAR_SPEED_MULT := 3.0
+## ضریب اضافهٔ سرعت ماشین روی جاده (ساختمان جاده یا بلوک جاده)؛ NPCها هم مسیر جاده‌دار را ترجیح می‌دهند.
+const CAR_ROAD_MULT := 1.5
+const NPC_ROAD_WEIGHT := 0.5
 # ماهیگیری: کنار آب یا از روی قایق؛ هر بار ۰ تا ۲ ماهی، با فاصلهٔ زمانی بین دو بار.
 const FISH_COOLDOWN_MS := 3000
 const FISH_RANGE := 4.0

@@ -159,6 +159,23 @@ func count_owned(player_name: String) -> int:
 	return n
 
 
+## آیا نقطه روی جاده است؟ (ساختمان «جاده» یا بلوک «جاده» روی سطح زمین). سرور و کلاینت هر دو از این استفاده می‌کنند.
+func is_road_at(x: float, z: float) -> bool:
+	var cx := int(floor(x / FWConst.CELL_SIZE))
+	var cz := int(floor(z / FWConst.CELL_SIZE))
+	var key := Placement.cell_key(cx, cz)
+	if occupied.has(key) and buildings.has(occupied[key]) and str(buildings[occupied[key]]["type"]) == "road":
+		return true
+	if block_cells.has(key):
+		var bx := int(floor(x))
+		var bz := int(floor(z))
+		var gy: int = maxi(0, int(floor(world.height_at(x, z))))
+		for y in [gy - 1, gy]:
+			if blocks.has(Vector3i(bx, y, bz)) and str(blocks[Vector3i(bx, y, bz)][0]) == "road":
+				return true
+	return false
+
+
 ## قابل‌عبور بودن نقطه برای بازیکن و NPC: جاده و چاه آزادند، بقیه ساختمان‌ها مانع‌اند.
 ## بلوک‌ها هم مانع‌اند (جز در و جاده). ref_y ارتفاع فعلی بازیکن است تا طبقه‌ها و پله‌ها درست تشخیص داده شوند.
 func is_walkable(x: float, z: float, ref_y: float = NAN) -> bool:
