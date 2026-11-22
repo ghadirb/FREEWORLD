@@ -8,6 +8,7 @@ const Placement = preload("res://scripts/shared/placement.gd")
 const NpcNav = preload("res://scripts/server/npc_nav.gd")
 const Minigame = preload("res://scripts/server/minigame.gd")
 const Race = preload("res://scripts/server/race.gd")
+const Blueprints = preload("res://scripts/server/blueprints.gd")
 const Mine = preload("res://scripts/shared/mine.gd")
 
 const SAVE_VERSION := 1
@@ -52,6 +53,7 @@ var prices: Dictionary = {"egg": 6.0, "milk": 14.0, "flour": 16.0, "bread": 20.0
 var npcs: Array = []
 var minigame = Minigame.new()
 var race = Race.new()
+var blueprints = Blueprints.new()
 ## ساخت بلوکی: Vector3i -> [نوع, رنگ, مالک]. block_cells شمارندهٔ بلوک در هر خانهٔ ۲×۲ شبکهٔ ساختمان است.
 var blocks: Dictionary = {}
 var block_cells: Dictionary = {}
@@ -2171,6 +2173,7 @@ func to_dict() -> Dictionary:
 		"item_mult": item_mult,
 		"minigame": minigame.to_dict(),
 		"race": race.to_dict(),
+		"blueprints": blueprints.to_dict(),
 	}
 
 
@@ -2273,6 +2276,7 @@ static func from_dict(d: Dictionary):
 					cs.next_god_id = maxi(cs.next_god_id, gid + 1)
 	cs.minigame.load_dict(d.get("minigame", {}))
 	cs.race.load_dict(d.get("race", {}))
+	cs.blueprints.load_dict(d.get("blueprints", {}))
 	cs.wheat_price = float(d.get("wheat_price", FWConst.WHEAT_BASE_PRICE))
 	cs.bread_price = float(d.get("bread_price", FWConst.BREAD_BASE_PRICE))
 	var mk = d.get("market", {})

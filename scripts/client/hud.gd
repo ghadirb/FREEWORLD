@@ -148,6 +148,7 @@ func setup(game_client, game_view) -> void:
 	_build_info_panel()
 	_build_npc_panel()
 	_build_furn_panel()
+	_build_bp_panel()
 	_build_god_panel()
 	_build_minigame()
 	_build_race()
@@ -156,7 +157,7 @@ func setup(game_client, game_view) -> void:
 	_build_chat()
 	_build_admin_panel()
 	_build_menu_panel()
-	for dp in [_palette, _tools_panel, _inv_panel, _offer_panel, _npc_panel, _furn_panel, _god_panel, _mg_panel, _race_panel, _admin_panel, _menu_panel]:
+	for dp in [_palette, _tools_panel, _inv_panel, _offer_panel, _npc_panel, _furn_panel, _bp_panel, _god_panel, _mg_panel, _race_panel, _admin_panel, _menu_panel]:
 		_dock(dp)
 	view.is_over_ui = Callable(self, "is_over_ui")
 	view.building_tapped.connect(_on_building_tapped)
@@ -173,6 +174,8 @@ func setup(game_client, game_view) -> void:
 		_refresh_tools())
 	client.money_changed.connect(func(_m): _refresh_stats())
 	client.notice.connect(_on_notice)
+	client.blueprints_changed.connect(_fill_bp_list)
+	client.blueprint_loaded.connect(_on_bp_loaded)
 	client.inside_changed.connect(_on_inside_changed)
 	client.mine_changed.connect(_on_mine_changed)
 	client.energy_changed.connect(_refresh_stats)
@@ -514,6 +517,14 @@ func _build_tools_panel() -> void:
 		Sfx.play(self, "click")
 		view.undo_build())
 	mrow.add_child(ub)
+	var lb := UiTheme.button(Loc.t("btn_library"), Vector2(110, 44))
+	lb.add_theme_font_size_override("font_size", 16)
+	lb.pressed.connect(func():
+		Sfx.play(self, "click")
+		_bp_panel.visible = not _bp_panel.visible
+		if _bp_panel.visible:
+			client.bp_op("list"))
+	mrow.add_child(lb)
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 5)
 	sc.add_child(row)
@@ -1130,6 +1141,112 @@ func _build_furn_panel() -> void:
 	row2.add_child(close)
 
 
+var _bp_panel: PanelContainer
+var _bp_name: LineEdit
+var _bp_shared: CheckBox
+var _bp_rows: VBoxContainer
+
+
+func _build_bp_panel() -> void:
+	_bp_panel = _panel(0.5, 1.0)
+	_bp_panel.visible = false
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 8)
+	v.custom_minimum_size = Vector2(560, 0)
+	_bp_panel.add_child(v)
+	v.add_child(_label(Loc.t("bp_title"), 28, Color("ffd24a")))
+	var hint := _label(Loc.t("bp_hint"), 17, Color("d6e4ff"))
+	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	hint.custom_minimum_size = Vector2(540, 0)
+	v.add_child(hint)
+	_bp_name = LineEdit.new()
+	_bp_name.placeholder_text = Loc.t("bp_name_hint")
+	_bp_name.max_length = 24
+	_bp_name.custom_minimum_size = Vector2(0, 56)
+	v.add_child(_bp_name)
+	_bp_shared = CheckBox.new()
+	_bp_shared.text = Loc.t("bp_share_check")
+	_bp_shared.add_theme_font_size_override("font_size", 20)
+	v.add_child(_bp_shared)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	v.add_child(row)
+	var save_b := UiTheme.button(Loc.t("bp_save"), Vector2(0, 60))
+	save_b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	save_b.pressed.connect(func():
+		Sfx.play(self, "click")
+		if view.clipboard.is_empty():
+			Sfx.play(self, "error")
+			toast(Loc.err("clipboard_empty"), Color("ff9a8a"))
+			return
+		client.bp_save(_bp_name.text, view.clipboard, _bp_shared.button_pressed)
+		_bp_name.text = "")
+	row.add_child(save_b)
+	var close := UiTheme.button("✕", Vector2(64, 60))
+	close.pressed.connect(func(): _bp_panel.visible = false)
+	row.add_child(close)
+	var sc := ScrollContainer.new()
+	sc.custom_minimum_size = Vector2(0, 220)
+	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	v.add_child(sc)
+	_bp_rows = VBoxContainer.new()
+	_bp_rows.add_theme_constant_override("separation", 6)
+	_bp_rows.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	sc.add_child(_bp_rows)
+
+
+func _fill_bp_list() -> void:
+	if _bp_rows == null:
+		return
+	for c in _bp_rows.get_children():
+		c.queue_free()
+	if client.blueprints.is_empty():
+		_bp_rows.add_child(_label(Loc.t("bp_empty"), 18, Color("aab6c8")))
+		return
+	var is_admin: bool = FWConst.is_admin(client.role)
+	for b in client.blueprints:
+		var id: int = int(b["id"])
+		var mine: bool = str(b["author"]) == client.my_name
+		var box := VBoxContainer.new()
+		_bp_rows.add_child(box)
+		var sz: Array = b["size"]
+		var title := "%s%s" % [str(b["name"]), "  🌐" if bool(b["shared"]) else ""]
+		var sub := "%s: %s  ·  %s %s  ·  %s×%s×%s" % [Loc.t("bp_author"), str(b["author"]), Loc.digits(str(b["n"])), Loc.t("bp_blocks"),
+			Loc.digits(str(sz[0])), Loc.digits(str(sz[1])), Loc.digits(str(sz[2]))]
+		box.add_child(_label(title, 22, Color("ffd24a")))
+		box.add_child(_label(sub, 15, Color("aab6c8")))
+		var r := HBoxContainer.new()
+		r.add_theme_constant_override("separation", 6)
+		box.add_child(r)
+		var use := UiTheme.button(Loc.t("bp_use"), Vector2(0, 48))
+		use.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		use.pressed.connect(func():
+			Sfx.play(self, "click")
+			client.bp_op("load", id))
+		r.add_child(use)
+		if mine:
+			var sh := UiTheme.button(Loc.t("bp_unshare") if bool(b["shared"]) else Loc.t("bp_share"), Vector2(0, 48))
+			sh.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			sh.pressed.connect(func():
+				Sfx.play(self, "click")
+				client.bp_op("unshare" if bool(b["shared"]) else "share", id))
+			r.add_child(sh)
+		if mine or is_admin:
+			var del := UiTheme.button("🗑", Vector2(64, 48))
+			del.pressed.connect(func():
+				Sfx.play(self, "click")
+				client.bp_op("delete", id))
+			r.add_child(del)
+
+
+func _on_bp_loaded(_id: int, data: PackedInt32Array) -> void:
+	view.clipboard = data
+	view.set_build_mode("paste")
+	_bp_panel.visible = false
+	Sfx.play(self, "click")
+	toast(Loc.fmt("msg_bp_loaded", [Loc.digits(str(data.size() / 5))]), Color("c8f08a"))
+
+
 func _furn_place_pressed() -> void:
 	var t: String = str(FWConst.FURNITURE_ORDER[_furn_type.selected])
 	var me: Vector2 = view.room_pos()
@@ -1491,6 +1608,9 @@ func _on_notice(code: String, args: Dictionary) -> void:
 			if int(args.get("skipped", 0)) > 0:
 				bt += " " + Loc.fmt("msg_batch_skipped", [Loc.digits(str(args["skipped"]))])
 			toast(bt, Color("c8f08a"))
+		"bp_saved":
+			Sfx.play(self, "place")
+			toast(Loc.t("msg_bp_saved"), Color("c8f08a"))
 		"corner_set":
 			toast(Loc.t("msg_corner_set"))
 		"copied":

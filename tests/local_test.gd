@@ -253,6 +253,26 @@ func _run() -> void:
 	c.build_region("fill", o, o + Vector3i(40, 0, 0), "stone", 0)
 	await create_timer(0.4).timeout
 	ok(server.cs.blocks.size() == 9, "oversized region is refused by the server")
+	# کتابخانهٔ سازه‌ها (پروتکل ۳۰): ذخیره ← فهرست ← بارگذاری ← چسباندن
+	c.bp_save("Slab", clip, true)
+	ok(await wait_until(func(): return c.blueprints.size() == 1 and server.cs.blueprints.items.size() == 1, 3.0), "blueprint saved and listed on the client")
+	ok(bool(c.blueprints[0]["shared"]) and int(c.blueprints[0]["n"]) == 9 and str(c.blueprints[0]["author"]) == c.my_name, "list entry has author, share flag, block count")
+	var got := [PackedInt32Array()]
+	c.blueprint_loaded.connect(func(_id, d): got[0] = d)
+	c.bp_op("load", int(c.blueprints[0]["id"]))
+	ok(await wait_until(func(): return got[0].size() == 45, 3.0), "blueprint data arrives from the server")
+	c.build_region("clear", o, o2, "", 0)
+	ok(await wait_until(func(): return server.cs.blocks.is_empty(), 3.0), "area cleared before pasting the blueprint")
+	c.paste_blocks(o, got[0])
+	ok(await wait_until(func(): return server.cs.blocks.size() == 9 and c.mirror.blocks.size() == 9, 3.0), "blueprint pastes through the normal build rules")
+	c.bp_save("", clip, false)
+	c.bp_save("Bad", PackedInt32Array([99, 0, 0, 0, 0]), false)
+	await create_timer(0.4).timeout
+	ok(server.cs.blueprints.items.size() == 1, "server refuses empty-name and invalid blueprints")
+	c.bp_op("unshare", int(c.blueprints[0]["id"]))
+	ok(await wait_until(func(): return not bool(c.blueprints[0]["shared"]), 3.0), "unshare updates the list")
+	c.bp_op("delete", int(c.blueprints[0]["id"]))
+	ok(await wait_until(func(): return c.blueprints.is_empty() and server.cs.blueprints.items.is_empty(), 3.0), "delete removes the blueprint")
 	c.disconnect_from_server()
 	server.stop()
 	server.queue_free()

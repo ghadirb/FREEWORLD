@@ -63,6 +63,7 @@ func _init() -> void:
 	test_creative()
 	test_world_rules()
 	test_batch_build()
+	test_blueprints()
 	test_terrain_shapes()
 	test_villages()
 	test_tls_pinning()
@@ -2362,6 +2363,55 @@ func _flat_patch(c, role: String, size: int) -> Vector3i:
 			if good:
 				return Vector3i(gx, base_h, gz)
 	return Vector3i(-999, 0, 0)
+
+
+func test_blueprints() -> void:
+	print("-- blueprints")
+	var BP = preload("res://scripts/server/blueprints.gd")
+	var cs = CityState.new(12345)
+	_login(cs, "ali")
+	_login(cs, "sara")
+	var good := PackedInt32Array([0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0])
+	var r: Dictionary = cs.blueprints.save("ali", "  Hut\n ", good, false)
+	check(r["ok"] and int(r["id"]) == 1, "blueprint saved with cleaned name")
+	check(str(cs.blueprints.items[1]["name"]) == "Hut" and int(cs.blueprints.items[1]["n"]) == 3, "name trimmed, block count stored")
+	check(cs.blueprints.save("ali", "   ", good, false)["error"] == "bp_name", "empty name rejected")
+	check(cs.blueprints.save("ali", "x", PackedInt32Array([0, 0, 0]), false)["error"] == "bp_bad", "bad length rejected")
+	check(cs.blueprints.save("ali", "x", PackedInt32Array([-1, 0, 0, 0, 0]), false)["error"] == "bp_bad", "negative offset rejected")
+	check(cs.blueprints.save("ali", "x", PackedInt32Array([16, 0, 0, 0, 0]), false)["error"] == "bp_bad", "offset beyond side limit rejected")
+	check(cs.blueprints.save("ali", "x", PackedInt32Array([0, 0, 0, 999, 0]), false)["error"] == "bp_bad", "unknown block type rejected")
+	check(cs.blueprints.save("ali", "x", PackedInt32Array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0]), false)["error"] == "bp_bad", "duplicate cell rejected")
+	var huge := PackedInt32Array()
+	for i in range(FWConst.REGION_MAX_VOLUME + 1):
+		huge.append_array(PackedInt32Array([i % 16, (i / 16) % 16, i / 256, 0, 0]))
+	check(cs.blueprints.save("ali", "huge", huge, false)["error"] == "bp_bad", "over-volume rejected")
+	# دسترسی
+	check(cs.blueprints.list_for("sara").is_empty(), "private blueprint hidden from others")
+	check(cs.blueprints.data_for("sara", 1).is_empty(), "private blueprint data not served to others")
+	check(cs.blueprints.set_shared("sara", 1, true) == "forbidden", "only the author can share")
+	check(cs.blueprints.set_shared("ali", 1, true) == "", "author shares")
+	check(cs.blueprints.list_for("sara").size() == 1 and cs.blueprints.data_for("sara", 1).size() == 15, "shared blueprint visible to others")
+	check(cs.blueprints.remove("sara", 1, false) == "forbidden", "others cannot delete")
+	# سقف هر بازیکن
+	for i in range(BP.PER_PLAYER_MAX - 1):
+		cs.blueprints.save("ali", "b%d" % i, good, false)
+	check(cs.blueprints.count_by("ali") == BP.PER_PLAYER_MAX, "per-player cap reached")
+	check(cs.blueprints.save("ali", "over", good, false)["error"] == "bp_limit", "per-player cap enforced")
+	check(cs.blueprints.save("sara", "mine", good, true)["ok"], "cap is per player")
+	# ذخیره و بازیابی
+	var d: Dictionary = cs.to_dict()
+	var json := JSON.stringify(d)
+	var cs2 = CityState.from_dict(JSON.parse_string(json))
+	check(cs2 != null and cs2.blueprints.items.size() == cs.blueprints.items.size(), "blueprints survive save/load")
+	check(cs2.blueprints.data_for("sara", 1) == good, "blueprint data identical after reload")
+	check(cs2.blueprints.next_id == cs.blueprints.next_id, "next id preserved")
+	# حذف توسط مدیر
+	check(cs2.blueprints.remove("someone", 1, true) == "", "admin can delete any")
+	check(cs2.blueprints.remove("ali", 1, false) == "bp_missing", "deleted blueprint is gone")
+	# داده‌های خراب در فایل ذخیره نادیده گرفته می‌شود
+	var bad := BP.new()
+	bad.load_dict({"next_id": 5, "items": [{"id": 2, "name": "ok", "author": "a", "shared": true, "data": Marshalls.raw_to_base64(good.to_byte_array())}, {"id": 3, "name": "bad", "author": "a", "data": "!!!"}, "junk"]})
+	check(bad.items.size() == 1 and bad.next_id == 5, "corrupt entries skipped on load")
 
 
 func test_batch_build() -> void:

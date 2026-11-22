@@ -22,7 +22,7 @@ const LOCAL_PID := 1
 const LOCAL_METHODS := [
 	"c2s_login", "c2s_move", "c2s_place", "c2s_remove", "c2s_collect",
 	"c2s_chat", "c2s_set_role", "c2s_get_audit", "c2s_job", "c2s_set_world", "c2s_enter", "c2s_leave",
-	"c2s_place_block", "c2s_remove_block", "c2s_paint_block", "c2s_build_region", "c2s_paste", "c2s_undo", "c2s_gather", "c2s_dig", "c2s_fill", "c2s_craft", "c2s_trade", "c2s_offer", "c2s_offer_answer", "c2s_npc", "c2s_npc_sell", "c2s_npc_buy", "c2s_furn_place", "c2s_furn_remove", "c2s_minigame_start", "c2s_race_start", "c2s_grace", "c2s_boat", "c2s_horse", "c2s_car", "c2s_fish", "c2s_disaster", "c2s_god",
+	"c2s_place_block", "c2s_remove_block", "c2s_paint_block", "c2s_build_region", "c2s_paste", "c2s_bp_save", "c2s_bp_op", "c2s_undo", "c2s_gather", "c2s_dig", "c2s_fill", "c2s_craft", "c2s_trade", "c2s_offer", "c2s_offer_answer", "c2s_npc", "c2s_npc_sell", "c2s_npc_buy", "c2s_furn_place", "c2s_furn_remove", "c2s_minigame_start", "c2s_race_start", "c2s_grace", "c2s_boat", "c2s_horse", "c2s_car", "c2s_fish", "c2s_disaster", "c2s_god",
 	"c2s_mine_enter", "c2s_mine_leave", "c2s_mine_gather",
 ]
 
@@ -582,7 +582,7 @@ func _send(pid: int, method: String, a: Variant = null, b: Variant = null, c: Va
 				_deliver_local(method, [a, b, c])
 			"s2c_tick":
 				_deliver_local(method, [a, b, c, d])
-			"s2c_notice", "s2c_player_joined", "s2c_chat", "s2c_teleport", "s2c_mine", "s2c_mine_node":
+			"s2c_notice", "s2c_player_joined", "s2c_chat", "s2c_teleport", "s2c_mine", "s2c_mine_node", "s2c_bp_data":
 				_deliver_local(method, [a, b])
 			_:
 				_deliver_local(method, [a])
@@ -596,7 +596,7 @@ func _send(pid: int, method: String, a: Variant = null, b: Variant = null, c: Va
 			net.rpc_id(pid, method, a, b, c)
 		"s2c_tick":
 			net.rpc_id(pid, method, a, b, c, d)
-		"s2c_notice", "s2c_player_joined", "s2c_chat", "s2c_teleport", "s2c_mine", "s2c_mine_node":
+		"s2c_notice", "s2c_player_joined", "s2c_chat", "s2c_teleport", "s2c_mine", "s2c_mine_node", "s2c_bp_data":
 			net.rpc_id(pid, method, a, b)
 		_:
 			net.rpc_id(pid, method, a)
@@ -1320,6 +1320,62 @@ func on_paste(pid: int, ox: int, oy: int, oz: int, data: PackedInt32Array) -> vo
 		return
 	var res: Dictionary = cs.batch_place(p["name"], entries, func(v: Vector3i) -> bool: return not _player_in_cell(v.x, v.y, v.z))
 	_finish_batch(pid, p, res)
+
+
+## ذخیرهٔ سازه در کتابخانهٔ شهر (داده همان خروجی کپی است). دوباره‌کاری اعتبارسنجی در blueprints.gd.
+func on_bp_save(pid: int, bp_name: String, data: PackedInt32Array, shared: bool) -> void:
+	var p := _player_of(pid)
+	if p.is_empty():
+		return
+	if not _allow_action(p):
+		_notice(pid, "rate_limited")
+		return
+	var res: Dictionary = cs.blueprints.save(p["name"], bp_name, data, shared)
+	if not bool(res["ok"]):
+		_notice(pid, str(res["error"]))
+		return
+	cs._log(p["name"], "blueprint_save", {"id": res["id"], "shared": shared})
+	_dirty = true
+	_notice(pid, "bp_saved")
+	_send(pid, "s2c_bp_list", cs.blueprints.list_for(p["name"]))
+
+
+## op: list | load | delete | share | unshare
+func on_bp_op(pid: int, op: String, id: int) -> void:
+	var p := _player_of(pid)
+	if p.is_empty():
+		return
+	var who: String = p["name"]
+	match op:
+		"list":
+			_send(pid, "s2c_bp_list", cs.blueprints.list_for(who))
+			return
+		"load":
+			var d: PackedInt32Array = cs.blueprints.data_for(who, id)
+			if d.is_empty():
+				_notice(pid, "bp_missing")
+				return
+			_send(pid, "s2c_bp_data", id, d)
+			return
+		"delete":
+			if not _allow_action(p):
+				_notice(pid, "rate_limited")
+				return
+			var err: String = cs.blueprints.remove(who, id, FWConst.is_admin(cs.role_of(who)))
+			if err != "":
+				_notice(pid, err)
+				return
+			cs._log(who, "blueprint_delete", {"id": id})
+		"share", "unshare":
+			var err2: String = cs.blueprints.set_shared(who, id, op == "share")
+			if err2 != "":
+				_notice(pid, err2)
+				return
+			cs._log(who, "blueprint_" + op, {"id": id})
+		_:
+			return
+	_dirty = true
+	_send(pid, "s2c_bp_list", cs.blueprints.list_for(who))
 
 
 func on_undo(pid: int) -> void:

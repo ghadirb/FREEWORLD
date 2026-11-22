@@ -129,6 +129,18 @@ func c2s_paste(ox: int, oy: int, oz: int, data: PackedInt32Array) -> void:
 
 
 @rpc("any_peer", "call_remote", "reliable")
+func c2s_bp_save(bp_name: String, data: PackedInt32Array, shared: bool) -> void:
+	if server:
+		server.on_bp_save(multiplayer.get_remote_sender_id(), bp_name, data, shared)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func c2s_bp_op(op: String, id: int) -> void:
+	if server:
+		server.on_bp_op(multiplayer.get_remote_sender_id(), op, id)
+
+
+@rpc("any_peer", "call_remote", "reliable")
 func c2s_undo() -> void:
 	if server:
 		server.on_undo(multiplayer.get_remote_sender_id())
@@ -404,6 +416,18 @@ func s2c_player_left(player_name: String) -> void:
 func s2c_notice(code: String, args: Dictionary) -> void:
 	if client:
 		client.on_notice(code, args)
+
+
+@rpc("authority", "call_remote", "reliable")
+func s2c_bp_list(list: Array) -> void:
+	if client:
+		client.on_bp_list(list)
+
+
+@rpc("authority", "call_remote", "reliable")
+func s2c_bp_data(id: int, data: PackedInt32Array) -> void:
+	if client:
+		client.on_bp_data(id, data)
 
 
 @rpc("authority", "call_remote", "reliable")

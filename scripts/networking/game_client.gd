@@ -41,6 +41,8 @@ signal boat_changed
 signal horse_changed
 signal car_changed
 signal inventory_changed
+signal blueprints_changed
+signal blueprint_loaded(id: int, data: PackedInt32Array)
 signal offer_received(data: Dictionary)
 signal block_changed(pos: Vector3i, type_id: int, color: int)
 signal blocks_loaded
@@ -323,6 +325,29 @@ func copy_region(a: Vector3i, b: Vector3i) -> PackedInt32Array:
 func paste_blocks(origin: Vector3i, data: PackedInt32Array) -> void:
 	if is_logged_in and data.size() > 0:
 		_tx("c2s_paste", [origin.x, origin.y, origin.z, data])
+
+
+## کتابخانهٔ سازه‌ها
+var blueprints: Array = []   # خلاصه‌ها: {id, name, author, shared, n, size}
+
+
+func bp_save(bp_name: String, data: PackedInt32Array, shared: bool) -> void:
+	if is_logged_in and data.size() > 0:
+		_tx("c2s_bp_save", [bp_name, data, shared])
+
+
+func bp_op(op: String, id: int = 0) -> void:
+	if is_logged_in:
+		_tx("c2s_bp_op", [op, id])
+
+
+func on_bp_list(list: Array) -> void:
+	blueprints = list
+	blueprints_changed.emit()
+
+
+func on_bp_data(id: int, data: PackedInt32Array) -> void:
+	blueprint_loaded.emit(id, data)
 
 
 func undo_build() -> void:
