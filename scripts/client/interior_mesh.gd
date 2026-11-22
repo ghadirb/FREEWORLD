@@ -63,6 +63,24 @@ static func _make(type: String) -> ArrayMesh:
 				mb.add_box(Vector3(x, 0.8, -3.3), Vector3(1.7, 0.3, 0.2), Color("7fb069"))
 			mb.add_box(Vector3(3.0, 0.4, 1.0), Vector3(1.0, 0.8, 1.0), Color("a67c52"))      # جعبه
 			mb.add_box(Vector3(-3.0, 0.4, 1.4), Vector3(1.0, 0.8, 1.0), Color("a67c52"))
+			# کالاهای روی قفسه‌ها (چند ردیف جعبه، نان، میوه و بطری) تا مغازه خالی دیده نشود
+			var goods := [Color("e8b04a"), Color("c0392b"), Color("7fb069"), Color("5aa9e6"), Color("d9a24a"), Color("f2e2b8")]
+			for i in range(3):
+				var sx := -2.6 + float(i) * 2.6
+				for k in range(4):
+					var gx := sx - 0.65 + float(k) * 0.43
+					mb.add_box(Vector3(gx, 1.82, -3.25), Vector3(0.32, 0.26, 0.3), goods[(i + k) % goods.size()])
+					mb.add_box(Vector3(gx, 1.42, -3.25), Vector3(0.32, 0.26, 0.3), goods[(i + k + 2) % goods.size()])
+					mb.add_box(Vector3(gx, 1.02, -3.25), Vector3(0.32, 0.26, 0.3), goods[(i + k + 4) % goods.size()])
+					mb.add_box(Vector3(gx, 0.62, -3.25), Vector3(0.32, 0.26, 0.3), goods[(i + 2 * k) % goods.size()])
+			# صندوق‌های پر کنار دیوار و صندوق‌دار روی پیشخوان
+			mb.add_box(Vector3(3.0, 0.95, 1.0), Vector3(0.7, 0.3, 0.7), Color("e8b04a"))
+			mb.add_box(Vector3(-3.0, 0.95, 1.4), Vector3(0.7, 0.3, 0.7), Color("c0392b"))
+			mb.add_box(Vector3(1.4, 1.35, -0.8), Vector3(0.7, 0.4, 0.5), Color("3b3b3b"))     # صندوق پول
+			mb.add_box(Vector3(1.4, 1.62, -0.95), Vector3(0.6, 0.18, 0.05), Color("9ad0e8"))
+			for k in range(3):
+				mb.add_box(Vector3(-1.6 + float(k) * 0.5, 1.2, -0.8), Vector3(0.36, 0.2, 0.36), goods[k + 1])  # کالا روی پیشخوان
+			mb.add_box(Vector3(0, 2.7, 3.8), Vector3(2.4, 0.5, 0.1), Color("e8b04a"))        # تابلوی باز
 		"bakery":
 			mb.add_box(Vector3(-2.2, 0.9, -3.0), Vector3(2.4, 1.8, 1.6), Color("8a4a35"))    # تنور/اجاق
 			mb.add_box(Vector3(-2.2, 0.9, -2.15), Vector3(1.2, 0.8, 0.1), Color("2b1d14"))

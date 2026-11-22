@@ -76,6 +76,9 @@ var _race_btn: Button
 var _fly_btn: Button
 var _boat_btn: Button
 var _fish_btn: Button
+var _shop_btn: Button
+var _side_scroll: ScrollContainer
+var _drawers: Array = []
 var _race_title: Label
 var _race_start_btn: Button
 var _forest_btn: Button
@@ -151,6 +154,8 @@ func setup(game_client, game_view) -> void:
 	_build_chat()
 	_build_admin_panel()
 	_build_menu_panel()
+	for dp in [_palette, _tools_panel, _inv_panel, _offer_panel, _npc_panel, _furn_panel, _god_panel, _mg_panel, _race_panel, _admin_panel, _menu_panel]:
+		_dock(dp)
 	view.is_over_ui = Callable(self, "is_over_ui")
 	view.building_tapped.connect(_on_building_tapped)
 	view.npc_tapped.connect(_on_npc_tapped)
@@ -186,6 +191,50 @@ func setup(game_client, game_view) -> void:
 func _layout() -> void:
 	var s: Vector2 = root.size
 	view.joy_zone = Rect2(0, s.y * 0.4, s.x * 0.45, s.y * 0.6)
+	_refit_drawers()
+
+
+## پنل بزرگ را کنار ستون دکمه‌ها (سمت راست، زیر نوار بالا) می‌چسباند و در صورت بلند بودن اسکرول می‌دهد؛
+## وسط صفحه و جوی‌استیک آزاد می‌مانند.
+func _dock(p: PanelContainer) -> void:
+	var kids := p.get_children()
+	var sc := ScrollContainer.new()
+	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	var wrap := VBoxContainer.new()
+	wrap.layout_direction = Control.LAYOUT_DIRECTION_RTL if Loc.lang == "fa" else Control.LAYOUT_DIRECTION_LTR
+	for k in kids:
+		p.remove_child(k)
+		wrap.add_child(k)
+	sc.add_child(wrap)
+	p.add_child(sc)
+	p.layout_direction = Control.LAYOUT_DIRECTION_LTR
+	p.anchor_left = 1.0
+	p.anchor_right = 1.0
+	p.anchor_top = 0.0
+	p.anchor_bottom = 0.0
+	p.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	p.grow_vertical = Control.GROW_DIRECTION_END
+	p.offset_right = -(SIDE_W + 24.0)
+	p.offset_left = p.offset_right
+	p.offset_top = TOP_H
+	p.offset_bottom = TOP_H
+	_drawers.append({"panel": p, "scroll": sc, "wrap": wrap})
+	wrap.minimum_size_changed.connect(_refit_drawers)
+	p.visibility_changed.connect(_refit_drawers)
+
+
+func _refit_drawers() -> void:
+	if root == null:
+		return
+	var avail: float = maxf(160.0, root.size.y - TOP_H - 12.0)
+	var max_w: float = maxf(200.0, root.size.x - SIDE_W - 48.0)
+	for d in _drawers:
+		var sc: ScrollContainer = d["scroll"]
+		var wrap: Control = d["wrap"]
+		if not is_instance_valid(sc) or not is_instance_valid(wrap):
+			continue
+		var m: Vector2 = wrap.get_combined_minimum_size()
+		sc.custom_minimum_size = Vector2(minf(minf(m.x + 14.0, max_w), 440.0), minf(m.y, avail))
 
 
 func is_over_ui(p: Vector2) -> bool:
@@ -214,7 +263,8 @@ func _panel(ax: float, ay: float) -> PanelContainer:
 	var p := PanelContainer.new()
 	p.layout_direction = Control.LAYOUT_DIRECTION_RTL if Loc.lang == "fa" else Control.LAYOUT_DIRECTION_LTR
 	root.add_child(p)
-	_place(p, ax, ay)
+	# در حالت راست‌به‌چپ (فارسی) Godot مستطیل پنل را آینه می‌کند؛ لنگر را برعکس می‌دهیم تا جای دیداری درست بماند.
+	_place(p, (1.0 - ax) if Loc.lang == "fa" else ax, ay)
 	_interactive.append(p)
 	return p
 
@@ -232,6 +282,7 @@ func _label(text: String, size: int = 24, color: Color = Color.WHITE) -> Label:
 
 func _build_top_bar() -> void:
 	var p := _panel(0.0, 0.0)
+	p.anchor_left = 0.0
 	p.anchor_right = 1.0
 	p.offset_left = 12
 	p.offset_right = -12
@@ -250,48 +301,66 @@ func _build_top_bar() -> void:
 		h.add_child(l)
 
 
+const SIDE_BTN := Vector2(150, 50)
+const SIDE_W := 2.0 * 150.0 + 8.0 + 14.0   # دو ستون + فاصله + نوار اسکرول
+const TOP_H := 84.0
+
+
 func _build_side_buttons() -> void:
-	var v := VBoxContainer.new()
-	v.add_theme_constant_override("separation", 10)
-	root.add_child(v)
-	_place(v, 1.0, 0.5)
-	v.offset_top += 20
-	v.offset_bottom += 20
-	_mode_btn = UiTheme.button("", Vector2(180, 58))
+	# دکمه‌ها دو ستونه زیر نوار بالا و قابل اسکرول‌اند تا هیچ‌وقت از صفحه بیرون نزنند یا روی هم نیفتند.
+	_side_scroll = ScrollContainer.new()
+	_side_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_side_scroll.layout_direction = Control.LAYOUT_DIRECTION_LTR
+	root.add_child(_side_scroll)
+	_side_scroll.anchor_left = 1.0
+	_side_scroll.anchor_right = 1.0
+	_side_scroll.anchor_top = 0.0
+	_side_scroll.anchor_bottom = 1.0
+	_side_scroll.offset_left = -(SIDE_W + 12.0)
+	_side_scroll.offset_right = -12.0
+	_side_scroll.offset_top = TOP_H
+	_side_scroll.offset_bottom = -12.0
+	_interactive.append(_side_scroll)
+	var v := GridContainer.new()
+	v.columns = 2
+	v.add_theme_constant_override("h_separation", 8)
+	v.add_theme_constant_override("v_separation", 8)
+	_side_scroll.add_child(v)
+	_mode_btn = UiTheme.button("", SIDE_BTN)
 	_mode_btn.pressed.connect(func(): Sfx.play(self, "click"); view.toggle_mode())
-	_build_btn = UiTheme.button(Loc.t("build"), Vector2(180, 58))
+	_build_btn = UiTheme.button(Loc.t("build"), SIDE_BTN)
 	_build_btn.pressed.connect(_toggle_build)
-	_view_btn = UiTheme.button("", Vector2(180, 58))
+	_view_btn = UiTheme.button("", SIDE_BTN)
 	_view_btn.pressed.connect(func():
 		Sfx.play(self, "click")
 		view.set_first_person(not view.first_person))
-	_tools_btn = UiTheme.button(Loc.t("tools"), Vector2(180, 58))
+	_tools_btn = UiTheme.button(Loc.t("tools"), SIDE_BTN)
 	_tools_btn.pressed.connect(_toggle_tools)
-	_inv_btn = UiTheme.button(Loc.t("inventory"), Vector2(180, 58))
+	_inv_btn = UiTheme.button(Loc.t("inventory"), SIDE_BTN)
 	_inv_btn.pressed.connect(func():
 		Sfx.play(self, "click")
 		_inv_panel.visible = not _inv_panel.visible
 		_refresh_offer_players())
-	var chat_btn := UiTheme.button(Loc.t("chat"), Vector2(180, 58))
+	var chat_btn := UiTheme.button(Loc.t("chat"), SIDE_BTN)
 	chat_btn.pressed.connect(_toggle_chat)
-	_admin_btn = UiTheme.button(Loc.t("admin"), Vector2(180, 58))
+	_admin_btn = UiTheme.button(Loc.t("admin"), SIDE_BTN)
 	_admin_btn.pressed.connect(func():
 		_admin_panel.visible = not _admin_panel.visible
 		if _forest_btn != null:
 			_forest_btn.button_pressed = client.forest_growth)
-	var menu_btn := UiTheme.button(Loc.t("menu"), Vector2(180, 58))
+	var menu_btn := UiTheme.button(Loc.t("menu"), SIDE_BTN)
 	menu_btn.pressed.connect(func(): _menu_panel.visible = not _menu_panel.visible)
-	_god_btn = UiTheme.button(Loc.t("god_tools"), Vector2(180, 58))
+	_god_btn = UiTheme.button(Loc.t("god_tools"), SIDE_BTN)
 	_god_btn.pressed.connect(_toggle_god)
-	_mg_btn = UiTheme.button(Loc.t("minigame"), Vector2(180, 58))
+	_mg_btn = UiTheme.button(Loc.t("minigame"), SIDE_BTN)
 	_mg_btn.pressed.connect(func(): Sfx.play(self, "click"); _mg_panel.visible = not _mg_panel.visible; _refresh_minigame())
-	_race_btn = UiTheme.button(Loc.t("race"), Vector2(180, 58))
+	_race_btn = UiTheme.button(Loc.t("race"), SIDE_BTN)
 	_race_btn.pressed.connect(func(): Sfx.play(self, "click"); _race_panel.visible = not _race_panel.visible; _refresh_race())
-	_fly_btn = UiTheme.button(Loc.t("fly"), Vector2(180, 58))
+	_fly_btn = UiTheme.button(Loc.t("fly"), SIDE_BTN)
 	_fly_btn.pressed.connect(func(): Sfx.play(self, "click"); view.toggle_flight())
-	_boat_btn = UiTheme.button(Loc.t("boat"), Vector2(180, 58))
+	_boat_btn = UiTheme.button(Loc.t("boat"), SIDE_BTN)
 	_boat_btn.pressed.connect(func(): Sfx.play(self, "click"); client.toggle_boat())
-	_fish_btn = UiTheme.button(Loc.t("fish"), Vector2(180, 58))
+	_fish_btn = UiTheme.button(Loc.t("fish"), SIDE_BTN)
 	_fish_btn.pressed.connect(func(): client.fish())
 	client.boat_changed.connect(_on_boat_changed)
 	_fly_pad = HBoxContainer.new()
@@ -307,6 +376,8 @@ func _build_side_buttons() -> void:
 		_interactive.append(ab)
 	view.fly_changed.connect(func(on: bool): _fly_btn.text = Loc.t("land") if on else Loc.t("fly"); _fly_pad.visible = on)
 	for b in [_mode_btn, _view_btn, _build_btn, _tools_btn, _inv_btn, chat_btn, _admin_btn, _god_btn, _mg_btn, _race_btn, _boat_btn, _fish_btn, _fly_btn, menu_btn]:
+		b.add_theme_font_size_override("font_size", 19)
+		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		v.add_child(b)
 		_interactive.append(b)
 	_update_mode_btn()
@@ -318,7 +389,9 @@ func _build_palette() -> void:
 	var v := VBoxContainer.new()
 	v.add_theme_constant_override("separation", 8)
 	_palette.add_child(v)
-	_hint = _label(Loc.t("tap_to_place"), 22, Color("d6e4ff"))
+	_hint = _label(Loc.t("tap_to_place"), 20, Color("d6e4ff"))
+	_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_hint.custom_minimum_size = Vector2(340, 0)
 	v.add_child(_hint)
 	var row := GridContainer.new()
 	row.columns = 3
@@ -327,8 +400,8 @@ func _build_palette() -> void:
 	v.add_child(row)
 	for t in TYPES:
 		var cost := int(FWConst.BUILDING_TYPES[t]["cost"])
-		var b := UiTheme.button("%s\n%s" % [Loc.t("type_" + t), Loc.digits(str(cost))], Vector2(120, 84))
-		b.add_theme_font_size_override("font_size", 22)
+		var b := UiTheme.button("%s\n%s" % [Loc.t("type_" + t), Loc.digits(str(cost))], Vector2(108, 66))
+		b.add_theme_font_size_override("font_size", 20)
 		b.toggle_mode = true
 		b.pressed.connect(func(): _select_type(t))
 		row.add_child(b)
@@ -492,6 +565,18 @@ func _refresh_tools() -> void:
 		_color_btns[i].button_pressed = (i == view.paint_color)
 
 
+## آزمایشی (--panel tools|inv|menu|race|mg): پنل را برای عکس باز می‌کند.
+func debug_open_panel(name: String) -> void:
+	match name:
+		"tools": _toggle_tools()
+		"inv": _inv_panel.visible = true
+		"menu": _menu_panel.visible = true
+		"race": _race_panel.visible = true
+		"mg": _mg_panel.visible = true
+		"admin": _admin_panel.visible = true
+	_refit_drawers()
+
+
 func _toggle_tools() -> void:
 	if view.inside_id > 0 or client.mine_id != "" or view.mode != "life":
 		return
@@ -513,7 +598,7 @@ func _build_inventory_panel() -> void:
 	_inv_panel.visible = false
 	var v := VBoxContainer.new()
 	v.add_theme_constant_override("separation", 8)
-	v.custom_minimum_size = Vector2(780, 0)
+	v.custom_minimum_size = Vector2(540, 0)
 	_inv_panel.add_child(v)
 	v.add_child(_label(Loc.t("inv_title"), 28, Color("ffd24a")))
 	var sc := ScrollContainer.new()
@@ -529,21 +614,25 @@ func _build_inventory_panel() -> void:
 		r.add_theme_constant_override("separation", 8)
 		rows.add_child(r)
 		var nm := _label(Loc.t("item_" + item), 22)
-		nm.custom_minimum_size = Vector2(90, 0)
+		nm.custom_minimum_size = Vector2(70, 0)
+		nm.add_theme_font_size_override("font_size", 20)
 		var cnt := _label("", 24, Color("ffd24a"))
-		cnt.custom_minimum_size = Vector2(70, 0)
+		cnt.custom_minimum_size = Vector2(52, 0)
 		var pr := _label("", 18, Color("c8f08a"))
-		pr.custom_minimum_size = Vector2(190, 0)
-		var s1 := UiTheme.button(Loc.t("sell_one"), Vector2(104, 52))
+		pr.custom_minimum_size = Vector2(120, 0)
+		pr.add_theme_font_size_override("font_size", 16)
+		var s1 := UiTheme.button(Loc.t("sell_one"), Vector2(76, 48))
 		s1.pressed.connect(func(): client.trade(item, 1, false))
-		var sa := UiTheme.button(Loc.t("sell_all"), Vector2(120, 52))
+		var sa := UiTheme.button(Loc.t("sell_all"), Vector2(92, 48))
 		sa.pressed.connect(func():
 			var n: int = client.item_count(item)
 			if n > 0:
 				client.trade(item, mini(n, 500), false))
-		var by := UiTheme.button(Loc.t("buy_one"), Vector2(104, 52))
+		var by := UiTheme.button(Loc.t("buy_one"), Vector2(76, 48))
 		by.pressed.connect(func(): client.trade(item, 1, true))
 		for c in [nm, cnt, pr, s1, sa, by]:
+			if c is Button:
+				c.add_theme_font_size_override("font_size", 18)
 			r.add_child(c)
 		_inv_rows[item] = {"count": cnt, "price": pr}
 	v.add_child(_label(Loc.t("craft_title"), 22, Color("9ad0ff")))
@@ -553,13 +642,15 @@ func _build_inventory_panel() -> void:
 	v.add_child(crow)
 	for recipe in FWConst.RECIPES:
 		var cb := UiTheme.button(Loc.t("craft_" + recipe), Vector2(0, 56))
-		cb.custom_minimum_size = Vector2(250, 56)
-		cb.add_theme_font_size_override("font_size", 20)
+		cb.custom_minimum_size = Vector2(200, 52)
+		cb.add_theme_font_size_override("font_size", 17)
+		cb.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		cb.pressed.connect(func(): client.craft(recipe, 1))
 		crow.add_child(cb)
 	v.add_child(_label(Loc.t("offer_title"), 22, Color("9ad0ff")))
-	var orow := HBoxContainer.new()
-	orow.add_theme_constant_override("separation", 6)
+	var orow := HFlowContainer.new()
+	orow.add_theme_constant_override("h_separation", 6)
+	orow.add_theme_constant_override("v_separation", 6)
 	v.add_child(orow)
 	_offer_player = OptionButton.new()
 	_offer_player.custom_minimum_size = Vector2(170, 48)
@@ -1065,6 +1156,16 @@ func _build_leave_button() -> void:
 	root.add_child(_mine_btn)
 	_place(_mine_btn, 0.5, 1.0, 0.0, 130.0)
 	_interactive.append(_mine_btn)
+	# داخل مغازه: دکمهٔ «خرید و فروش کالا» بازار شهر (کیف و بازار) را باز می‌کند.
+	_shop_btn = UiTheme.button(Loc.t("shop_goods"), Vector2(300, 76))
+	_shop_btn.visible = false
+	_shop_btn.pressed.connect(func():
+		Sfx.play(self, "click")
+		_inv_panel.visible = not _inv_panel.visible
+		_refresh_offer_players())
+	root.add_child(_shop_btn)
+	_place(_shop_btn, 0.5, 1.0, 0.0, 130.0)
+	_interactive.append(_shop_btn)
 
 
 func _on_mine_changed(id: String) -> void:
@@ -1085,6 +1186,8 @@ func _on_inside_changed(id: int) -> void:
 	_info.visible = false
 	var in_house: bool = id > 0 and str(client.mirror.buildings.get(id, {}).get("type", "")) == "house"
 	_furn_btn.visible = in_house
+	var in_shop: bool = id > 0 and str(client.mirror.buildings.get(id, {}).get("type", "")) == "shop"
+	_shop_btn.visible = in_shop
 	if not in_house:
 		_furn_panel.visible = false
 	if id > 0:

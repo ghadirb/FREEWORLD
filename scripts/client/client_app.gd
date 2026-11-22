@@ -246,6 +246,8 @@ func _on_logged_in() -> void:
 	if _args.has("build"):
 		hud._toggle_build()
 		hud._select_type(str(_args["build"]))
+	if _args.has("panel"):
+		hud.debug_open_panel(str(_args["panel"]))
 	if _args.has("enter") and client.local_server != null:
 		_debug_enter(str(_args["enter"]))
 	if _args.has("mine") and client.local_server != null:
