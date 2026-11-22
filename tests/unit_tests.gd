@@ -1207,6 +1207,19 @@ func test_boat() -> void:
 	var hcs2 = CityState.from_dict(hcs.to_dict())
 	check(hcs2 != null and hcs2.has_horse(hcs2.accounts["rider"]), "horse ownership survives save/load")
 	check(not hcs2.has_boat(hcs2.accounts["rider"]), "owning a horse does not give a boat")
+	# ماشین (پروتکل ۲۷)
+	hacc["money"] = 500
+	check(not hcs.has_car(hacc), "a new player has no car")
+	check(hcs.craft("rider", "car", 1)["error"] == "no_items", "a car needs iron")
+	hacc["inv"]["iron"] = 6
+	check(hcs.craft("rider", "car", 1)["error"] == "no_money", "a car needs enough coins")
+	hacc["money"] = 2000
+	var cres: Dictionary = hcs.craft("rider", "car", 1)
+	check(cres["ok"] and hcs.has_car(hacc) and int(hacc["money"]) == 800 and int(hacc["inv"].get("iron", 0)) == 0, "buying the car costs 1200 coins and 6 iron")
+	check(hcs.craft("rider", "car", 1)["error"] == "already_owned", "a second car is refused")
+	var hcs3 = CityState.from_dict(hcs.to_dict())
+	check(hcs3 != null and hcs3.has_car(hcs3.accounts["rider"]) and not hcs3.has_boat(hcs3.accounts["rider"]), "car ownership survives save/load")
+	check(FWConst.CAR_SPEED_MULT > FWConst.HORSE_SPEED_MULT, "a car is faster than a horse")
 	# مسابقهٔ پیاده روی خشکی هنوز مثل قبل
 	check(cs.race_start("walker", Vector2(FWConst.CITY_SIZE * 0.5, FWConst.CITY_SIZE * 0.5))["ok"] and not cs.race.is_boat_race("walker"), "walking races are unchanged")
 

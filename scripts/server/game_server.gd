@@ -22,7 +22,7 @@ const LOCAL_PID := 1
 const LOCAL_METHODS := [
 	"c2s_login", "c2s_move", "c2s_place", "c2s_remove", "c2s_collect",
 	"c2s_chat", "c2s_set_role", "c2s_get_audit", "c2s_job", "c2s_set_world", "c2s_enter", "c2s_leave",
-	"c2s_place_block", "c2s_remove_block", "c2s_paint_block", "c2s_build_region", "c2s_paste", "c2s_undo", "c2s_gather", "c2s_dig", "c2s_fill", "c2s_craft", "c2s_trade", "c2s_offer", "c2s_offer_answer", "c2s_npc", "c2s_npc_sell", "c2s_npc_buy", "c2s_furn_place", "c2s_furn_remove", "c2s_minigame_start", "c2s_race_start", "c2s_boat", "c2s_horse", "c2s_fish", "c2s_disaster", "c2s_god",
+	"c2s_place_block", "c2s_remove_block", "c2s_paint_block", "c2s_build_region", "c2s_paste", "c2s_undo", "c2s_gather", "c2s_dig", "c2s_fill", "c2s_craft", "c2s_trade", "c2s_offer", "c2s_offer_answer", "c2s_npc", "c2s_npc_sell", "c2s_npc_buy", "c2s_furn_place", "c2s_furn_remove", "c2s_minigame_start", "c2s_race_start", "c2s_boat", "c2s_horse", "c2s_car", "c2s_fish", "c2s_disaster", "c2s_god",
 	"c2s_mine_enter", "c2s_mine_leave", "c2s_mine_gather",
 ]
 
@@ -318,7 +318,7 @@ func on_race_start(pid: int) -> void:
 		return
 	if _indoors(p):
 		return
-	if bool(p.get("horse", false)):
+	if bool(p.get("horse", false)) or bool(p.get("car", false)):
 		_notice(pid, "horse_busy")
 		return
 	var pos: Vector3 = p["pos"]
@@ -357,7 +357,7 @@ func on_boat(pid: int) -> void:
 		if float(p.get("alt", 0.0)) > FWConst.FLY_MIN_ALT:
 			_notice(pid, "boat_busy")
 			return
-		if bool(p.get("horse", false)):
+		if bool(p.get("horse", false)) or bool(p.get("car", false)):
 			_notice(pid, "boat_busy")
 			return
 		if not cs.has_boat(cs.accounts[nm]):
@@ -387,7 +387,7 @@ func on_horse(pid: int) -> void:
 		_send(pid, "s2c_horse", false)
 		_dirty = true
 		return
-	if _indoors(p) or str(p.get("mine", "")) != "" or bool(p.get("boat", false)) or float(p.get("alt", 0.0)) > FWConst.FLY_MIN_ALT \
+	if _indoors(p) or str(p.get("mine", "")) != "" or bool(p.get("boat", false)) or bool(p.get("car", false)) or float(p.get("alt", 0.0)) > FWConst.FLY_MIN_ALT \
 			or cs.race.is_running(nm) or cs.minigame.is_running(nm):
 		_notice(pid, "horse_busy")
 		return
@@ -396,6 +396,32 @@ func on_horse(pid: int) -> void:
 		return
 	p["horse"] = true
 	_send(pid, "s2c_horse", true)
+	_dirty = true
+
+
+## ماشین (پروتکل ۲۷): مثل اسب ولی سریع‌تر؛ فقط روی خشکی، بدون ساختمان/معدن/قایق/پرواز/مسابقه.
+func on_car(pid: int) -> void:
+	var p := _player_of(pid)
+	if p.is_empty():
+		return
+	if not _allow_action(p):
+		_notice(pid, "rate_limited")
+		return
+	var nm: String = p["name"]
+	if bool(p.get("car", false)):
+		p["car"] = false
+		_send(pid, "s2c_car", false)
+		_dirty = true
+		return
+	if _indoors(p) or str(p.get("mine", "")) != "" or bool(p.get("boat", false)) or bool(p.get("horse", false)) or float(p.get("alt", 0.0)) > FWConst.FLY_MIN_ALT \
+			or cs.race.is_running(nm) or cs.minigame.is_running(nm):
+		_notice(pid, "car_busy")
+		return
+	if not cs.has_car(cs.accounts[nm]):
+		_notice(pid, "need_car")
+		return
+	p["car"] = true
+	_send(pid, "s2c_car", true)
 	_dirty = true
 
 
@@ -544,7 +570,8 @@ func _players_public() -> Dictionary:
 		var pos: Vector3 = p["mpos"] if mine != "" else p["pos"]   # داخل معدن: مختصات محلی معدن
 		out[p["name"]] = [snappedf(pos.x, 0.01), snappedf(pos.y, 0.01), snappedf(pos.z, 0.01),
 			snappedf(float(p["yaw"]), 0.01), cs.role_of(p["name"]), int(p.get("inside", 0)), mine,
-			snappedf(float(p.get("alt", 0.0)), 0.1), 1 if bool(p.get("boat", false)) else 0, 1 if bool(p.get("horse", false)) else 0]
+			snappedf(float(p.get("alt", 0.0)), 0.1), 1 if bool(p.get("boat", false)) else 0, 1 if bool(p.get("horse", false)) else 0,
+			1 if bool(p.get("car", false)) else 0]
 	return out
 
 
@@ -590,7 +617,7 @@ func _on_peer_connected(pid: int) -> void:
 		"bucket": 10.0, "bucket_t": Time.get_ticks_msec(),
 		"allow": 6.0, "last_move": Time.get_ticks_msec(), "last_tp": 0,
 		"pos": Vector3.ZERO, "yaw": 0.0, "alt": 0.0, "failures": 0,
-		"mine": "", "mpos": Vector3.ZERO, "boat": false, "horse": false,
+		"mine": "", "mpos": Vector3.ZERO, "boat": false, "horse": false, "car": false,
 	}
 
 
@@ -685,7 +712,8 @@ func on_move(pid: int, x: float, z: float, yaw: float, alt: float = 0.0) -> void
 		return
 	var boating: bool = bool(p.get("boat", false))
 	# پرواز فقط در جهان خلاقانه و نه سوار قایق؛ در غیر این صورت ارتفاع نادیده گرفته می‌شود.
-	var mounted: bool = bool(p.get("horse", false))
+	var driving: bool = bool(p.get("car", false))
+	var mounted: bool = bool(p.get("horse", false)) or driving
 	var flying: bool = cs.creative and alt > FWConst.FLY_MIN_ALT and not boating and not mounted
 	var now := Time.get_ticks_msec()
 	var dt: float = clampf(float(now - int(p["last_move"])) / 1000.0, 0.0, 0.5)
@@ -693,6 +721,8 @@ func on_move(pid: int, x: float, z: float, yaw: float, alt: float = 0.0) -> void
 	var speed_mult: float = FWConst.RACE_SPEED_MULT if cs.race.is_running(str(p["name"])) else 1.0
 	if boating:
 		speed_mult = FWConst.BOAT_SPEED_MULT
+	elif driving:
+		speed_mult = FWConst.CAR_SPEED_MULT
 	elif mounted:
 		speed_mult = FWConst.HORSE_SPEED_MULT
 	if flying:
@@ -851,7 +881,7 @@ func on_enter(pid: int, id: int) -> void:
 	if _indoors(p):
 		_notice(pid, "already_inside")
 		return
-	if bool(p.get("boat", false)) or bool(p.get("horse", false)):
+	if bool(p.get("boat", false)) or bool(p.get("horse", false)) or bool(p.get("car", false)):
 		_notice(pid, "boat_busy")
 		return
 	var pos: Vector3 = p["pos"]
@@ -929,7 +959,7 @@ func on_mine_enter(pid: int, mine_id: String) -> void:
 		_notice(pid, "already_inside")
 		return
 	var nm: String = p["name"]
-	if cs.race.is_running(nm) or cs.minigame.is_running(nm) or bool(p.get("boat", false)) or bool(p.get("horse", false)):
+	if cs.race.is_running(nm) or cs.minigame.is_running(nm) or bool(p.get("boat", false)) or bool(p.get("horse", false)) or bool(p.get("car", false)):
 		_notice(pid, "mine_busy")
 		return
 	var pos: Vector3 = p["pos"]

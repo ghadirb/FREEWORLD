@@ -622,8 +622,29 @@ func _run() -> void:
 	c.race_start()
 	await create_timer(0.3).timeout
 	ok(not server.cs.race.is_running("hosty"), "cannot start a race on a horse")
+	c.toggle_car()
+	await create_timer(0.3).timeout
+	ok(not c.driving, "cannot drive while on a horse")
 	c.toggle_horse()
 	ok(await wait_until(func(): return not c.mounted, 3.0), "dismounting works")
+	c.toggle_car()
+	await create_timer(0.3).timeout
+	ok(not c.driving, "no driving without a car")
+	server.cs.accounts["hosty"]["car"] = true
+	c.toggle_car()
+	ok(await wait_until(func(): return c.driving, 3.0), "getting into the car works")
+	ok(await wait_until(func(): return bool(c.players.get("hosty", {}).get("car", false)), 3.0), "the car flag is broadcast")
+	c.toggle_horse()
+	await create_timer(0.3).timeout
+	ok(not c.mounted, "cannot ride a horse while driving")
+	c.enter_building(1)
+	await create_timer(0.3).timeout
+	ok(int(server.peers[1].get("inside", 0)) == 0, "cannot enter buildings in a car")
+	c.race_start()
+	await create_timer(0.3).timeout
+	ok(not server.cs.race.is_running("hosty"), "cannot start a race in a car")
+	c.toggle_car()
+	ok(await wait_until(func(): return not c.driving, 3.0), "getting out of the car works")
 	c.disconnect_from_server()
 	server.stop()
 	server.queue_free()

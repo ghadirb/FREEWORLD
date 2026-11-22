@@ -39,6 +39,7 @@ signal disaster_changed
 signal race_changed
 signal boat_changed
 signal horse_changed
+signal car_changed
 signal inventory_changed
 signal offer_received(data: Dictionary)
 signal block_changed(pos: Vector3i, type_id: int, color: int)
@@ -87,6 +88,7 @@ var disaster_stamp: float = 0.0
 var race: Dictionary = {"active": false, "t": 0.0, "next": 0, "pts": [], "best": 0, "board": []}
 var race_stamp: float = 0.0
 var mounted: bool = false   # سوار اسب (از سرور)
+var driving: bool = false   # پشت‌فرمان ماشین (از سرور)
 var boating: bool = false   # سوار قایق (از سرور)
 var minigame_stamp: float = 0.0   # لحظهٔ دریافت وضعیت؛ برای شمارش معکوس محلی
 var sell_prices: Dictionary = {}
@@ -437,6 +439,16 @@ func toggle_horse() -> void:
 		_tx("c2s_horse", [])
 
 
+func on_car(on: bool) -> void:
+	driving = on
+	car_changed.emit()
+
+
+func toggle_car() -> void:
+	if is_logged_in:
+		_tx("c2s_car", [])
+
+
 func fish() -> void:
 	if is_logged_in:
 		_tx("c2s_fish", [])
@@ -598,7 +610,7 @@ func preview_error(type: String, cx: int, cz: int) -> String:
 		return err
 	if mirror.blocks_in_footprint(type, cx, cz):
 		return "blocks_in_way"
-	if money < int(FWConst.BUILDING_TYPES[type]["cost"]):
+	if not creative and money < int(FWConst.BUILDING_TYPES[type]["cost"]):
 		return "no_money"
 	return ""
 
@@ -608,6 +620,7 @@ func preview_error(type: String, cx: int, cz: int) -> String:
 func on_login_result(ok: bool, error: String, info: Dictionary) -> void:
 	boating = false
 	mounted = false
+	driving = false
 	if not ok:
 		login_failed.emit(error)
 		return
@@ -651,6 +664,7 @@ func _apply_players(player_dict: Dictionary) -> void:
 		entry["alt"] = float(a[7]) if a.size() > 7 else 0.0
 		entry["boat"] = int(a[8]) == 1 if a.size() > 8 else false
 		entry["horse"] = int(a[9]) == 1 if a.size() > 9 else false
+		entry["car"] = int(a[10]) == 1 if a.size() > 10 else false
 		players[n] = entry
 	for n in players.keys():
 		if not player_dict.has(n):

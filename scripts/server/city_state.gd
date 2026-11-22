@@ -1849,6 +1849,10 @@ func has_horse(acc: Dictionary) -> bool:
 	return creative or bool(acc.get("horse", false))
 
 
+func has_car(acc: Dictionary) -> bool:
+	return creative or bool(acc.get("car", false))
+
+
 ## ماهیگیری: r عدد تصادفی [۰،۱) از سرور است (برای قابل‌آزمون بودن از بیرون می‌آید).
 func fish(player_name: String, r: float) -> Dictionary:
 	if not accounts.has(player_name):
@@ -2298,6 +2302,7 @@ static func from_dict(d: Dictionary):
 			"tools": _load_tools(a.get("tools", null)),
 			"boat": bool(a.get("boat", false)),
 			"horse": bool(a.get("horse", false)),
+			"car": bool(a.get("car", false)),
 			"friends": _load_friends(a.get("friends", null)),
 			"npc_day": _load_npc_day(a.get("npc_day", null)),
 		}

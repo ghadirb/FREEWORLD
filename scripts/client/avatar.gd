@@ -14,6 +14,7 @@ var _phase: float = 0.0
 var _moving: bool = false
 var boat_node: MeshInstance3D = null
 var horse_node: MeshInstance3D = null
+var car_node: MeshInstance3D = null
 var _boat_t: float = 0.0
 
 
@@ -127,6 +128,35 @@ func set_horse(on: bool) -> void:
 	horse_node.material_override = MeshBuilder.material()
 	horse_node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(horse_node)
+
+
+## ماشین زیر شخصیت (پروتکل ۲۷): بدنهٔ کم‌ارتفاع، کابین، چهار چرخ و چراغ جلو.
+func set_car(on: bool) -> void:
+	if on == (car_node != null):
+		return
+	if not on:
+		car_node.queue_free()
+		car_node = null
+		return
+	var mb := MeshBuilder.new()
+	var paint := Color("c0392b")
+	var glass := Color("9fd3f0")
+	var tire := Color("1c1c1c")
+	mb.add_box(Vector3(0, 0.45, 0), Vector3(1.1, 0.4, 2.2), paint)             # بدنه
+	mb.add_box(Vector3(0, 0.82, -0.1), Vector3(0.95, 0.38, 1.1), glass)        # کابین
+	mb.add_box(Vector3(0, 0.88, -0.1), Vector3(0.98, 0.06, 1.15), paint)       # سقف
+	mb.add_box(Vector3(-0.35, 0.5, 1.12), Vector3(0.22, 0.14, 0.06), Color("fff2a8"))   # چراغ‌ها
+	mb.add_box(Vector3(0.35, 0.5, 1.12), Vector3(0.22, 0.14, 0.06), Color("fff2a8"))
+	mb.add_box(Vector3(-0.35, 0.5, -1.12), Vector3(0.2, 0.12, 0.06), Color("ff4d4d"))
+	mb.add_box(Vector3(0.35, 0.5, -1.12), Vector3(0.2, 0.12, 0.06), Color("ff4d4d"))
+	for wx in [-0.6, 0.6]:
+		for wz in [-0.7, 0.7]:
+			mb.add_box(Vector3(wx, 0.22, wz), Vector3(0.2, 0.44, 0.44), tire)
+	car_node = MeshInstance3D.new()
+	car_node.mesh = mb.build()
+	car_node.material_override = MeshBuilder.material()
+	car_node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(car_node)
 
 
 func teleport_to(p: Vector3) -> void:

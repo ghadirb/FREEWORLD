@@ -249,6 +249,7 @@ func _on_logged_in() -> void:
 	if _args.has("ride"):
 		# آزمایشی: فقط برای عکس، مدل اسب/قایق را زیر شخصیت نشان می‌دهد
 		view.my_avatar.set_horse(str(_args["ride"]) == "horse")
+		view.my_avatar.set_car(str(_args["ride"]) == "car")
 		view.my_avatar.set_boat(str(_args["ride"]) == "boat")
 	if _args.has("panel"):
 		hud.debug_open_panel(str(_args["panel"]))

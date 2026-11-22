@@ -237,6 +237,18 @@ func s2c_horse(on: bool) -> void:
 
 
 @rpc("any_peer", "call_remote", "reliable")
+func c2s_car() -> void:
+	if server:
+		server.on_car(multiplayer.get_remote_sender_id())
+
+
+@rpc("authority", "call_remote", "reliable")
+func s2c_car(on: bool) -> void:
+	if client:
+		client.on_car(on)
+
+
+@rpc("any_peer", "call_remote", "reliable")
 func c2s_fish() -> void:
 	if server:
 		server.on_fish(multiplayer.get_remote_sender_id())

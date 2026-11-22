@@ -1,7 +1,7 @@
 extends RefCounted
 ## ثابت‌های مشترک بین سرور و کلاینت.
 
-const PROTOCOL_VERSION := 26
+const PROTOCOL_VERSION := 27
 # ترافیک شبکه با DTLS رمز می‌شود (نسخهٔ ۴ به بعد). فقط برای عیب‌یابی خاموش شود.
 const USE_DTLS := true
 const DEFAULT_PORT := 7777
@@ -168,8 +168,11 @@ const RECIPES := {
 	"boat": {"in": {"wood": 20, "iron": 2}, "unlock": "boat"},
 	# اسب (پروتکل ۲۶): یک‌بار با سکه خریده می‌شود؛ روی خشکی ۱٫۹ برابر سریع‌تر.
 	"horse": {"in": {}, "money": 300, "unlock": "horse"},
+	# ماشین (پروتکل ۲۷): یک‌بار با سکه و آهن؛ سریع‌ترین وسیلهٔ خشکی.
+	"car": {"in": {"iron": 6}, "money": 1200, "unlock": "car"},
 }
 const HORSE_SPEED_MULT := 1.9
+const CAR_SPEED_MULT := 3.0
 # ماهیگیری: کنار آب یا از روی قایق؛ هر بار ۰ تا ۲ ماهی، با فاصلهٔ زمانی بین دو بار.
 const FISH_COOLDOWN_MS := 3000
 const FISH_RANGE := 4.0
