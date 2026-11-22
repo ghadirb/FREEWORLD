@@ -50,6 +50,7 @@ func _init() -> void:
 	test_furniture()
 	test_minigame()
 	test_arenas()
+	test_arena_edit()
 	test_disasters()
 	test_race()
 	test_car_race()
@@ -1464,6 +1465,43 @@ func test_disasters() -> void:
 	check(logged, "disasters are written to the admin audit log")
 	var cs2 = CityState.from_dict(cs.to_dict())
 	check(cs2 != null and str(cs2.disaster["kind"]) == "", "an ongoing disaster is not saved")
+
+
+func test_arena_edit() -> void:
+	print("== Arena editing ==")
+	var cs = CityState.new(4244)
+	_login(cs, "maker")
+	_login(cs, "guest")
+	_login(cs, "root")
+	cs.accounts["maker"]["role"] = FWConst.ROLE_PLAYER
+	cs.accounts["guest"]["role"] = FWConst.ROLE_PLAYER
+	cs.accounts["root"]["role"] = FWConst.ROLE_WORLD_ADMIN
+	cs.accounts["maker"]["money"] = 1000
+	var at := _mg_land_pos(cs)
+	var id: int = int(cs.arena_create("maker", "Gold Rush", at, 10.0, 10, 40.0, 2)["id"])
+	var paid: int = int(cs.accounts["maker"]["money"])
+	check(cs.arena_edit("ghost", id, "x", 10.0, 10, 40.0, 1) == "no_account", "unknown player cannot edit")
+	check(cs.arena_edit("maker", 999, "x", 10.0, 10, 40.0, 1) == "arena_missing", "editing a missing arena fails")
+	check(cs.arena_edit("guest", id, "Hacked", 10.0, 10, 40.0, 1) == "not_owner", "another player cannot edit my arena")
+	check(cs.arena_edit("maker", id, "   ", 10.0, 10, 40.0, 1) == "arena_name", "an edited arena still needs a name")
+	check(cs.arena_edit("maker", id, "Gold Rush 2", 8.0, 15, 60.0, 3) == "", "the owner edits name, radius, coins, time and prize")
+	var a: Dictionary = cs.arenas.items[id]
+	check(str(a["name"]) == "Gold Rush 2" and float(a["r"]) == 8.0 and int(a["coins"]) == 15 and float(a["time"]) == 60.0 and int(a["reward"]) == 3, "the changes are stored")
+	check(float(a["x"]) == snappedf(at.x, 0.1) and float(a["z"]) == snappedf(at.y, 0.1) and str(a["owner"]) == "maker", "position and owner stay the same")
+	check(int(cs.accounts["maker"]["money"]) == paid, "editing is free")
+	check(cs.arena_edit("maker", id, "Big", 999.0, 999, 9999.0, 99) == "" and float(cs.arenas.items[id]["r"]) == FWConst.ARENA_R_MAX and int(cs.arenas.items[id]["reward"]) == FWConst.ARENA_REWARD_MAX, "edited settings are clamped by the server")
+	check(cs.arena_edit("root", id, "Admin Fix", 10.0, 10, 40.0, 1) == "" and str(cs.arenas.items[id]["name"]) == "Admin Fix", "an admin can edit any arena")
+	# میدان دوم نزدیک: بزرگ‌کردن شعاع میدان اول نباید با آن تداخل کند.
+	var far: Vector2 = at + Vector2(float(FWConst.ARENA_R_MIN) * 2.0 + FWConst.ARENA_SPACING + 12.0, 0.0)
+	var r2: Dictionary = cs.arena_create("maker", "Neighbour", far, 6.0, 8, 40.0, 1)
+	if r2["ok"]:
+		check(cs.arena_edit("maker", id, "Admin Fix", 20.0, 10, 40.0, 1) == "arena_close", "growing an arena into a neighbour is refused")
+		check(float(cs.arenas.items[id]["r"]) == 10.0, "a refused edit changes nothing")
+	# ویرایش وسط دور، دور آن میدان را لغو می‌کند.
+	cs.accounts["guest"]["money"] = 0
+	check(cs.arena_play("guest", id, at)["ok"], "a guest starts a run")
+	check(cs.arena_edit("maker", id, "Again", 10.0, 12, 40.0, 1) == "", "the owner edits while a run is active")
+	check(not bool(cs.minigame.public_state("guest").get("active", false)), "editing cancels the running round of that arena")
 
 
 func test_arenas() -> void:

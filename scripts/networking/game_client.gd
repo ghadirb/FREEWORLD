@@ -339,6 +339,11 @@ func arena_create(arena_name: String, radius: float, coins: int, time: float, re
 		_tx("c2s_arena_create", [arena_name, radius, coins, time, reward])
 
 
+func arena_edit(id: int, arena_name: String, radius: float, coins: int, time: float, reward: int) -> void:
+	if is_logged_in:
+		_tx("c2s_arena_edit", [id, arena_name, radius, coins, time, reward])
+
+
 func arena_op(op: String, id: int = 0) -> void:
 	if is_logged_in:
 		_tx("c2s_arena_op", [op, id])

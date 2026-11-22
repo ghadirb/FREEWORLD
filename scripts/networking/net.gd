@@ -147,6 +147,12 @@ func c2s_arena_create(arena_name: String, radius: float, coins: int, time: float
 
 
 @rpc("any_peer", "call_remote", "reliable")
+func c2s_arena_edit(id: int, arena_name: String, radius: float, coins: int, time: float, reward: int) -> void:
+	if server:
+		server.on_arena_edit(multiplayer.get_remote_sender_id(), id, arena_name, radius, coins, time, reward)
+
+
+@rpc("any_peer", "call_remote", "reliable")
 func c2s_arena_op(op: String, id: int) -> void:
 	if server:
 		server.on_arena_op(multiplayer.get_remote_sender_id(), op, id)

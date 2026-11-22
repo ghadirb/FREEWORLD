@@ -39,6 +39,42 @@ static func make_coins(world, seed_value: int, player_name: String, counter: int
 	return out
 
 
+## ویرایش میدان موجود (مکان ثابت می‌ماند): فقط سازنده یا مدیر. فاصله با میدان‌های دیگر و جای سکه‌ها دوباره
+## بررسی می‌شود. خروجی {ok, arena} (میدان جدید، هنوز اعمال نشده) یا {ok: false, error}.
+func validate_edit(world, seed_value: int, who: String, is_admin: bool, id: int, arena_name: String, radius: float, coins: int, time: float, reward: int) -> Dictionary:
+	if not items.has(id):
+		return {"ok": false, "error": "arena_missing"}
+	var old: Dictionary = items[id]
+	if str(old["owner"]) != who and not is_admin:
+		return {"ok": false, "error": "not_owner"}
+	var nm := clean_name(arena_name)
+	if nm.is_empty():
+		return {"ok": false, "error": "arena_name"}
+	if not (is_finite(radius) and is_finite(time)):
+		return {"ok": false, "error": "arena_bounds"}
+	var a := {
+		"id": id, "name": nm, "owner": old["owner"], "x": old["x"], "z": old["z"],
+		"r": clampf(radius, FWConst.ARENA_R_MIN, FWConst.ARENA_R_MAX),
+		"coins": clampi(coins, FWConst.ARENA_COINS_MIN, FWConst.ARENA_COINS_MAX),
+		"time": clampf(time, FWConst.ARENA_TIME_MIN, FWConst.ARENA_TIME_MAX),
+		"reward": clampi(reward, 0, FWConst.ARENA_REWARD_MAX),
+	}
+	var pos := Vector2(float(a["x"]), float(a["z"]))
+	for oid in items:
+		if int(oid) == id:
+			continue
+		var o: Dictionary = items[oid]
+		if Vector2(float(o["x"]), float(o["z"])).distance_to(pos) < float(o["r"]) + float(a["r"]) + FWConst.ARENA_SPACING:
+			return {"ok": false, "error": "arena_close"}
+	if make_coins(world, seed_value, str(a["owner"]), 0, a).size() < mini(int(a["coins"]), FWConst.ARENA_COINS_MIN):
+		return {"ok": false, "error": "arena_land"}
+	return {"ok": true, "arena": a}
+
+
+func apply_edit(a: Dictionary) -> void:
+	items[int(a["id"])] = a
+
+
 ## بررسی یک میدان جدید؛ خروجی {ok, arena} یا {ok: false, error}.
 func validate_new(world, seed_value: int, owner: String, arena_name: String, pos: Vector2, radius: float, coins: int, time: float, reward: int) -> Dictionary:
 	var nm := clean_name(arena_name)

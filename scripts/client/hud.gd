@@ -71,6 +71,8 @@ var _arena_panel: PanelContainer
 var _arena_name: LineEdit
 var _arena_spin: Dictionary = {}
 var _arena_rows: VBoxContainer
+var _arena_create_btn: Button
+var _arena_edit_id: int = 0   # > 0: دکمهٔ اصلی «ذخیرهٔ تغییرات» همین میدان است
 var _mg_panel: PanelContainer
 var _mg_status: Label
 var _mg_board: Label
@@ -1300,11 +1302,16 @@ func _build_arena_panel() -> void:
 	v.add_child(row)
 	var cb := UiTheme.button(Loc.fmt("arena_create", [Loc.digits(str(FWConst.ARENA_COST))]), Vector2(0, 60))
 	cb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_arena_create_btn = cb
 	cb.pressed.connect(func():
 		Sfx.play(self, "click")
-		client.arena_create(_arena_name.text, float(_arena_spin["arena_radius"].value), int(_arena_spin["arena_coins"].value),
-			float(_arena_spin["arena_time"].value), int(_arena_spin["arena_reward"].value))
-		_arena_name.text = "")
+		if _arena_edit_id > 0:
+			client.arena_edit(_arena_edit_id, _arena_name.text, float(_arena_spin["arena_radius"].value), int(_arena_spin["arena_coins"].value),
+				float(_arena_spin["arena_time"].value), int(_arena_spin["arena_reward"].value))
+		else:
+			client.arena_create(_arena_name.text, float(_arena_spin["arena_radius"].value), int(_arena_spin["arena_coins"].value),
+				float(_arena_spin["arena_time"].value), int(_arena_spin["arena_reward"].value))
+		_arena_set_edit(0, {}))
 	row.add_child(cb)
 	var close := UiTheme.button("✕", Vector2(64, 60))
 	close.pressed.connect(func(): _arena_panel.visible = false)
@@ -1317,6 +1324,21 @@ func _build_arena_panel() -> void:
 	_arena_rows.add_theme_constant_override("separation", 6)
 	_arena_rows.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	sc.add_child(_arena_rows)
+
+
+## حالت ویرایش: فرم را با مقدار میدان پر می‌کند و دکمهٔ اصلی را «ذخیرهٔ تغییرات» می‌کند؛ id صفر = حالت ساخت.
+func _arena_set_edit(id: int, a: Dictionary) -> void:
+	_arena_edit_id = id
+	if id > 0:
+		_arena_name.text = str(a["name"])
+		_arena_spin["arena_radius"].value = float(a["r"])
+		_arena_spin["arena_coins"].value = float(a["coins"])
+		_arena_spin["arena_time"].value = float(a["time"])
+		_arena_spin["arena_reward"].value = float(a["reward"])
+		_arena_create_btn.text = Loc.t("arena_save")
+	else:
+		_arena_name.text = ""
+		_arena_create_btn.text = Loc.fmt("arena_create", [Loc.digits(str(FWConst.ARENA_COST))])
 
 
 func _fill_arena_list() -> void:
@@ -1354,6 +1376,11 @@ func _fill_arena_list() -> void:
 			_arena_panel.visible = false)
 		r.add_child(play)
 		if mine or is_admin:
+			var ed := UiTheme.button("✎", Vector2(64, 48))
+			ed.pressed.connect(func():
+				Sfx.play(self, "click")
+				_arena_set_edit(id, a))
+			r.add_child(ed)
 			var del := UiTheme.button("🗑", Vector2(64, 48))
 			del.pressed.connect(func():
 				Sfx.play(self, "click")
@@ -1735,6 +1762,8 @@ func _on_notice(code: String, args: Dictionary) -> void:
 			toast(Loc.t("msg_arena_created"), Color("c8f08a"))
 		"arena_deleted":
 			toast(Loc.t("msg_arena_deleted"))
+		"arena_edited":
+			toast(Loc.t("msg_arena_edited"))
 		"bp_saved":
 			Sfx.play(self, "place")
 			toast(Loc.t("msg_bp_saved"), Color("c8f08a"))

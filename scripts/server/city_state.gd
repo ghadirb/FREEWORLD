@@ -1592,6 +1592,20 @@ func arena_create(player_name: String, arena_name: String, pos: Vector2, radius:
 	return {"ok": true, "id": a["id"], "money": money_of(player_name)}
 
 
+## ویرایش رایگان میدان توسط سازنده یا مدیر. دورهای در حال اجرای همان میدان لغو می‌شوند چون چیدمان سکه‌ها عوض می‌شود.
+func arena_edit(player_name: String, id: int, arena_name: String, radius: float, coins: int, time: float, reward: int) -> String:
+	if not accounts.has(player_name):
+		return "no_account"
+	var res: Dictionary = arenas.validate_edit(world, seed_value, player_name, FWConst.is_admin(role_of(player_name)), id, arena_name, radius, coins, time, reward)
+	if not bool(res["ok"]):
+		return str(res["error"])
+	var a: Dictionary = res["arena"]
+	arenas.apply_edit(a)
+	minigame.arena_removed(id)
+	_log(player_name, "arena_edit", {"id": id, "name": a["name"], "coins": a["coins"], "reward": a["reward"]})
+	return ""
+
+
 func arena_remove(player_name: String, id: int) -> String:
 	if not accounts.has(player_name):
 		return "no_account"
