@@ -38,6 +38,7 @@ signal minigame_changed
 signal disaster_changed
 signal race_changed
 signal boat_changed
+signal horse_changed
 signal inventory_changed
 signal offer_received(data: Dictionary)
 signal block_changed(pos: Vector3i, type_id: int, color: int)
@@ -85,6 +86,7 @@ var disaster: Dictionary = {"kind": "", "t": 0.0}
 var disaster_stamp: float = 0.0
 var race: Dictionary = {"active": false, "t": 0.0, "next": 0, "pts": [], "best": 0, "board": []}
 var race_stamp: float = 0.0
+var mounted: bool = false   # سوار اسب (از سرور)
 var boating: bool = false   # سوار قایق (از سرور)
 var minigame_stamp: float = 0.0   # لحظهٔ دریافت وضعیت؛ برای شمارش معکوس محلی
 var sell_prices: Dictionary = {}
@@ -425,6 +427,16 @@ func on_boat(on: bool) -> void:
 	boat_changed.emit()
 
 
+func on_horse(on: bool) -> void:
+	mounted = on
+	horse_changed.emit()
+
+
+func toggle_horse() -> void:
+	if is_logged_in:
+		_tx("c2s_horse", [])
+
+
 func fish() -> void:
 	if is_logged_in:
 		_tx("c2s_fish", [])
@@ -595,6 +607,7 @@ func preview_error(type: String, cx: int, cz: int) -> String:
 
 func on_login_result(ok: bool, error: String, info: Dictionary) -> void:
 	boating = false
+	mounted = false
 	if not ok:
 		login_failed.emit(error)
 		return
@@ -637,6 +650,7 @@ func _apply_players(player_dict: Dictionary) -> void:
 		entry["mine"] = str(a[6]) if a.size() > 6 else ""
 		entry["alt"] = float(a[7]) if a.size() > 7 else 0.0
 		entry["boat"] = int(a[8]) == 1 if a.size() > 8 else false
+		entry["horse"] = int(a[9]) == 1 if a.size() > 9 else false
 		players[n] = entry
 	for n in players.keys():
 		if not player_dict.has(n):

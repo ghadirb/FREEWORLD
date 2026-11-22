@@ -1825,6 +1825,10 @@ func has_boat(acc: Dictionary) -> bool:
 	return creative or bool(acc.get("boat", false))
 
 
+func has_horse(acc: Dictionary) -> bool:
+	return creative or bool(acc.get("horse", false))
+
+
 ## ماهیگیری: r عدد تصادفی [۰،۱) از سرور است (برای قابل‌آزمون بودن از بیرون می‌آید).
 func fish(player_name: String, r: float) -> Dictionary:
 	if not accounts.has(player_name):
@@ -1849,12 +1853,16 @@ func craft(player_name: String, recipe: String, times: int) -> Dictionary:
 		var key: String = str(r["unlock"])
 		if times != 1:
 			return {"ok": false, "error": "bad_request"}
-		if has_boat(acc):
+		if creative or bool(acc.get(key, false)):
 			return {"ok": false, "error": "already_owned"}
 		if not has_items(acc["inv"], r["in"]):
 			return {"ok": false, "error": "no_items"}
+		var price: int = int(r.get("money", 0))
+		if int(acc["money"]) < price:
+			return {"ok": false, "error": "no_money"}
 		for item in r["in"]:
 			acc["inv"][item] = int(acc["inv"][item]) - int(r["in"][item])
+		acc["money"] = int(acc["money"]) - price
 		acc[key] = true
 		_log(player_name, "unlock", {"what": key})
 		return {"ok": true, "unlock": key}
@@ -2272,6 +2280,7 @@ static func from_dict(d: Dictionary):
 			"inv": _load_inv(a.get("inv", null)),
 			"tools": _load_tools(a.get("tools", null)),
 			"boat": bool(a.get("boat", false)),
+			"horse": bool(a.get("horse", false)),
 			"friends": _load_friends(a.get("friends", null)),
 			"npc_day": _load_npc_day(a.get("npc_day", null)),
 		}

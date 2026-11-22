@@ -76,6 +76,7 @@ var _race_btn: Button
 var _fly_btn: Button
 var _boat_btn: Button
 var _fish_btn: Button
+var _horse_btn: Button
 var _shop_btn: Button
 var _side_scroll: ScrollContainer
 var _drawers: Array = []
@@ -360,6 +361,9 @@ func _build_side_buttons() -> void:
 	_fly_btn.pressed.connect(func(): Sfx.play(self, "click"); view.toggle_flight())
 	_boat_btn = UiTheme.button(Loc.t("boat"), SIDE_BTN)
 	_boat_btn.pressed.connect(func(): Sfx.play(self, "click"); client.toggle_boat())
+	_horse_btn = UiTheme.button(Loc.t("horse"), SIDE_BTN)
+	_horse_btn.pressed.connect(func(): Sfx.play(self, "click"); client.toggle_horse())
+	client.horse_changed.connect(_on_horse_changed)
 	_fish_btn = UiTheme.button(Loc.t("fish"), SIDE_BTN)
 	_fish_btn.pressed.connect(func(): client.fish())
 	client.boat_changed.connect(_on_boat_changed)
@@ -375,7 +379,7 @@ func _build_side_buttons() -> void:
 		_fly_pad.add_child(ab)
 		_interactive.append(ab)
 	view.fly_changed.connect(func(on: bool): _fly_btn.text = Loc.t("land") if on else Loc.t("fly"); _fly_pad.visible = on)
-	for b in [_mode_btn, _view_btn, _build_btn, _tools_btn, _inv_btn, chat_btn, _admin_btn, _god_btn, _mg_btn, _race_btn, _boat_btn, _fish_btn, _fly_btn, menu_btn]:
+	for b in [_mode_btn, _view_btn, _build_btn, _tools_btn, _inv_btn, chat_btn, _admin_btn, _god_btn, _mg_btn, _race_btn, _boat_btn, _horse_btn, _fish_btn, _fly_btn, menu_btn]:
 		b.add_theme_font_size_override("font_size", 19)
 		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		v.add_child(b)
@@ -936,9 +940,14 @@ func _update_race_bar() -> void:
 		_race_bar.text = Loc.fmt("race_status", [Loc.digits(str(int(client.race.get("next", 0)) + 1)), Loc.digits(str(FWConst.RACE_GATES)), Loc.digits("%.1f" % client.race_elapsed())])
 
 
+func _on_horse_changed() -> void:
+	_horse_btn.text = Loc.t("horse_leave") if client.mounted else Loc.t("horse")
+	_fly_btn.visible = view.mode == "life" and client.creative and not client.boating and not client.mounted
+
+
 func _on_boat_changed() -> void:
 	_boat_btn.text = Loc.t("boat_leave") if client.boating else Loc.t("boat")
-	_fly_btn.visible = view.mode == "life" and client.creative and not client.boating
+	_fly_btn.visible = view.mode == "life" and client.creative and not client.boating and not client.mounted
 	_refresh_race()
 
 
@@ -1523,9 +1532,10 @@ func _on_mode_changed(_m: String) -> void:
 	_tools_btn.visible = view.mode == "life"
 	_mg_btn.visible = view.mode == "life"
 	_race_btn.visible = view.mode == "life"
-	_fly_btn.visible = view.mode == "life" and client.creative and not client.boating
+	_fly_btn.visible = view.mode == "life" and client.creative and not client.boating and not client.mounted
 	_boat_btn.visible = view.mode == "life"
 	_fish_btn.visible = view.mode == "life"
+	_horse_btn.visible = view.mode == "life"
 	_refresh_role()
 	if view.mode == "world":
 		_set_tools_visible(false)

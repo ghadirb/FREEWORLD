@@ -246,6 +246,10 @@ func _on_logged_in() -> void:
 	if _args.has("build"):
 		hud._toggle_build()
 		hud._select_type(str(_args["build"]))
+	if _args.has("ride"):
+		# آزمایشی: فقط برای عکس، مدل اسب/قایق را زیر شخصیت نشان می‌دهد
+		view.my_avatar.set_horse(str(_args["ride"]) == "horse")
+		view.my_avatar.set_boat(str(_args["ride"]) == "boat")
 	if _args.has("panel"):
 		hud.debug_open_panel(str(_args["panel"]))
 	if _args.has("enter") and client.local_server != null:

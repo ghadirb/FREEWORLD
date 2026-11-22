@@ -1192,6 +1192,21 @@ func test_boat() -> void:
 	oacc["inv"]["fish"] = 4
 	var sold: Dictionary = ocs.trade("builder", "fish", 4, false)
 	check(sold["ok"] and int(sold["total"]) > 0, "fish can be sold at the market")
+	# اسب (پروتکل ۲۶)
+	var hcs = CityState.new(4246)
+	_login(hcs, "rider")
+	hcs.creative = false
+	var hacc: Dictionary = hcs.accounts["rider"]
+	hacc["money"] = 100
+	check(not hcs.has_horse(hacc), "a new player has no horse")
+	check(hcs.craft("rider", "horse", 1)["error"] == "no_money", "a horse needs enough coins")
+	hacc["money"] = 1000
+	var hres: Dictionary = hcs.craft("rider", "horse", 1)
+	check(hres["ok"] and hcs.has_horse(hacc) and int(hacc["money"]) == 700, "buying the horse costs 300 coins")
+	check(hcs.craft("rider", "horse", 1)["error"] == "already_owned", "a second horse is refused")
+	var hcs2 = CityState.from_dict(hcs.to_dict())
+	check(hcs2 != null and hcs2.has_horse(hcs2.accounts["rider"]), "horse ownership survives save/load")
+	check(not hcs2.has_boat(hcs2.accounts["rider"]), "owning a horse does not give a boat")
 	# مسابقهٔ پیاده روی خشکی هنوز مثل قبل
 	check(cs.race_start("walker", Vector2(FWConst.CITY_SIZE * 0.5, FWConst.CITY_SIZE * 0.5))["ok"] and not cs.race.is_boat_race("walker"), "walking races are unchanged")
 

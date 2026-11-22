@@ -137,6 +137,7 @@ func setup(game_client, quality_level: int) -> void:
 	client.minigame_changed.connect(_sync_coins)
 	client.race_changed.connect(_sync_race)
 	client.boat_changed.connect(func(): my_avatar.set_boat(client.boating))
+	client.horse_changed.connect(func(): my_avatar.set_horse(client.mounted))
 	cam = CameraRig.new()
 	cam.name = "CameraRig"
 	add_child(cam)
@@ -990,7 +991,7 @@ func _process(delta: float) -> void:
 
 
 func can_fly() -> bool:
-	return client.creative and inside_id == 0 and client.mine_id == "" and mode == "life" and not client.boating
+	return client.creative and inside_id == 0 and client.mine_id == "" and mode == "life" and not client.boating and not client.mounted
 
 
 ## دکمهٔ پرواز: اولین بار بلند می‌شود؛ بار بعد فرود می‌آید (فقط روی نقطهٔ قابل‌راه‌رفتن).
@@ -1063,6 +1064,8 @@ func _move_player(dt: float, input: Vector2) -> void:
 	var speed_mult: float = FWConst.RACE_SPEED_MULT if client.race_active() else 1.0
 	if client.boating:
 		speed_mult = FWConst.BOAT_SPEED_MULT
+	elif client.mounted:
+		speed_mult = FWConst.HORSE_SPEED_MULT
 	var step := dir * FWConst.PLAYER_SPEED * speed_mult * (FWConst.FLY_SPEED_MULT if my_alt > FWConst.FLY_MIN_ALT else 1.0) * len * dt
 	var nx := my_pos.x + step.x
 	var nz := my_pos.z + step.z
@@ -1567,6 +1570,7 @@ func _sync_remote(_dt: float) -> void:
 		av.target = rpos + Vector3(0.0, float(data.get("alt", 0.0)), 0.0)
 		av.target_yaw = data["yaw"]
 		av.set_boat(bool(data.get("boat", false)))
+		av.set_horse(bool(data.get("horse", false)))
 		av.visible = int(data.get("inside", 0)) == 0 and their_mine == client.mine_id
 	for pname in avatars.keys():
 		if not client.players.has(pname):

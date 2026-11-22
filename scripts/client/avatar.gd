@@ -13,6 +13,7 @@ var body: MeshInstance3D
 var _phase: float = 0.0
 var _moving: bool = false
 var boat_node: MeshInstance3D = null
+var horse_node: MeshInstance3D = null
 var _boat_t: float = 0.0
 
 
@@ -99,6 +100,33 @@ func set_boat(on: bool) -> void:
 	boat_node.material_override = MeshBuilder.material()
 	boat_node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(boat_node)
+
+
+## اسب زیر شخصیت (پروتکل ۲۶): بدنه، گردن و سر، چهار پا و دم؛ سوار روی آن می‌نشیند.
+func set_horse(on: bool) -> void:
+	if on == (horse_node != null):
+		return
+	if not on:
+		horse_node.queue_free()
+		horse_node = null
+		return
+	var mb := MeshBuilder.new()
+	var coat := Color("8b5a2b")
+	var dark := Color("3b2412")
+	mb.add_box(Vector3(0, 0.62, 0), Vector3(0.55, 0.5, 1.5), coat)           # بدنه
+	mb.add_box(Vector3(0, 0.95, 0.85), Vector3(0.3, 0.6, 0.35), coat)        # گردن
+	mb.add_box(Vector3(0, 1.2, 1.1), Vector3(0.28, 0.3, 0.55), coat)         # سر
+	mb.add_box(Vector3(0, 0.95, 0.55), Vector3(0.12, 0.3, 0.35), dark)       # یال
+	mb.add_box(Vector3(0, 0.8, -0.85), Vector3(0.12, 0.5, 0.15), dark)       # دم
+	for lx in [-0.18, 0.18]:
+		for lz in [-0.55, 0.55]:
+			mb.add_box(Vector3(lx, 0.18, lz), Vector3(0.14, 0.4, 0.14), dark)
+	mb.add_box(Vector3(0, 0.9, 0.0), Vector3(0.6, 0.06, 0.5), Color("9a2f2f"))  # زین
+	horse_node = MeshInstance3D.new()
+	horse_node.mesh = mb.build()
+	horse_node.material_override = MeshBuilder.material()
+	horse_node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(horse_node)
 
 
 func teleport_to(p: Vector3) -> void:

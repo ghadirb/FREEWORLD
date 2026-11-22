@@ -597,6 +597,33 @@ func _run() -> void:
 	server._sync_positions()
 	var sl_saved: Array = server.cs.accounts["hosty"]["pos"]
 	ok(not Boat.is_water(server.cs, float(sl_saved[0]), float(sl_saved[2])), "saved position of a sailor is on land")
+	server.peers[1]["boat"] = false
+	c.on_boat(false)
+	var hs: Vector3 = server.cs.spawn_position()
+	server.peers[1]["pos"] = hs
+	server.peers[1]["last_move"] = Time.get_ticks_msec()
+	c.toggle_horse()
+	await create_timer(0.3).timeout
+	ok(not c.mounted, "no riding without a horse")
+	server.cs.accounts["hosty"]["horse"] = true
+	c.toggle_horse()
+	ok(await wait_until(func(): return c.mounted, 3.0), "mounting the horse works")
+	ok(await wait_until(func(): return bool(c.players.get("hosty", {}).get("horse", false)), 3.0), "the horse flag is broadcast")
+	await create_timer(1.5).timeout
+	var h0: Vector3 = server.peers[1]["pos"]
+	var htgt := Vector2(h0.x + 9.0, h0.z)
+	c.send_move(htgt.x, htgt.y, 0.0)
+	await create_timer(0.3).timeout
+	var h1: Vector3 = server.peers[1]["pos"]
+	ok(Vector2(h1.x, h1.z).distance_to(htgt) < 0.2 or h1.x - h0.x > 6.5, "a horse covers more ground than walking")
+	c.enter_building(1)
+	await create_timer(0.3).timeout
+	ok(int(server.peers[1].get("inside", 0)) == 0, "cannot enter buildings on a horse")
+	c.race_start()
+	await create_timer(0.3).timeout
+	ok(not server.cs.race.is_running("hosty"), "cannot start a race on a horse")
+	c.toggle_horse()
+	ok(await wait_until(func(): return not c.mounted, 3.0), "dismounting works")
 	c.disconnect_from_server()
 	server.stop()
 	server.queue_free()
