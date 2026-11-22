@@ -21,7 +21,7 @@ const LOCAL_PID := 1
 const LOCAL_METHODS := [
 	"c2s_login", "c2s_move", "c2s_place", "c2s_remove", "c2s_collect",
 	"c2s_chat", "c2s_set_role", "c2s_get_audit", "c2s_job", "c2s_set_world", "c2s_enter", "c2s_leave",
-	"c2s_place_block", "c2s_remove_block", "c2s_paint_block", "c2s_build_region", "c2s_paste", "c2s_undo", "c2s_gather", "c2s_dig", "c2s_fill", "c2s_craft", "c2s_trade", "c2s_offer", "c2s_offer_answer", "c2s_npc", "c2s_npc_sell", "c2s_minigame_start", "c2s_race_start", "c2s_disaster", "c2s_god",
+	"c2s_place_block", "c2s_remove_block", "c2s_paint_block", "c2s_build_region", "c2s_paste", "c2s_undo", "c2s_gather", "c2s_dig", "c2s_fill", "c2s_craft", "c2s_trade", "c2s_offer", "c2s_offer_answer", "c2s_npc", "c2s_npc_sell", "c2s_npc_buy", "c2s_furn_place", "c2s_furn_remove", "c2s_minigame_start", "c2s_race_start", "c2s_disaster", "c2s_god",
 	"c2s_mine_enter", "c2s_mine_leave", "c2s_mine_gather",
 ]
 
@@ -729,6 +729,8 @@ func on_enter(pid: int, id: int) -> void:
 		return
 	p["inside"] = id
 	_send(pid, "s2c_inside", id)
+	if cs.buildings[id]["type"] == "house":
+		_send(pid, "s2c_furn", {"id": id, "items": cs.furn_of(id)})
 
 
 func on_leave(pid: int) -> void:
@@ -1260,6 +1262,67 @@ func on_npc_sell(pid: int, npc_id: int, item: String, n: int) -> void:
 	_send(pid, "s2c_money", int(res["money"]))
 	_push_inv(pid, p["name"])
 	_notice(pid, "npc_bought", {"npc": res["npc"], "item": res["item"], "count": res["count"], "total": res["total"]})
+	_dirty = true
+
+
+func on_npc_buy(pid: int, npc_id: int, item: String, n: int) -> void:
+	var p := _player_of(pid)
+	if p.is_empty():
+		return
+	if not _allow_action(p):
+		_notice(pid, "rate_limited")
+		return
+	if _indoors(p):
+		return
+	var pos: Vector3 = p["pos"]
+	var res: Dictionary = cs.npc_buy(p["name"], npc_id, item, n, Vector2(pos.x, pos.z))
+	if not res["ok"]:
+		_notice(pid, str(res["error"]))
+		return
+	_send(pid, "s2c_money", int(res["money"]))
+	_push_inv(pid, p["name"])
+	_notice(pid, "npc_sold", {"npc": res["npc"], "item": res["item"], "count": res["count"], "total": res["total"]})
+	_dirty = true
+
+
+## مبلمان فقط وقتی بازیکن داخل همان خانه است و فقط برای صاحب آن.
+func on_furn_place(pid: int, type: String, x: float, z: float, rot: int) -> void:
+	var p := _player_of(pid)
+	if p.is_empty():
+		return
+	if not _allow_action(p):
+		_notice(pid, "rate_limited")
+		return
+	var bid := int(p.get("inside", 0))
+	if bid <= 0:
+		_notice(pid, "not_inside")
+		return
+	var res: Dictionary = cs.furn_place(p["name"], bid, type, x, z, rot)
+	if not res["ok"]:
+		_notice(pid, str(res["error"]))
+		return
+	_send(pid, "s2c_money", int(res["money"]))
+	_send(pid, "s2c_furn", {"id": bid, "items": res["furn"]})
+	_dirty = true
+
+
+func on_furn_remove(pid: int, idx: int) -> void:
+	var p := _player_of(pid)
+	if p.is_empty():
+		return
+	if not _allow_action(p):
+		_notice(pid, "rate_limited")
+		return
+	var bid := int(p.get("inside", 0))
+	if bid <= 0:
+		_notice(pid, "not_inside")
+		return
+	var res: Dictionary = cs.furn_remove(p["name"], bid, idx)
+	if not res["ok"]:
+		_notice(pid, str(res["error"]))
+		return
+	_send(pid, "s2c_money", int(res["money"]))
+	_send(pid, "s2c_furn", {"id": bid, "items": res["furn"]})
 	_dirty = true
 
 

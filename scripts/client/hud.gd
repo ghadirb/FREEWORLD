@@ -138,6 +138,7 @@ func setup(game_client, game_view) -> void:
 	_build_offer_panel()
 	_build_info_panel()
 	_build_npc_panel()
+	_build_furn_panel()
 	_build_god_panel()
 	_build_minigame()
 	_build_race()
@@ -903,6 +904,19 @@ func _build_npc_panel() -> void:
 		sb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		sb.pressed.connect(func(): client.npc_sell(_npc_id, str(FWConst.ITEM_ORDER[_npc_item.selected]), amount))
 		srow.add_child(sb)
+	var brow := HBoxContainer.new()
+	brow.add_theme_constant_override("separation", 8)
+	v.add_child(brow)
+	for amount in [1, 10]:
+		var bb := UiTheme.button(Loc.t("npc_buy%d" % amount), Vector2(0, 56))
+		bb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		bb.pressed.connect(func():
+			var it: String = str(FWConst.ITEM_ORDER[_npc_item.selected])
+			if not FWConst.NPC_SELLS.has(it):
+				toast(Loc.t("err_npc_not_selling"), Color("ff9a8a"))
+				return
+			client.npc_buy(_npc_id, it, amount))
+		brow.add_child(bb)
 
 
 func _on_npc_tapped(id: int) -> void:
@@ -927,6 +941,85 @@ func _fill_npc() -> void:
 			lv += 1
 	_npc_body.text = "%s: %s (%s/%s)\n%s" % [Loc.t("npc_friendship"), Loc.t("npc_level_%d" % lv), Loc.digits(str(pts)), Loc.digits(str(FWConst.FRIEND_MAX)),
 		Loc.fmt("npc_bonus", [Loc.digits(str(int(round(float(FWConst.NPC_TRADE_BONUS[lv]) * 100.0))))])]
+
+
+var _furn_btn: Button
+var _furn_panel: PanelContainer
+var _furn_type: OptionButton
+var _furn_rot: int = 0
+var _furn_rot_btn: Button
+
+
+## مبلمان خانه: انتخاب نوع، چرخش، «بگذار» (جلوی بازیکن) و «بردار» (نزدیک‌ترین). قیمت‌ها و جا را سرور می‌سنجد.
+func _build_furn_panel() -> void:
+	_furn_btn = UiTheme.button(Loc.t("furn_open"), Vector2(220, 76))
+	_furn_btn.visible = false
+	_furn_btn.pressed.connect(func():
+		Sfx.play(self, "click")
+		_furn_panel.visible = not _furn_panel.visible)
+	root.add_child(_furn_btn)
+	_place(_furn_btn, 1.0, 1.0, 12.0, 40.0)
+	_interactive.append(_furn_btn)
+	_furn_panel = _panel(0.5, 1.0)
+	_furn_panel.visible = false
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 8)
+	_furn_panel.add_child(v)
+	v.add_child(_label(Loc.t("furn_title"), 28, Color("ffd24a")))
+	_furn_type = OptionButton.new()
+	_furn_type.custom_minimum_size = Vector2(300, 56)
+	for t in FWConst.FURNITURE_ORDER:
+		_furn_type.add_item("%s — %s" % [Loc.t("furn_" + t), Loc.digits(str(FWConst.FURNITURE[t]["cost"]))])
+	v.add_child(_furn_type)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	v.add_child(row)
+	_furn_rot_btn = UiTheme.button(Loc.fmt("furn_rotate", [Loc.digits("0")]), Vector2(0, 60))
+	_furn_rot_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_furn_rot_btn.pressed.connect(func():
+		_furn_rot = (_furn_rot + 1) % 4
+		_furn_rot_btn.text = Loc.fmt("furn_rotate", [Loc.digits(str(_furn_rot * 90))]))
+	row.add_child(_furn_rot_btn)
+	var place_b := UiTheme.button(Loc.t("furn_place"), Vector2(0, 60))
+	place_b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	place_b.pressed.connect(_furn_place_pressed)
+	row.add_child(place_b)
+	var row2 := HBoxContainer.new()
+	row2.add_theme_constant_override("separation", 8)
+	v.add_child(row2)
+	var rem_b := UiTheme.button(Loc.t("furn_remove"), Vector2(0, 60))
+	rem_b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	rem_b.pressed.connect(_furn_remove_pressed)
+	row2.add_child(rem_b)
+	var close := UiTheme.button("✕", Vector2(64, 60))
+	close.pressed.connect(func(): _furn_panel.visible = false)
+	row2.add_child(close)
+
+
+func _furn_place_pressed() -> void:
+	var t: String = str(FWConst.FURNITURE_ORDER[_furn_type.selected])
+	var me: Vector2 = view.room_pos()
+	var h := FWConst.furn_half(t, _furn_rot)
+	var fwd := Vector2(sin(view.my_yaw), cos(view.my_yaw))
+	var at := me + fwd * (maxf(h.x, h.y) + 0.7)
+	Sfx.play(self, "click")
+	client.furn_place(t, at.x, at.y, _furn_rot)
+
+
+func _furn_remove_pressed() -> void:
+	var me: Vector2 = view.room_pos()
+	var best := -1
+	var best_d := 2.5
+	for i in client.furn.size():
+		var d: float = Vector2(float(client.furn[i]["x"]), float(client.furn[i]["z"])).distance_to(me)
+		if d < best_d:
+			best_d = d
+			best = i
+	if best < 0:
+		toast(Loc.t("furn_none_near"), Color("ff9a8a"))
+		return
+	Sfx.play(self, "click")
+	client.furn_remove(best)
 
 
 func _build_leave_button() -> void:
@@ -970,6 +1063,10 @@ func _on_mine_changed(id: String) -> void:
 func _on_inside_changed(id: int) -> void:
 	_leave_btn.visible = id > 0 or client.mine_id != ""
 	_info.visible = false
+	var in_house: bool = id > 0 and str(client.mirror.buildings.get(id, {}).get("type", "")) == "house"
+	_furn_btn.visible = in_house
+	if not in_house:
+		_furn_panel.visible = false
 	if id > 0:
 		_set_tools_visible(false)
 		_inv_panel.visible = false
@@ -1167,6 +1264,9 @@ func _on_notice(code: String, args: Dictionary) -> void:
 		"npc_talk":
 			Sfx.play(self, "coin" if int(args["reward"]) > 0 else "click")
 			toast(Loc.fmt("msg_npc_talk", [str(args["npc"]), Loc.digits(str(args["reward"]))]) if int(args["reward"]) > 0 else Loc.fmt("msg_npc_talk0", [str(args["npc"])]), Color("c8f08a"))
+		"npc_sold":
+			Sfx.play(self, "coin")
+			toast(Loc.fmt("msg_npc_sold", [str(args["npc"]), Loc.digits(str(args["count"])), Loc.t("item_" + str(args["item"])), Loc.digits(str(args["total"]))]), Color("c8f08a"))
 		"npc_bought":
 			Sfx.play(self, "coin")
 			toast(Loc.fmt("msg_npc_bought", [str(args["npc"]), Loc.digits(str(args["count"])), Loc.t("item_" + str(args["item"])), Loc.digits(str(args["total"]))]), Color("c8f08a"))

@@ -131,8 +131,35 @@ func _run() -> void:
 	ok((server.peers[1]["pos"] as Vector3).distance_to(pos_before) < 0.01, "moves are ignored while inside")
 	server.cs.accounts["hosty"]["energy"] = 20.0
 	ok(await wait_until(func(): return c.energy > 25, 6.0), "energy is restored and reported to the client while resting")
+	# مبلمان: چیدن و برداشتن از طریق سرور، همگام‌سازی با کلاینت و ماندگاری
+	await create_timer(0.4).timeout
+	ok(c.furn.is_empty(), "a new house starts without furniture")
+	server.cs.accounts["hosty"]["money"] = 1000
+	c.furn_place("bed", -2.0, -2.8, 0)
+	ok(await wait_until(func(): return c.furn.size() == 1, 3.0), "a placed bed is synced to the client")
+	ok(int(server.cs.accounts["hosty"]["money"]) == 1000 - int(FWConst.FURNITURE["bed"]["cost"]), "the server charged for the bed")
+	await create_timer(0.4).timeout
+	c.furn_place("bed", -2.0, -2.8, 0)
+	await create_timer(0.4).timeout
+	ok(c.furn.size() == 1, "an overlapping piece is refused by the server")
+	ok(server.cs.furn_of(hid).size() == 1, "the server stores exactly one piece")
+	await create_timer(0.4).timeout
+	c.furn_remove(0)
+	ok(await wait_until(func(): return c.furn.size() == 0, 3.0), "removing furniture is synced")
+	await create_timer(0.4).timeout
+	c.furn_place("lamp", 2.0, -2.0, 0)
+	ok(await wait_until(func(): return c.furn.size() == 1, 3.0), "furniture can be placed again")
 	c.leave_building()
 	ok(await wait_until(func(): return c.inside_id == 0, 3.0), "leave succeeds")
+	ok(c.furn.is_empty(), "leaving clears the client's furniture list")
+	# خرید از NPC نزدیک
+	if server.cs.npcs.size() > 0:
+		var npc0: Dictionary = server.cs.npcs[0]
+		server.peers[1]["pos"] = Vector3(float(npc0["x"]), 0.0, float(npc0["z"]))
+		var wood0: int = int(server.cs.accounts["hosty"]["inv"].get("wood", 0))
+		await create_timer(0.4).timeout
+		c.npc_buy(int(npc0["id"]), "wood", 3)
+		ok(await wait_until(func(): return int(server.cs.accounts["hosty"]["inv"].get("wood", 0)) == wood0 + 3, 3.0), "buying 3 wood from an NPC works end to end")
 	c.disconnect_from_server()
 	server.stop()
 	server.queue_free()

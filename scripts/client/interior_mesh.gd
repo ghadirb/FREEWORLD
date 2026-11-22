@@ -3,6 +3,7 @@ extends RefCounted
 ## مبدأ: مرکز کف در y=0؛ در ورودی روی لبهٔ +Z.
 
 const MeshBuilder = preload("res://scripts/client/mesh_builder.gd")
+const FWConst = preload("res://scripts/core/const.gd")
 
 const HALF := 4.0
 const WALL_H := 3.2
@@ -50,13 +51,7 @@ static func _make(type: String) -> ArrayMesh:
 	mb.add_box(Vector3(0, 0.02, 3.5), Vector3(1.6, 0.04, 0.8), Color("6b4a2d"))
 	match type:
 		"house":
-			mb.add_box(Vector3(-2.6, 0.3, -2.8), Vector3(2.0, 0.6, 1.0), Color("7a5230"))   # تخت
-			mb.add_box(Vector3(-2.6, 0.7, -2.8), Vector3(1.9, 0.2, 0.95), Color("e8e0d0"))
-			mb.add_box(Vector3(-3.3, 0.85, -2.8), Vector3(0.4, 0.2, 0.7), Color("9ac0e0"))   # بالش
-			mb.add_box(Vector3(1.8, 0.4, -0.8), Vector3(1.6, 0.8, 1.6), Color("7a5230"))     # میز
-			mb.add_box(Vector3(1.8, 0.85, -0.8), Vector3(0.4, 0.1, 0.4), Color("f6c445"))
-			mb.add_box(Vector3(3.2, 1.1, -3.5), Vector3(1.2, 2.2, 0.6), Color("5c3f26"))     # کمد
-			mb.add_box(Vector3(-0.2, 0.03, 0.2), Vector3(3.0, 0.06, 2.2), Color("b4523a"))   # فرش
+			# خانه خالی تحویل داده می‌شود؛ مبلمان را صاحب خانه می‌خرد و می‌چیند (furniture_mesh).
 			mb.add_box(Vector3(0.4, 1.9, -HALF + 0.02), Vector3(1.4, 1.0, 0.06), Color("9ad0e8"))  # پنجره
 		"shop":
 			mb.add_box(Vector3(0, 0.5, -0.8), Vector3(4.4, 1.0, 0.9), Color("7a5230"))       # پیشخوان
@@ -77,3 +72,59 @@ static func _make(type: String) -> ArrayMesh:
 			mb.add_box(Vector3(3.2, 1.2, -3.4), Vector3(1.2, 2.4, 0.6), Color("5c3f26"))     # قفسهٔ نان
 			mb.add_box(Vector3(3.2, 1.6, -3.1), Vector3(1.0, 0.3, 0.3), Color("d9a24a"))
 	return mb.build()
+
+
+## مبلمان چیده‌شده: items = [{t,x,z,r}] (x,z نسبت به مرکز اتاق، r×۹۰ درجه). یک مش برای همه.
+static func furniture_mesh(items: Array) -> ArrayMesh:
+	var mb := MeshBuilder.new()
+	for e in items:
+		var t: String = str(e.get("t", ""))
+		if FWConst.FURNITURE.has(t):
+			_furn_piece(mb, t, float(e["x"]), float(e["z"]), int(e["r"]) % 4)
+	return mb.build()
+
+
+## جعبه‌ای در مختصات محلی مبلمان (محور z محلی = «جلو»)؛ با چرخش r×۹۰° به اتاق برده می‌شود.
+static func _fbox(mb, ox: float, oz: float, r: int, lc: Vector3, ls: Vector3, col: Color) -> void:
+	var c := Vector2(lc.x, lc.z)
+	var sz := Vector2(ls.x, ls.z)
+	for i in r:
+		c = Vector2(c.y, -c.x)    # ۹۰° چرخش
+		sz = Vector2(sz.y, sz.x)
+	mb.add_box(Vector3(ox + c.x, lc.y, oz + c.y), Vector3(sz.x, ls.y, sz.y), col)
+
+
+static func _furn_piece(mb, t: String, x: float, z: float, r: int) -> void:
+	match t:
+		"bed":
+			_fbox(mb, x, z, r, Vector3(0, 0.3, 0), Vector3(2.0, 0.6, 1.0), Color("7a5230"))
+			_fbox(mb, x, z, r, Vector3(0, 0.7, 0), Vector3(1.9, 0.2, 0.95), Color("e8e0d0"))
+			_fbox(mb, x, z, r, Vector3(-0.75, 0.85, 0), Vector3(0.4, 0.2, 0.7), Color("9ac0e0"))
+		"table":
+			_fbox(mb, x, z, r, Vector3(0, 0.75, 0), Vector3(1.6, 0.1, 1.0), Color("7a5230"))
+			for sx in [-0.7, 0.7]:
+				for sz in [-0.4, 0.4]:
+					_fbox(mb, x, z, r, Vector3(sx, 0.35, sz), Vector3(0.1, 0.7, 0.1), Color("5c3f26"))
+		"chair":
+			_fbox(mb, x, z, r, Vector3(0, 0.4, 0), Vector3(0.6, 0.1, 0.6), Color("a67c52"))
+			_fbox(mb, x, z, r, Vector3(0, 0.75, -0.25), Vector3(0.6, 0.6, 0.1), Color("a67c52"))
+			for sx in [-0.25, 0.25]:
+				for sz in [-0.25, 0.25]:
+					_fbox(mb, x, z, r, Vector3(sx, 0.2, sz), Vector3(0.08, 0.4, 0.08), Color("5c3f26"))
+		"sofa":
+			_fbox(mb, x, z, r, Vector3(0, 0.25, 0), Vector3(2.0, 0.5, 0.9), Color("4f6d9a"))
+			_fbox(mb, x, z, r, Vector3(0, 0.75, -0.35), Vector3(2.0, 0.6, 0.2), Color("3f5a82"))
+			_fbox(mb, x, z, r, Vector3(-0.95, 0.55, 0), Vector3(0.2, 0.3, 0.9), Color("3f5a82"))
+			_fbox(mb, x, z, r, Vector3(0.95, 0.55, 0), Vector3(0.2, 0.3, 0.9), Color("3f5a82"))
+		"shelf":
+			_fbox(mb, x, z, r, Vector3(0, 1.0, 0), Vector3(1.4, 2.0, 0.5), Color("5c3f26"))
+			for y in [0.5, 1.0, 1.5]:
+				_fbox(mb, x, z, r, Vector3(0, y, 0.05), Vector3(1.2, 0.3, 0.4), Color("e8b04a") if y != 1.0 else Color("7fb069"))
+		"lamp":
+			_fbox(mb, x, z, r, Vector3(0, 0.6, 0), Vector3(0.1, 1.2, 0.1), Color("3b3b3b"))
+			_fbox(mb, x, z, r, Vector3(0, 1.3, 0), Vector3(0.45, 0.35, 0.45), Color("f6c445"))
+		"plant":
+			_fbox(mb, x, z, r, Vector3(0, 0.2, 0), Vector3(0.4, 0.4, 0.4), Color("8a4a35"))
+			_fbox(mb, x, z, r, Vector3(0, 0.65, 0), Vector3(0.45, 0.5, 0.45), Color("4f9a4a"))
+		"rug":
+			_fbox(mb, x, z, r, Vector3(0, 0.03, 0), Vector3(2.0, 0.06, 1.4), Color("b4523a"))

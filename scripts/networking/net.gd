@@ -171,6 +171,24 @@ func c2s_npc_sell(npc_id: int, item: String, n: int) -> void:
 
 
 @rpc("any_peer", "call_remote", "reliable")
+func c2s_npc_buy(npc_id: int, item: String, n: int) -> void:
+	if server:
+		server.on_npc_buy(multiplayer.get_remote_sender_id(), npc_id, item, n)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func c2s_furn_place(type: String, x: float, z: float, rot: int) -> void:
+	if server:
+		server.on_furn_place(multiplayer.get_remote_sender_id(), type, x, z, rot)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func c2s_furn_remove(idx: int) -> void:
+	if server:
+		server.on_furn_remove(multiplayer.get_remote_sender_id(), idx)
+
+
+@rpc("any_peer", "call_remote", "reliable")
 func c2s_minigame_start() -> void:
 	if server:
 		server.on_minigame_start(multiplayer.get_remote_sender_id())
@@ -284,6 +302,12 @@ func s2c_world(settings: Dictionary) -> void:
 func s2c_inside(building_id: int) -> void:
 	if client:
 		client.on_inside(building_id)
+
+
+@rpc("authority", "call_remote", "reliable")
+func s2c_furn(data: Dictionary) -> void:
+	if client:
+		client.on_furn(data)
 
 
 @rpc("authority", "call_remote", "reliable")

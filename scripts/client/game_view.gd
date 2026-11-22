@@ -36,6 +36,7 @@ var env: Environment
 var _rain: CPUParticles3D
 ## داخل ساختمان: اتاق بالای آسمان شهر ساخته می‌شود تا با زمین و آب قاطی نشود.
 var inside_id: int = 0
+var _furn_mesh: MeshInstance3D
 var _interior: Node3D
 var _interior_origin: Vector3 = Vector3(FWConst.CITY_SIZE * 0.5, 200.0, FWConst.CITY_SIZE * 0.5)
 var _outside_pos: Vector3 = Vector3.ZERO
@@ -157,6 +158,7 @@ func setup(game_client, quality_level: int) -> void:
 	client.stocks_changed.connect(_refresh_stock_labels)
 	client.teleported.connect(_on_teleported)
 	client.inside_changed.connect(_on_inside_changed)
+	client.furn_changed.connect(_refresh_furniture)
 	_ghost = MeshInstance3D.new()
 	_ghost.visible = false
 	add_child(_ghost)
@@ -1114,6 +1116,9 @@ func _enter_interior(id: int) -> void:
 	mi.mesh = InteriorMesh.get_mesh(type)
 	mi.material_override = _bmat
 	_interior.add_child(mi)
+	_furn_mesh = MeshInstance3D.new()
+	_furn_mesh.material_override = _bmat
+	_interior.add_child(_furn_mesh)
 	var lamp := OmniLight3D.new()
 	lamp.position = Vector3(0, 3.0, 0.5)
 	lamp.omni_range = 16.0
@@ -1128,9 +1133,21 @@ func _enter_interior(id: int) -> void:
 	cam.snap(cam.focus)
 
 
+## مش مبلمان را از فهرست فعلی کلاینت دوباره می‌سازد.
+func _refresh_furniture() -> void:
+	if _furn_mesh != null and is_instance_valid(_furn_mesh):
+		_furn_mesh.mesh = InteriorMesh.furniture_mesh(client.furn)
+
+
+## موقعیت بازیکن نسبت به مرکز اتاق (x, z) هنگام بودن داخل ساختمان.
+func room_pos() -> Vector2:
+	return Vector2(my_pos.x - _interior_origin.x, my_pos.z - _interior_origin.z)
+
+
 func _exit_interior() -> void:
 	if inside_id == 0:
 		return
+	_furn_mesh = null
 	inside_id = 0
 	_apply_perspective()
 	if _interior != null:

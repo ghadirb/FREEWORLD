@@ -44,6 +44,8 @@ func _init() -> void:
 	test_exploration()
 	test_npc_friendship()
 	test_npc_sell()
+	test_npc_buy()
+	test_furniture()
 	test_minigame()
 	test_disasters()
 	test_race()
@@ -1213,6 +1215,102 @@ func test_npc_sell() -> void:
 	check(cs.npc_sell("trader", id, "wood", 1, at)["error"] == "npc_broke", "a broke NPC cannot buy")
 	var cs2 = CityState.from_dict(cs.to_dict())
 	check(cs2 != null and int(cs2.accounts["trader"]["money"]) == int(acc["money"]), "trade results survive save/load")
+
+
+func test_npc_buy() -> void:
+	print("== Buying from NPCs ==")
+	var NpcSim = load("res://scripts/server/npc_sim.gd")
+	var cs = CityState.new(4244)
+	_login(cs, "buyer")
+	NpcSim.ensure_npcs(cs)
+	var npc: Dictionary = cs.npcs[0]
+	var id: int = int(npc["id"])
+	var at := Vector2(float(npc["x"]), float(npc["z"]))
+	var acc: Dictionary = cs.accounts["buyer"]
+	acc["money"] = 1000
+	acc["inv"]["wood"] = 0
+	check(cs.npc_buy("buyer", 99, "wood", 1, at)["error"] == "no_npc", "buying from an unknown NPC is rejected")
+	check(cs.npc_buy("buyer", id, "wood", 1, at + Vector2(FWConst.NPC_TALK_RANGE + 2.0, 0))["error"] == "too_far", "buying needs closeness")
+	check(cs.npc_buy("buyer", id, "gold", 1, at)["error"] == "bad_request", "an NPC does not sell gold")
+	check(cs.npc_buy("buyer", id, "wood", 0, at)["error"] == "bad_request", "zero amount is rejected")
+	check(cs.npc_buy("buyer", id, "wood", FWConst.NPC_TRADE_MAX + 1, at)["error"] == "bad_request", "huge amount is rejected")
+	var unit := FWConst.npc_buy_price("wood", 0)
+	check(unit < CityState.buy_price("wood"), "an NPC is cheaper than the public shop")
+	var npc_m0: int = int(npc["money"])
+	var r: Dictionary = cs.npc_buy("buyer", id, "wood", 5, at)
+	check(r["ok"] and r["count"] == 5 and r["total"] == unit * 5, "a stranger pays the NPC price")
+	check(int(acc["money"]) == 1000 - unit * 5 and int(acc["inv"]["wood"]) == 5, "money and items move")
+	check(int(npc["money"]) == npc_m0 + unit * 5, "the NPC receives the payment")
+	acc["friends"] = {str(id): FWConst.FRIEND_LEVELS[1]}
+	check(FWConst.npc_buy_price("wood", 2) < unit, "a best friend gets a discount")
+	var r2: Dictionary = cs.npc_buy("buyer", id, "wood", FWConst.NPC_TRADE_MAX, at)
+	check(r2["ok"] and r2["count"] == FWConst.NPC_STOCK_PER_DAY - 5, "the daily stock caps what you can buy")
+	check(cs.npc_buy("buyer", id, "wood", 1, at)["error"] == "npc_out_of_stock", "sold-out items are refused")
+	check(cs.npc_buy("buyer", id, "stone", 1, at)["ok"], "stock is tracked per item")
+	var cs2 = CityState.from_dict(cs.to_dict())
+	check(cs2 != null and cs2.npc_buy("buyer", id, "wood", 1, at)["error"] == "npc_out_of_stock", "the daily stock survives save/load")
+	cs2.day_count += 1
+	check(cs2.npc_buy("buyer", id, "wood", 1, at)["ok"], "stock refills on a new day")
+	acc["money"] = 0
+	check(cs.npc_buy("buyer", id, "clay", 1, at)["error"] == "no_money", "you cannot buy without coins")
+	acc["money"] = 5000
+	acc["inv"]["dirt"] = FWConst.ITEM_CAP
+	check(cs.npc_buy("buyer", id, "dirt", 1, at)["error"] == "inv_full", "a full bag is refused")
+
+
+func test_furniture() -> void:
+	print("== House furniture ==")
+	var cs = CityState.new(4245)
+	_login(cs, "home")
+	_login(cs, "thief")
+	cs.accounts["home"]["money"] = 5000
+	cs.place_building("home", 1, "house", 12, 14)
+	cs.place_building("home", 2, "shop", 20, 14)
+	var house: Dictionary = _first_of(cs, "house")
+	var shop: Dictionary = _first_of(cs, "shop")
+	var hid: int = int(house["id"])
+	var m0: int = int(cs.accounts["home"]["money"])
+	check(cs.furn_place("thief", hid, "bed", 0, -2, 0)["error"] == "forbidden", "only the owner can furnish a house")
+	check(cs.furn_place("home", int(shop["id"]), "bed", 0, -2, 0)["error"] == "not_house", "furniture only goes into houses")
+	check(cs.furn_place("home", hid, "piano", 0, 0, 0)["error"] == "bad_request", "unknown furniture is rejected")
+	check(cs.furn_place("home", hid, "bed", 0, 0, 7)["error"] == "bad_request", "a bad rotation is rejected")
+	check(cs.furn_place("home", hid, "bed", INF, 0, 0)["error"] == "bad_request", "non-finite positions are rejected")
+	var r: Dictionary = cs.furn_place("home", hid, "bed", -2.1, -2.8, 0)
+	check(r["ok"] and r["furn"].size() == 1, "a bed is placed")
+	check(int(cs.accounts["home"]["money"]) == m0 - int(FWConst.FURNITURE["bed"]["cost"]), "the price is charged")
+	check(is_equal_approx(float(r["furn"][0]["x"]), -2.0), "positions snap to the grid")
+	check(cs.furn_place("home", hid, "bed", -2.0, -2.8, 0)["error"] == "furn_overlap", "pieces cannot overlap")
+	check(cs.furn_place("home", hid, "rug", -2.0, -2.8, 0)["ok"], "a rug can lie under a bed")
+	check(cs.furn_place("home", hid, "rug", -2.0, -2.8, 0)["error"] == "furn_overlap", "two rugs cannot overlap")
+	check(cs.furn_place("home", hid, "sofa", 3.5, 0, 0)["error"] == "furn_out", "pieces cannot leave the room")
+	check(cs.furn_place("home", hid, "sofa", 3.25, 0, 1)["ok"], "rotation swaps width and depth")
+	check(cs.furn_place("home", hid, "table", 0, 3.0, 0)["error"] == "furn_door", "the doorway stays clear")
+	cs.accounts["home"]["money"] = 5
+	check(cs.furn_place("home", hid, "table", 0, 0, 0)["error"] == "no_money", "furniture needs coins")
+	cs.accounts["home"]["money"] = 5000
+	var n0: int = cs.furn_of(hid).size()
+	for i in FWConst.FURN_MAX:
+		cs.furn_place("home", hid, "plant", -3.5 + float(i % 8) * 0.5, -1.0 + float(i / 8) * 0.75, 0)
+	check(cs.furn_of(hid).size() == FWConst.FURN_MAX, "the per-house cap is enforced")
+	check(cs.furn_place("home", hid, "lamp", 2.0, 2.0, 0)["error"] == "furn_full", "a full house is refused")
+	var m1: int = int(cs.accounts["home"]["money"])
+	check(cs.furn_remove("thief", hid, 0)["error"] == "forbidden", "only the owner can remove furniture")
+	check(cs.furn_remove("home", hid, 99)["error"] == "bad_request", "a bad index is rejected")
+	var rr: Dictionary = cs.furn_remove("home", hid, 0)
+	check(rr["ok"] and int(cs.accounts["home"]["money"]) == m1 + int(FWConst.FURNITURE["bed"]["cost"]) / 2, "removing refunds half")
+	var cs2 = CityState.from_dict(cs.to_dict())
+	check(cs2 != null and cs2.furn_of(hid) == cs.furn_of(hid), "furniture survives save/load")
+	var d: Dictionary = cs.to_dict()
+	for b in d["buildings"]:
+		if int(b["id"]) == hid:
+			b["furn"] = [{"t": "piano", "x": 0, "z": 0, "r": 0}, {"t": "bed", "x": 99, "z": 0, "r": 0}, {"t": "lamp", "x": 1.0, "z": 1.0, "r": 5}]
+	var cs3 = CityState.from_dict(d)
+	check(cs3 != null and cs3.furn_of(hid).size() == 1, "corrupt furniture is dropped when loading")
+	cs.creative = true
+	var mc: int = int(cs.accounts["home"]["money"])
+	cs.furn_remove("home", hid, 0)
+	cs.furn_place("home", hid, "sofa", 0.0, -3.0, 0)
+	check(int(cs.accounts["home"]["money"]) == mc, "creative mode is free")
 
 
 func test_npc_friendship() -> void:

@@ -19,6 +19,7 @@ signal stocks_changed
 signal market_changed
 signal world_changed
 signal inside_changed(building_id: int)
+signal furn_changed
 signal energy_changed
 signal job_changed
 signal money_changed(money: int)
@@ -58,6 +59,7 @@ var wheat_price: float = FWConst.WHEAT_BASE_PRICE
 var bread_price: float = FWConst.BREAD_BASE_PRICE
 var job_id: int = 0
 var inside_id: int = 0
+var furn: Array = []   # مبلمان خانهٔ فعلی: [{t,x,z,r}]
 ## معدن زیرزمینی: شناسهٔ معدنی که داخلش هستیم ("" = بیرون) و سنگ‌های برداشت‌شدهٔ آن (idx -> true).
 var mine_id: String = ""
 var mine_depleted: Dictionary = {}
@@ -455,6 +457,28 @@ func npc_sell(npc_id: int, item: String, n: int) -> void:
 		_tx("c2s_npc_sell", [npc_id, item, n])
 
 
+func npc_buy(npc_id: int, item: String, n: int) -> void:
+	if is_logged_in:
+		_tx("c2s_npc_buy", [npc_id, item, n])
+
+
+func furn_place(type: String, x: float, z: float, rot: int) -> void:
+	if is_logged_in:
+		_tx("c2s_furn_place", [type, x, z, rot])
+
+
+func furn_remove(idx: int) -> void:
+	if is_logged_in:
+		_tx("c2s_furn_remove", [idx])
+
+
+func on_furn(data: Dictionary) -> void:
+	if int(data.get("id", 0)) != inside_id:
+		return
+	furn = data.get("items", [])
+	furn_changed.emit()
+
+
 func trade(item: String, n: int, buy: bool) -> void:
 	if is_logged_in:
 		_tx("c2s_trade", [item, n, buy])
@@ -678,6 +702,8 @@ func leave_building() -> void:
 
 func on_inside(id: int) -> void:
 	inside_id = id
+	if id == 0:
+		furn = []
 	inside_changed.emit(id)
 
 

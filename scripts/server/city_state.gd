@@ -1374,6 +1374,130 @@ func npc_sell(player_name: String, npc_id: int, item: String, n: int, pos: Vecto
 	return {"ok": true, "npc": str(npc["name"]), "item": item, "count": count, "total": total, "money": int(acc["money"])}
 
 
+## سهمیهٔ باقی‌ماندهٔ فروش روزانهٔ یک NPC برای کالا (روز تازه ← سهمیه از نو).
+func _npc_stock_left(npc: Dictionary, item: String) -> int:
+	if int(npc.get("stock_day", -1)) != day_count:
+		npc["stock_day"] = day_count
+		npc["sold"] = {}
+	var sold: Dictionary = npc.get("sold", {})
+	return FWConst.NPC_STOCK_PER_DAY - int(sold.get(item, 0))
+
+
+## خرید از NPC نزدیک: قیمت ثابت ارزان‌تر از فروشگاه، با تخفیف دوستی و سهمیهٔ روزانه. پول به NPC می‌رسد.
+func npc_buy(player_name: String, npc_id: int, item: String, n: int, pos: Vector2) -> Dictionary:
+	if not accounts.has(player_name):
+		return {"ok": false, "error": "no_account"}
+	if not FWConst.NPC_SELLS.has(item) or n < 1 or n > FWConst.NPC_TRADE_MAX:
+		return {"ok": false, "error": "bad_request"}
+	var npc: Dictionary = {}
+	for nn in npcs:
+		if int(nn["id"]) == npc_id:
+			npc = nn
+			break
+	if npc.is_empty():
+		return {"ok": false, "error": "no_npc"}
+	if pos.distance_to(Vector2(float(npc["x"]), float(npc["z"]))) > FWConst.NPC_TALK_RANGE:
+		return {"ok": false, "error": "too_far"}
+	var left := _npc_stock_left(npc, item)
+	if left < 1:
+		return {"ok": false, "error": "npc_out_of_stock"}
+	var acc: Dictionary = accounts[player_name]
+	var lv := friend_level(friendship_of(acc, npc_id))
+	var unit := FWConst.npc_buy_price(item, lv)
+	var count := mini(n, left)
+	if not creative:
+		count = mini(count, int(acc["money"]) / unit)
+	if count < 1:
+		return {"ok": false, "error": "no_money"}
+	if int(acc["inv"].get(item, 0)) + count > FWConst.ITEM_CAP:
+		count = FWConst.ITEM_CAP - int(acc["inv"].get(item, 0))
+		if count < 1:
+			return {"ok": false, "error": "inv_full"}
+	var total := 0 if creative else unit * count
+	acc["money"] = int(acc["money"]) - total
+	npc["money"] = int(npc["money"]) + total
+	acc["inv"][item] = int(acc["inv"].get(item, 0)) + count
+	var sold: Dictionary = npc["sold"]
+	sold[item] = int(sold.get(item, 0)) + count
+	_log(player_name, "npc_buy", {"npc": npc_id, "item": item, "n": count, "total": total})
+	return {"ok": true, "npc": str(npc["name"]), "item": item, "count": count, "total": total, "money": int(acc["money"])}
+
+
+## مبلمان یک خانه (کپی). برای ساختمان بدون مبلمان آرایهٔ خالی.
+func furn_of(id: int) -> Array:
+	if not buildings.has(id):
+		return []
+	return (buildings[id].get("furn", []) as Array).duplicate(true)
+
+
+func _own_house(player_name: String, id: int) -> String:
+	if not accounts.has(player_name) or not buildings.has(id):
+		return "no_building"
+	var b: Dictionary = buildings[id]
+	if str(b["type"]) != "house":
+		return "not_house"
+	if str(b["owner"]) != player_name:
+		return "forbidden"
+	return ""
+
+
+## چیدن یک مبلمان در خانهٔ خود. x,z مختصات نسبت به مرکز اتاق؛ rot ۰..۳ (هر واحد ۹۰°).
+## سرور به ۰٫۲۵ متر گرد می‌کند، جا (دیوار، هم‌پوشانی، جلوی در) و هزینه را می‌سنجد.
+func furn_place(player_name: String, id: int, type: String, x: float, z: float, rot: int) -> Dictionary:
+	var err := _own_house(player_name, id)
+	if err != "":
+		return {"ok": false, "error": err}
+	if not FWConst.FURNITURE.has(type) or not (is_finite(x) and is_finite(z)) or rot < 0 or rot > 3:
+		return {"ok": false, "error": "bad_request"}
+	var b: Dictionary = buildings[id]
+	var list: Array = b.get("furn", [])
+	if list.size() >= FWConst.FURN_MAX:
+		return {"ok": false, "error": "furn_full"}
+	var sx := snappedf(x, FWConst.FURN_SNAP)
+	var sz := snappedf(z, FWConst.FURN_SNAP)
+	var h := FWConst.furn_half(type, rot)
+	if absf(sx) + h.x > FWConst.FURN_BOUND or absf(sz) + h.y > FWConst.FURN_BOUND:
+		return {"ok": false, "error": "furn_out"}
+	var flat: bool = bool(FWConst.FURNITURE[type].get("flat", false))
+	for e in list:
+		var eh := FWConst.furn_half(str(e["t"]), int(e["r"]))
+		var eflat: bool = bool(FWConst.FURNITURE[str(e["t"])].get("flat", false))
+		if eflat != flat:
+			continue   # فرش زیر مبلمان قرار می‌گیرد
+		if absf(sx - float(e["x"])) < h.x + eh.x - 0.001 and absf(sz - float(e["z"])) < h.y + eh.y - 0.001:
+			return {"ok": false, "error": "furn_overlap"}
+	if not flat and absf(sx) < h.x + 1.0 and sz + h.y > 2.4:
+		return {"ok": false, "error": "furn_door"}   # جلوی در باید باز بماند
+	var acc: Dictionary = accounts[player_name]
+	var cost := 0 if creative else int(FWConst.FURNITURE[type]["cost"])
+	if int(acc["money"]) < cost:
+		return {"ok": false, "error": "no_money"}
+	acc["money"] = int(acc["money"]) - cost
+	list.append({"t": type, "x": sx, "z": sz, "r": rot})
+	b["furn"] = list
+	_log(player_name, "furn_place", {"id": id, "t": type, "x": sx, "z": sz, "r": rot})
+	return {"ok": true, "furn": furn_of(id), "money": int(acc["money"])}
+
+
+## برداشتن مبلمان شمارهٔ idx از خانهٔ خود؛ نیمی از قیمت برمی‌گردد.
+func furn_remove(player_name: String, id: int, idx: int) -> Dictionary:
+	var err := _own_house(player_name, id)
+	if err != "":
+		return {"ok": false, "error": err}
+	var b: Dictionary = buildings[id]
+	var list: Array = b.get("furn", [])
+	if idx < 0 or idx >= list.size():
+		return {"ok": false, "error": "bad_request"}
+	var t := str(list[idx]["t"])
+	list.remove_at(idx)
+	b["furn"] = list
+	var acc: Dictionary = accounts[player_name]
+	var refund := 0 if creative else int(floor(float(FWConst.FURNITURE[t]["cost"]) * FWConst.FURN_REFUND))
+	acc["money"] = int(acc["money"]) + refund
+	_log(player_name, "furn_remove", {"id": id, "t": t, "refund": refund})
+	return {"ok": true, "furn": furn_of(id), "money": int(acc["money"])}
+
+
 ## شروع یک دور مینی‌بازی سکه‌یاب برای بازیکن.
 func minigame_start(player_name: String, pos: Vector2) -> Dictionary:
 	if not accounts.has(player_name):
@@ -2025,6 +2149,37 @@ func _blocks_to_list() -> Array:
 
 
 ## داده‌ی بارگذاری‌شده را اعتبارسنجی می‌کند. در صورت خرابی null برمی‌گرداند.
+## مبلمان ذخیره‌شده را پاک‌سازی می‌کند: نوع ناشناخته، خارج از اتاق یا بیش از سقف دور ریخته می‌شود.
+static func _load_furn(v: Variant) -> Array:
+	var out: Array = []
+	if not (v is Array):
+		return out
+	for e in v:
+		if out.size() >= FWConst.FURN_MAX:
+			break
+		if not (e is Dictionary) or not FWConst.FURNITURE.has(str(e.get("t", ""))):
+			continue
+		var r := int(e.get("r", 0)) % 4
+		var x := float(e.get("x", 0.0))
+		var z := float(e.get("z", 0.0))
+		if not (is_finite(x) and is_finite(z)):
+			continue
+		var h := FWConst.furn_half(str(e["t"]), r)
+		if absf(x) + h.x > FWConst.FURN_BOUND + 0.01 or absf(z) + h.y > FWConst.FURN_BOUND + 0.01:
+			continue
+		out.append({"t": str(e["t"]), "x": x, "z": z, "r": r})
+	return out
+
+
+static func _load_sold(v: Variant) -> Dictionary:
+	var out: Dictionary = {}
+	if v is Dictionary:
+		for k in v:
+			if FWConst.NPC_SELLS.has(str(k)):
+				out[str(k)] = clampi(int(v[k]), 0, FWConst.NPC_STOCK_PER_DAY)
+	return out
+
+
 static func from_dict(d: Dictionary):
 	for k in ["save_version", "city_id", "seed", "accounts", "buildings", "next_building_id"]:
 		if not d.has(k):
@@ -2098,6 +2253,7 @@ static func from_dict(d: Dictionary):
 			"id": int(b["id"]), "type": str(b["type"]), "owner": str(b["owner"]),
 			"cx": int(b["cx"]), "cz": int(b["cz"]), "stock": float(b.get("stock", 0.0)),
 			"prog": float(b.get("prog", 0.0)),
+			"furn": _load_furn(b.get("furn", null)) if str(b["type"]) == "house" else [],
 		}
 		cs.buildings[nb["id"]] = nb
 		for c in Placement.footprint(nb["type"], nb["cx"], nb["cz"]):
@@ -2112,6 +2268,8 @@ static func from_dict(d: Dictionary):
 				"income_day": int(n.get("income_day", -1)),
 				"bread_day": int(n.get("bread_day", -1)),
 				"goods_day": int(n.get("goods_day", -1)),
+				"stock_day": int(n.get("stock_day", -1)),
+				"sold": _load_sold(n.get("sold", null)),
 			})
 	var bl = d.get("blocks", [])
 	cs.track_nav = false

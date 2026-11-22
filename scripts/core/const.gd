@@ -1,7 +1,7 @@
 extends RefCounted
 ## ثابت‌های مشترک بین سرور و کلاینت.
 
-const PROTOCOL_VERSION := 22
+const PROTOCOL_VERSION := 23
 # ترافیک شبکه با DTLS رمز می‌شود (نسخهٔ ۴ به بعد). فقط برای عیب‌یابی خاموش شود.
 const USE_DTLS := true
 const DEFAULT_PORT := 7777
@@ -193,6 +193,31 @@ const FRIEND_REWARD := [0, 10, 25]       # پاداش روزانهٔ صحبت (�
 # فروش کالا به NPC: قیمت بازار + پاداش دوستی، از پول خود NPC پرداخت می‌شود (قیمت بازار را پایین نمی‌آورد)
 const NPC_TRADE_BONUS := [0.0, 0.10, 0.25]
 const NPC_TRADE_MAX := 50
+
+# خرید از NPC (پروتکل ۲۳): ارزان‌تر از فروشگاه عمومی (×۱٫۸) ولی با سهمیهٔ روزانهٔ هر NPC؛ دوستان تخفیف می‌گیرند.
+# پول خریدار به NPC می‌رسد (و NPC می‌تواند دوباره با آن از بازیکنان بخرد).
+const NPC_BUY_MARKUP := 1.4
+const NPC_BUY_DISCOUNT := [0.0, 0.05, 0.15]
+const NPC_STOCK_PER_DAY := 20
+const NPC_SELLS := ["wood", "stone", "clay", "dirt", "sand", "brick", "glass", "coal"]
+
+# مبلمان خانه (پروتکل ۲۳): فقط صاحب خانه، داخل خانهٔ خودش؛ سرور هزینه و جا را می‌سنجد.
+# size = [عرض x, عمق z] به متر؛ اتاق ۸×۸ است و حرکت‌پذیری بازیکن تا ±۳٫۳ متر.
+const FURN_MAX := 16
+const FURN_SNAP := 0.25
+const FURN_BOUND := 3.8
+const FURN_REFUND := 0.5
+const FURNITURE_ORDER := ["bed", "table", "chair", "sofa", "shelf", "lamp", "plant", "rug"]
+const FURNITURE := {
+	"bed": {"cost": 80, "size": [2.0, 1.0]},
+	"table": {"cost": 40, "size": [1.6, 1.0]},
+	"chair": {"cost": 15, "size": [0.6, 0.6]},
+	"sofa": {"cost": 70, "size": [2.0, 0.9]},
+	"shelf": {"cost": 45, "size": [1.4, 0.5]},
+	"lamp": {"cost": 20, "size": [0.5, 0.5]},
+	"plant": {"cost": 12, "size": [0.5, 0.5]},
+	"rug": {"cost": 25, "size": [2.0, 1.4], "flat": true},
+}
 # مینی‌بازی «سکه‌یاب»: ۲۰ سکه دور بازیکن، ۶۰ ثانیه. جایزه فقط برای چند دور اول هر روز بازی (جلوگیری از پول‌سازی بی‌پایان).
 const MINIGAME_COINS := 20
 const MINIGAME_TIME := 60.0
@@ -310,6 +335,20 @@ static func is_admin(role: String) -> bool:
 
 static func building_size(type: String) -> Array:
 	return BUILDING_TYPES[type]["size"]
+
+
+## قیمت خرید یک واحد از NPC در سطح دوستی lv (۰..۲). قیمت ثابت و مستقل از بازار است.
+static func npc_buy_price(item: String, lv: int) -> int:
+	var d: float = float(NPC_BUY_DISCOUNT[clampi(lv, 0, NPC_BUY_DISCOUNT.size() - 1)])
+	return maxi(1, int(ceil(float(ITEMS[item]) * NPC_BUY_MARKUP * (1.0 - d))))
+
+
+## نیم‌ابعاد (x, z) مبلمان با درنظرگرفتن چرخش r (۰..۳؛ فرد = جابه‌جایی عرض و عمق).
+static func furn_half(type: String, r: int) -> Vector2:
+	var sz: Array = FURNITURE[type]["size"]
+	var w: float = float(sz[0]) * 0.5
+	var d: float = float(sz[1]) * 0.5
+	return Vector2(d, w) if r % 2 == 1 else Vector2(w, d)
 
 
 static func block_passable(type: String) -> bool:
