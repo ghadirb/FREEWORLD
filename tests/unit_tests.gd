@@ -80,6 +80,7 @@ func test_world() -> void:
 	var a := WorldGen.new(777)
 	var b := WorldGen.new(777)
 	var c := WorldGen.new(778)
+	var same := true
 	var differs := false
 	for i in range(50):
 		var x := i * 7.3
