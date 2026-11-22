@@ -2198,6 +2198,24 @@ func test_creative() -> void:
 	cr.accounts["cora"]["energy"] = 5.0
 	cr.energy_step(100.0, {"cora": 0})
 	check(float(cr.accounts["cora"]["energy"]) == FWConst.ENERGY_MAX, "creative: energy never drains")
+	# پول: در خلاقانه هیچ‌چیز به سکه وابسته نیست و سکه نه کم می‌شود نه زیاد
+	var shop_item: String = str(FWConst.ITEMS.keys()[0])
+	var rs: Dictionary = sv.trade("sam", shop_item, 1, true)
+	check(not rs["ok"] and rs["error"] == "no_money", "survival: shop needs coins")
+	var rbuy: Dictionary = cr.trade("cora", shop_item, 3, true)
+	check(rbuy["ok"] and int(cr.accounts["cora"]["money"]) == 0 and int(cr.accounts["cora"]["inv"].get(shop_item, 0)) >= 3, "creative: shop is free with zero coins")
+	var rsell: Dictionary = cr.trade("cora", shop_item, 2, false)
+	check(rsell["ok"] and int(cr.accounts["cora"]["money"]) == 0, "creative: selling never adds coins")
+	var hid: int = int(rb["building"]["id"])
+	cr.remove_building("cora", hid)
+	check(int(cr.accounts["cora"]["money"]) == 0, "creative: demolish gives no refund coins")
+	_login(cr, "dan")
+	cr.accounts["dan"]["money"] = 0
+	cr.accounts["cora"]["inv"][shop_item] = 5
+	var ro: Dictionary = cr.make_offer("cora", "dan", shop_item, 2, 500)
+	if ro.get("ok", false):
+		var ra: Dictionary = cr.answer_offer("dan", int(ro["id"]), true)
+		check(ra["ok"] and int(cr.accounts["dan"]["money"]) == 0 and int(cr.accounts["cora"]["money"]) == 0, "creative: player trade moves items but no coins")
 	check(bool(cr.world_public()["creative"]) and not bool(sv.world_public()["creative"]), "welcome info carries the mode")
 	var back = CityState.from_dict(JSON.parse_string(JSON.stringify(cr.to_dict())))
 	check(back != null and back.creative and not CityState.from_dict(JSON.parse_string(JSON.stringify(sv.to_dict()))).creative, "mode survives save and load")

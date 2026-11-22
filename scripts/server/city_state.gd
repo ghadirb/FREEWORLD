@@ -282,6 +282,26 @@ func money_of(player_name: String) -> int:
 	return int(accounts[player_name]["money"])
 
 
+## پرداخت از حساب بازیکن. در جهان خلاقانه پول بی‌نهایت است: همیشه موفق، و چیزی کم نمی‌شود.
+func _can_pay(acc: Dictionary, amount: int) -> bool:
+	return creative or int(acc["money"]) >= amount
+
+
+func _pay(acc: Dictionary, amount: int) -> bool:
+	if creative:
+		return true
+	if int(acc["money"]) < amount:
+		return false
+	acc["money"] = int(acc["money"]) - amount
+	return true
+
+
+## درآمد بازیکن. در جهان خلاقانه سکه‌ای اضافه نمی‌شود (بازی به سکه وابسته نیست).
+func _gain(acc: Dictionary, amount: int) -> void:
+	if not creative:
+		acc["money"] = int(acc["money"]) + amount
+
+
 func _log(actor: String, action: String, detail: Dictionary) -> void:
 	_audit_counter += 1
 	audit.append({"n": _audit_counter, "t": int(world_time), "actor": actor, "action": action, "detail": detail})
@@ -314,9 +334,8 @@ func place_building(player_name: String, req_id: int, type: String, cx: int, cz:
 	if not creative and not FWConst.is_admin(acc["role"]) and count_owned(player_name) >= FWConst.MAX_BUILDINGS_PER_PLAYER:
 		return {"ok": false, "error": "limit"}
 	var cost := 0 if creative else int(FWConst.BUILDING_TYPES[type]["cost"])
-	if int(acc["money"]) < cost:
+	if not _pay(acc, cost):
 		return {"ok": false, "error": "no_money"}
-	acc["money"] = int(acc["money"]) - cost
 	var b := {
 		"id": next_building_id,
 		"type": type,
@@ -351,7 +370,7 @@ func remove_building(player_name: String, id: int) -> Dictionary:
 	var refund := int(int(FWConst.BUILDING_TYPES[b["type"]]["cost"]) * FWConst.REFUND_RATIO)
 	var owner_name: String = b["owner"]
 	if accounts.has(owner_name):
-		accounts[owner_name]["money"] = int(accounts[owner_name]["money"]) + refund
+		_gain(accounts[owner_name], refund)
 	if not is_owner:
 		# اقدام مدیر روی ملک دیگران حتماً در گزارش ثبت می‌شود.
 		_log(player_name, "admin_remove", {"id": id, "owner": owner_name, "type": b["type"]})
@@ -401,7 +420,7 @@ func collect(player_name: String, id: int) -> Dictionary:
 			prices[good] = maxf(float(lv["min"]), float(prices[good]) - float(lv["drop"]))
 	b["stock"] = float(b["stock"]) - n
 	market[good] = minf(FWConst.MARKET_MAX_STOCK, float(market[good]) + n)
-	accounts[player_name]["money"] = int(accounts[player_name]["money"]) + earned
+	_gain(accounts[player_name], earned)
 	_log(player_name, "collect", {"id": id, "good": good, "count": n, "earned": earned})
 	return {"ok": true, "good": good, "count": n, "earned": earned, "money": accounts[player_name]["money"], "building": b}
 
@@ -485,9 +504,8 @@ func work_step(delta: float, positions: Dictionary) -> Array:
 			continue
 		acc["work_acc"] = float(acc["work_acc"]) - wage_interval
 		var employer: String = b["owner"]
-		if accounts.has(employer) and int(accounts[employer]["money"]) >= FWConst.WAGE_AMOUNT:
-			accounts[employer]["money"] = int(accounts[employer]["money"]) - FWConst.WAGE_AMOUNT
-			acc["money"] = int(acc["money"]) + FWConst.WAGE_AMOUNT
+		if accounts.has(employer) and _pay(accounts[employer], FWConst.WAGE_AMOUNT):
+			_gain(acc, FWConst.WAGE_AMOUNT)
 			_log(employer, "wage", {"worker": name, "amount": FWConst.WAGE_AMOUNT})
 			events.append({"worker": name, "employer": employer, "amount": FWConst.WAGE_AMOUNT})
 		else:
@@ -1327,8 +1345,11 @@ func npc_interact(player_name: String, npc_id: int, item: String, pos: Vector2) 
 		gain = FWConst.FRIEND_TALK_POINTS
 		var want: int = int(FWConst.FRIEND_REWARD[friend_level(pts)])
 		reward = mini(want, int(npc["money"]))
-		npc["money"] = int(npc["money"]) - reward
-		acc["money"] = int(acc["money"]) + reward
+		if creative:
+			reward = 0
+		else:
+			npc["money"] = int(npc["money"]) - reward
+			acc["money"] = int(acc["money"]) + reward
 	else:
 		if not FWConst.ITEMS.has(item) or int(acc["inv"].get(item, 0)) < 1:
 			return {"ok": false, "error": "no_items"}
@@ -1362,14 +1383,14 @@ func npc_sell(player_name: String, npc_id: int, item: String, n: int, pos: Vecto
 		return {"ok": false, "error": "no_items"}
 	var lv := friend_level(friendship_of(acc, npc_id))
 	var unit := maxi(1, int(floor(float(sell_price(item)) * (1.0 + float(FWConst.NPC_TRADE_BONUS[lv])))))
-	var afford := int(npc["money"]) / unit
+	var afford := n if creative else int(npc["money"]) / unit
 	var count := mini(n, afford)
 	if count < 1:
 		return {"ok": false, "error": "npc_broke"}
-	var total := unit * count
+	var total := 0 if creative else unit * count
 	npc["money"] = int(npc["money"]) - total
 	acc["inv"][item] = int(acc["inv"][item]) - count
-	acc["money"] = int(acc["money"]) + total
+	_gain(acc, total)
 	_log(player_name, "npc_sell", {"npc": npc_id, "item": item, "n": count, "total": total})
 	return {"ok": true, "npc": str(npc["name"]), "item": item, "count": count, "total": total, "money": int(acc["money"])}
 
@@ -1414,7 +1435,7 @@ func npc_buy(player_name: String, npc_id: int, item: String, n: int, pos: Vector
 		if count < 1:
 			return {"ok": false, "error": "inv_full"}
 	var total := 0 if creative else unit * count
-	acc["money"] = int(acc["money"]) - total
+	_pay(acc, total)
 	npc["money"] = int(npc["money"]) + total
 	acc["inv"][item] = int(acc["inv"].get(item, 0)) + count
 	var sold: Dictionary = npc["sold"]
@@ -1470,9 +1491,8 @@ func furn_place(player_name: String, id: int, type: String, x: float, z: float, 
 		return {"ok": false, "error": "furn_door"}   # جلوی در باید باز بماند
 	var acc: Dictionary = accounts[player_name]
 	var cost := 0 if creative else int(FWConst.FURNITURE[type]["cost"])
-	if int(acc["money"]) < cost:
+	if not _pay(acc, cost):
 		return {"ok": false, "error": "no_money"}
-	acc["money"] = int(acc["money"]) - cost
 	list.append({"t": type, "x": sx, "z": sz, "r": rot})
 	b["furn"] = list
 	_log(player_name, "furn_place", {"id": id, "t": type, "x": sx, "z": sz, "r": rot})
@@ -1493,7 +1513,7 @@ func furn_remove(player_name: String, id: int, idx: int) -> Dictionary:
 	b["furn"] = list
 	var acc: Dictionary = accounts[player_name]
 	var refund := 0 if creative else int(floor(float(FWConst.FURNITURE[t]["cost"]) * FWConst.FURN_REFUND))
-	acc["money"] = int(acc["money"]) + refund
+	_gain(acc, refund)
 	_log(player_name, "furn_remove", {"id": id, "t": t, "refund": refund})
 	return {"ok": true, "furn": furn_of(id), "money": int(acc["money"])}
 
@@ -1522,7 +1542,7 @@ func race_step(dt: float, positions: Dictionary) -> Array:
 		if ev["kind"] == "end":
 			var nm: String = ev["name"]
 			if int(ev["reward"]) > 0 and accounts.has(nm):
-				accounts[nm]["money"] = int(accounts[nm]["money"]) + int(ev["reward"])
+				_gain(accounts[nm], int(ev["reward"]))
 				_log(nm, "race_reward", {"time": ev["time"], "reward": ev["reward"]})
 			ev["money"] = money_of(nm)
 	return events
@@ -1535,7 +1555,7 @@ func minigame_step(dt: float, positions: Dictionary) -> Array:
 		if ev["kind"] == "end":
 			var nm: String = ev["name"]
 			if int(ev["reward"]) > 0 and accounts.has(nm):
-				accounts[nm]["money"] = int(accounts[nm]["money"]) + int(ev["reward"])
+				_gain(accounts[nm], int(ev["reward"]))
 				_log(nm, "minigame_reward", {"score": ev["score"], "reward": ev["reward"]})
 			ev["money"] = money_of(nm)
 	return events
@@ -1562,7 +1582,7 @@ func gather(player_name: String, rx: int, rz: int, tool: String, pos: Vector2) -
 		# صندوق گنج: مقدار پاداش قطعی از موقعیت گره (همه جا یکسان)، نه تصادفی سمت کلاینت.
 		var span: int = int(def["reward_max"]) - int(def["reward_min"]) + 1
 		var reward: int = int(def["reward_min"]) + int(world._h01(rx, rz, 8) * float(span))
-		acc["money"] = int(acc["money"]) + reward
+		_gain(acc, reward)
 		depleted[key] = float(def["respawn"])
 		_log(player_name, "treasure", {"rx": rx, "rz": rz, "reward": reward})
 		return {"ok": true, "treasure": true, "reward": reward, "money": int(acc["money"]), "rx": rx, "rz": rz}
@@ -1616,13 +1636,13 @@ func mine_gather(player_name: String, mine_id: String, idx: int, mpos: Vector2) 
 		return {"ok": true, "rested": true, "idx": idx}
 	if str(node["kind"]) == "hchest":
 		var hr: int = randi_range(int(FWConst.HOME_CHEST["reward_min"]), int(FWConst.HOME_CHEST["reward_max"]))
-		acc["money"] = int(acc["money"]) + hr
+		_gain(acc, hr)
 		mine_depleted[key] = float(FWConst.HOME_CHEST["respawn"])
 		return {"ok": true, "treasure": true, "reward": hr, "money": int(acc["money"]), "idx": idx}
 	var def: Dictionary = FWConst.MINE_ORES[str(node["kind"])]
 	if def.has("reward_min"):
 		var reward: int = int(node["reward"])
-		acc["money"] = int(acc["money"]) + reward
+		_gain(acc, reward)
 		mine_depleted[key] = float(def["respawn"])
 		_log(player_name, "mine_treasure", {"mine": mine_id, "idx": idx, "reward": reward})
 		return {"ok": true, "treasure": true, "reward": reward, "money": int(acc["money"]), "idx": idx}
@@ -1858,11 +1878,10 @@ func craft(player_name: String, recipe: String, times: int) -> Dictionary:
 		if not has_items(acc["inv"], r["in"]):
 			return {"ok": false, "error": "no_items"}
 		var price: int = int(r.get("money", 0))
-		if int(acc["money"]) < price:
+		if not _pay(acc, price):
 			return {"ok": false, "error": "no_money"}
 		for item in r["in"]:
 			acc["inv"][item] = int(acc["inv"][item]) - int(r["in"][item])
-		acc["money"] = int(acc["money"]) - price
 		acc[key] = true
 		_log(player_name, "unlock", {"what": key})
 		return {"ok": true, "unlock": key}
@@ -1901,10 +1920,9 @@ func trade(player_name: String, item: String, n: int, buy: bool) -> Dictionary:
 	if buy:
 		if int(acc["inv"].get(item, 0)) + n > FWConst.ITEM_CAP:
 			return {"ok": false, "error": "inv_full"}
-		total = buy_price(item) * n
-		if int(acc["money"]) < total:
+		total = 0 if creative else buy_price(item) * n
+		if not _pay(acc, total):
 			return {"ok": false, "error": "no_money"}
-		acc["money"] = int(acc["money"]) - total
 		_inv_add(acc, item, n)
 		_log(player_name, "buy_item", {"item": item, "n": n, "cost": total})
 		return {"ok": true, "buy": true, "item": item, "count": n, "total": total, "money": acc["money"]}
@@ -1914,7 +1932,7 @@ func trade(player_name: String, item: String, n: int, buy: bool) -> Dictionary:
 		total += sell_price(item)
 		item_mult[item] = maxf(FWConst.SELL_FLOOR, float(item_mult.get(item, 1.0)) - FWConst.SELL_DROP)
 	acc["inv"][item] = int(acc["inv"][item]) - n
-	acc["money"] = int(acc["money"]) + total
+	_gain(acc, total)
 	return {"ok": true, "buy": false, "item": item, "count": n, "total": total, "money": acc["money"]}
 
 
@@ -1949,14 +1967,14 @@ func answer_offer(player_name: String, id: int, accept: bool) -> Dictionary:
 	var buyer: Dictionary = accounts[o["to"]]
 	if int(seller["inv"].get(o["item"], 0)) < int(o["n"]):
 		return {"ok": false, "error": "offer_invalid", "offer": o}
-	if int(buyer["money"]) < int(o["price"]):
+	if not _can_pay(buyer, int(o["price"])):
 		return {"ok": false, "error": "no_money", "offer": o}
 	if int(buyer["inv"].get(o["item"], 0)) + int(o["n"]) > FWConst.ITEM_CAP:
 		return {"ok": false, "error": "inv_full", "offer": o}
 	seller["inv"][o["item"]] = int(seller["inv"][o["item"]]) - int(o["n"])
 	_inv_add(buyer, str(o["item"]), int(o["n"]))
-	buyer["money"] = int(buyer["money"]) - int(o["price"])
-	seller["money"] = int(seller["money"]) + int(o["price"])
+	_pay(buyer, int(o["price"]))
+	_gain(seller, int(o["price"]))
 	_log(o["from"], "p2p_trade", {"to": o["to"], "item": o["item"], "n": o["n"], "price": o["price"]})
 	return {"ok": true, "accepted": true, "offer": o}
 
@@ -2038,9 +2056,8 @@ func _tick_processor(b: Dictionary, delta: float) -> void:
 	if float(market[input]) < float(amount):
 		return
 	var cost: int = amount * int(floor(_price_for(input)))
-	if int(accounts[owner_name]["money"]) < cost:
+	if not _pay(accounts[owner_name], cost):
 		return
-	accounts[owner_name]["money"] = int(accounts[owner_name]["money"]) - cost
 	market[input] = float(market[input]) - float(amount)
 	b["stock"] = float(b["stock"]) + 1.0
 	b["prog"] = 0.0
@@ -2055,7 +2072,7 @@ func npc_buy_bread(npc: Dictionary, shop: Dictionary) -> bool:
 	if not accounts.has(owner_name):
 		return false
 	npc["money"] = int(npc["money"]) - price
-	accounts[owner_name]["money"] = int(accounts[owner_name]["money"]) + price
+	_gain(accounts[owner_name], price)
 	market["bread"] = float(market["bread"]) - 1.0
 	prices["bread"] = minf(FWConst.BREAD_BASE_PRICE * 2.0, float(prices["bread"]) + FWConst.BREAD_BUY_RISE)
 	bread_price = float(prices["bread"])
@@ -2073,7 +2090,7 @@ func npc_buy_good(npc: Dictionary, shop: Dictionary, good: String) -> bool:
 	if not accounts.has(owner_name):
 		return false
 	npc["money"] = int(npc["money"]) - price
-	accounts[owner_name]["money"] = int(accounts[owner_name]["money"]) + price
+	_gain(accounts[owner_name], price)
 	market[good] = float(market[good]) - 1.0
 	return true
 
