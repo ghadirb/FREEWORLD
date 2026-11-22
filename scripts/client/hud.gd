@@ -517,6 +517,12 @@ func _build_tools_panel() -> void:
 		Sfx.play(self, "click")
 		view.undo_build())
 	mrow.add_child(ub)
+	var rb := UiTheme.button(Loc.t("btn_rotate"), Vector2(96, 44))
+	rb.add_theme_font_size_override("font_size", 16)
+	rb.pressed.connect(func():
+		Sfx.play(self, "click")
+		view.rotate_clipboard())
+	mrow.add_child(rb)
 	var lb := UiTheme.button(Loc.t("btn_library"), Vector2(110, 44))
 	lb.add_theme_font_size_override("font_size", 16)
 	lb.pressed.connect(func():
@@ -1611,6 +1617,8 @@ func _on_notice(code: String, args: Dictionary) -> void:
 		"bp_saved":
 			Sfx.play(self, "place")
 			toast(Loc.t("msg_bp_saved"), Color("c8f08a"))
+		"paste_preview":
+			toast(Loc.t("msg_paste_preview"))
 		"corner_set":
 			toast(Loc.t("msg_corner_set"))
 		"copied":

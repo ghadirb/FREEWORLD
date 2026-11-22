@@ -80,7 +80,6 @@ func test_world() -> void:
 	var a := WorldGen.new(777)
 	var b := WorldGen.new(777)
 	var c := WorldGen.new(778)
-	var same := true
 	var differs := false
 	for i in range(50):
 		var x := i * 7.3
@@ -2398,6 +2397,23 @@ func test_blueprints() -> void:
 	check(cs.blueprints.count_by("ali") == BP.PER_PLAYER_MAX, "per-player cap reached")
 	check(cs.blueprints.save("ali", "over", good, false)["error"] == "bp_limit", "per-player cap enforced")
 	check(cs.blueprints.save("sara", "mine", good, true)["ok"], "cap is per player")
+	# چرخش ۹۰ درجه
+	var st := BP.rotate_y(PackedInt32Array([0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0]))
+	check(BP.extent(good) == Vector3i(2, 2, 1) and BP.extent(st) == Vector3i(1, 2, 2), "rotation swaps the x/z extents")
+	check(BP.clean_data(st).size() == 15, "rotated data stays valid")
+	var r4 := good
+	for i in range(4):
+		r4 = BP.rotate_y(r4)
+	var a1: Dictionary = {}
+	var a2: Dictionary = {}
+	for k in range(good.size() / 5):
+		a1[Vector3i(good[k * 5], good[k * 5 + 1], good[k * 5 + 2])] = true
+		a2[Vector3i(r4[k * 5], r4[k * 5 + 1], r4[k * 5 + 2])] = true
+	check(a1 == a2 and r4.size() == good.size(), "four rotations return to the original")
+	var stairs_id: int = FWConst.BLOCK_ORDER.find("stairs")
+	var sr := BP.rotate_y(PackedInt32Array([0, 0, 0, stairs_id, 3 + 16 * 3]))
+	check(FWConst.meta_facing(sr[4]) == 0 and FWConst.meta_color(sr[4]) == 3, "stairs facing turns with the structure, colour kept")
+	check(BP.rotate_y(PackedInt32Array()).is_empty(), "rotating nothing is empty")
 	# ذخیره و بازیابی
 	var d: Dictionary = cs.to_dict()
 	var json := JSON.stringify(d)

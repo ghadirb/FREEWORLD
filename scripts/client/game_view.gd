@@ -4,6 +4,7 @@ extends Node3D
 
 const Boat = preload("res://scripts/shared/boat.gd")
 const FWConst = preload("res://scripts/core/const.gd")
+const Blueprints = preload("res://scripts/server/blueprints.gd")
 const InteriorMesh = preload("res://scripts/client/interior_mesh.gd")
 const Placement = preload("res://scripts/shared/placement.gd")
 const Loc = preload("res://scripts/client/loc.gd")
@@ -78,6 +79,9 @@ var build_mode: String = "single"
 var region_a: Vector3i = Vector3i.ZERO
 var region_has_a: bool = false
 var clipboard: PackedInt32Array = PackedInt32Array()
+var paste_pending: bool = false        # پیش‌نمایش چسباندن نشان داده شده؛ لمس دوباره همان‌جا تأیید است
+var paste_cell: Vector3i = Vector3i.ZERO
+var _paste_ghost: MeshInstance3D
 var ghost_cell: Vector2i = Vector2i(-1, -1)
 var ghost_err: String = "not_ready"
 var is_over_ui: Callable = func(_p): return false
@@ -166,6 +170,9 @@ func setup(game_client, quality_level: int) -> void:
 	_ghost = MeshInstance3D.new()
 	_ghost.visible = false
 	add_child(_ghost)
+	_paste_ghost = MeshInstance3D.new()
+	_paste_ghost.visible = false
+	add_child(_paste_ghost)
 	_build_plaza()
 
 
@@ -502,6 +509,7 @@ func set_build_mode(m: String) -> void:
 		return
 	build_mode = m
 	region_has_a = false
+	cancel_paste_preview()
 	tool_changed.emit()
 
 
@@ -526,8 +534,16 @@ func _region_tap(hit: Dictionary) -> void:
 			Sfx.play(self, "error")
 			_feedback("clipboard_empty")
 			return
+		if not paste_pending or cell != paste_cell:
+			paste_cell = cell
+			paste_pending = true
+			_show_paste_ghost()
+			Sfx.play(self, "click")
+			client.notice.emit("paste_preview", {})
+			return
 		Sfx.play(self, "place")
 		client.paste_blocks(cell, clipboard)
+		cancel_paste_preview()
 		return
 	if not region_has_a:
 		region_a = cell
@@ -546,7 +562,38 @@ func _region_tap(hit: Dictionary) -> void:
 			client.build_region("clear", region_a, cell, "", 0)
 		"copy":
 			clipboard = client.copy_region(region_a, cell)
+			cancel_paste_preview()
 			client.notice.emit("copied", {"n": clipboard.size() / 5})
+
+
+func cancel_paste_preview() -> void:
+	paste_pending = false
+	if _paste_ghost != null:
+		_paste_ghost.visible = false
+
+
+## چرخش ۹۰ درجهٔ کلیپ‌بورد (همان لحظه پیش‌نمایش هم به‌روز می‌شود).
+func rotate_clipboard() -> void:
+	if clipboard.is_empty():
+		return
+	clipboard = Blueprints.rotate_y(clipboard)
+	if paste_pending:
+		_show_paste_ghost()
+	tool_changed.emit()
+
+
+func _show_paste_ghost() -> void:
+	var ext: Vector3i = Blueprints.extent(clipboard)
+	var bm := BoxMesh.new()
+	bm.size = Vector3(ext) + Vector3.ONE * 0.04
+	_paste_ghost.mesh = bm
+	var m := StandardMaterial3D.new()
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.albedo_color = Color(0.4, 0.9, 1.0, 0.35)
+	_paste_ghost.material_override = m
+	_paste_ghost.position = Vector3(paste_cell) + Vector3(ext) * 0.5
+	_paste_ghost.visible = true
 
 
 func set_block_type(t: String) -> void:

@@ -37,6 +37,33 @@ static func clean_data(data: PackedInt32Array) -> PackedInt32Array:
 	return data
 
 
+## ابعاد (تعداد خانه در هر محور) داده‌ای که از copy_region آمده.
+static func extent(data: PackedInt32Array) -> Vector3i:
+	var mx := Vector3i.ZERO
+	var i := 0
+	while i + 4 < data.size():
+		mx = Vector3i(maxi(mx.x, data[i]), maxi(mx.y, data[i + 1]), maxi(mx.z, data[i + 2]))
+		i += 5
+	return mx + Vector3i.ONE if data.size() >= 5 else Vector3i.ZERO
+
+
+## ۹۰ درجه چرخش حول محور قائم؛ جهت پله‌ها هم می‌چرخد. خروجی دوباره از ۰ شروع می‌شود (مناسب c2s_paste).
+static func rotate_y(data: PackedInt32Array) -> PackedInt32Array:
+	var out := PackedInt32Array()
+	if data.size() < 5:
+		return out
+	var max_x := extent(data).x - 1
+	var i := 0
+	while i + 4 < data.size():
+		var tid := data[i + 3]
+		var meta := data[i + 4]
+		if str(FWConst.BLOCK_ORDER[tid]) == "stairs":
+			meta = FWConst.meta_color(meta) + 16 * ((FWConst.meta_facing(meta) + 1) % 4)
+		out.append_array(PackedInt32Array([data[i + 2], data[i + 1], max_x - data[i], tid, meta]))
+		i += 5
+	return out
+
+
 static func clean_name(raw: String) -> String:
 	var out := ""
 	for ch in raw.strip_edges():
