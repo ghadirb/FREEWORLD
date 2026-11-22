@@ -904,6 +904,9 @@ func _build_race() -> void:
 	close.pressed.connect(func(): _race_panel.visible = false)
 	row.add_child(start)
 	row.add_child(close)
+	var grp := UiTheme.button(Loc.t("group_race"), Vector2(0, 56))
+	grp.pressed.connect(func(): client.group_race(); _race_panel.visible = false)
+	v.add_child(grp)
 	v.add_child(_label(Loc.t("race_board"), 22, Color("c8f08a")))
 	v.add_child(_race_board)
 	_race_bar = _label("", 30, Color("ffd24a"))
@@ -1425,7 +1428,9 @@ func _on_notice(code: String, args: Dictionary) -> void:
 				Sfx.play(self, "coin")
 				var tt: String = race_time_text(int(args["time"]))
 				rtxt = Loc.fmt("msg_race_end_reward", [tt, Loc.digits(str(args["reward"]))]) if int(args["reward"]) > 0 else Loc.fmt("msg_race_end", [tt])
-				if bool(args.get("boat", false)):
+				if bool(args.get("group", false)):
+					rtxt = Loc.fmt("msg_group_rank", [Loc.digits(str(args["rank"])), Loc.digits(str(args["of"]))]) + " " + rtxt
+				elif bool(args.get("boat", false)):
 					rtxt = Loc.t("msg_boat_prefix") + " " + rtxt
 				elif bool(args.get("car", false)):
 					rtxt = Loc.t("msg_car_prefix") + " " + rtxt
@@ -1438,6 +1443,13 @@ func _on_notice(code: String, args: Dictionary) -> void:
 		"npc_gift":
 			Sfx.play(self, "coin")
 			toast(Loc.fmt("msg_npc_gift", [str(args["npc"]), Loc.t("item_" + str(args["item"]))]), Color("ffd84a"))
+		"grace_lobby":
+			toast(Loc.fmt("msg_grace_lobby", [str(args["host"]), Loc.digits(str(args["n"])), Loc.digits(str(args["t"]))]), Color("8fd8ff"))
+		"grace_start":
+			Sfx.play(self, "click")
+			toast(Loc.fmt("msg_grace_start", [Loc.digits(str(args["n"]))]), Color("ffd84a"))
+		"grace_cancel":
+			toast(Loc.t("msg_grace_cancel"), Color("ff9a8a"))
 		"unlocked":
 			Sfx.play(self, "coin")
 			toast(Loc.t("msg_unlocked_" + str(args["what"])), Color("ffd84a"))

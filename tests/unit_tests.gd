@@ -51,6 +51,7 @@ func _init() -> void:
 	test_disasters()
 	test_race()
 	test_car_race()
+	test_group_race()
 	test_boat()
 	test_god_tools()
 	test_stairs_and_floors()
@@ -1022,6 +1023,71 @@ func test_car_race() -> void:
 	cs.race_start("driver", at, false, true)
 	_race_run(cs, "driver", gates, {})
 	check(int(cs.accounts["driver"]["money"]) == mc, "creative: a race adds no coins")
+
+
+func test_group_race() -> void:
+	print("== Group race (protocol 29) ==")
+	var cs = CityState.new(4248)
+	for n in ["ann", "bob", "cy", "dee"]:
+		_login(cs, n)
+	var at := Vector2(FWConst.CITY_SIZE * 0.5, FWConst.CITY_SIZE * 0.5)
+	check(cs.race_group("ghost", at)["error"] == "no_account", "unknown player cannot join")
+	var r1: Dictionary = cs.race_group("ann", at)
+	check(r1["ok"] and r1["opened"] and not cs.race.lobby.is_empty(), "the first request opens a lobby")
+	check(cs.race_group("ann", at)["error"] == "grace_already", "no double sign-up")
+	check(cs.race_group("bob", at)["ok"] and not cs.race_group("cy", at)["opened"], "others join the open lobby")
+	var all := ["ann", "bob", "cy", "dee"]
+	check(cs.race.lobby_step(1.0, all).is_empty(), "the lobby waits for the countdown")
+	var evs: Array = cs.race.lobby_step(FWConst.GROUP_LOBBY_TIME, all)
+	check(evs.size() == 1 and evs[0]["kind"] == "start" and evs[0]["members"].size() == 3, "the race starts with everyone who joined")
+	check(cs.race.lobby.is_empty() and cs.race.is_running("ann") and cs.race.is_running("cy") and not cs.race.is_running("dee"), "members run, others do not")
+	var st: Dictionary = cs.race.public_state("bob")
+	check(bool(st["group"]) and st["pts"] == cs.race.public_state("ann")["pts"], "all racers share one track")
+	var gates: Array = []
+	for g in st["pts"]:
+		gates.append(Vector2(g[0], g[1]))
+	# ann رتبهٔ اول، bob دوم، cy هرگز نمی‌رسد
+	var m_ann: int = int(cs.accounts["ann"]["money"])
+	var m_bob: int = int(cs.accounts["bob"]["money"])
+	var far := Vector2(900, 900)
+	var done: Array = []
+	for g in gates:
+		done.append_array(cs.race_step(0.2, {"ann": g, "bob": far, "cy": far, "dee": at}))
+	for g in gates:
+		done.append_array(cs.race_step(0.2, {"ann": g, "bob": g, "cy": far, "dee": at}))
+	var ends := {}
+	for ev in done:
+		if ev["kind"] == "end":
+			ends[ev["name"]] = ev
+	check(ends.has("ann") and int(ends["ann"]["rank"]) == 1 and int(ends["ann"]["reward"]) == FWConst.GROUP_REWARDS[0], "first place gets the biggest prize")
+	check(ends.has("bob") and int(ends["bob"]["rank"]) == 2 and int(ends["bob"]["reward"]) == FWConst.GROUP_REWARDS[1], "second place gets the second prize")
+	check(int(cs.accounts["ann"]["money"]) == m_ann + FWConst.GROUP_REWARDS[0] and int(cs.accounts["bob"]["money"]) == m_bob + FWConst.GROUP_REWARDS[1], "prizes are paid")
+	check(int(ends["ann"]["of"]) == 3 and not cs.race.best.has("ann"), "group races do not touch the solo records")
+	var guard := 0
+	while cs.race.is_running("cy") and guard < 200:
+		for ev in cs.race_step(1.0, {"cy": far, "dee": at}):
+			if ev["kind"] == "end":
+				ends[ev["name"]] = ev
+		guard += 1
+	check(ends.has("cy") and not ends["cy"]["finished"] and int(ends["cy"]["reward"]) == 0 and cs.race.groups.is_empty(), "a racer who times out gets nothing and the group is cleaned up")
+	# با یک نفر لغو می‌شود
+	cs.race_group("ann", at)
+	var ev2: Array = cs.race.lobby_step(FWConst.GROUP_LOBBY_TIME, ["ann"])
+	check(ev2.size() == 1 and ev2[0]["kind"] == "cancel" and not cs.race.is_running("ann"), "a lone player cancels the lobby")
+	# حالت خلاقانه: بدون سکه
+	cs.creative = true
+	cs.race_group("ann", at)
+	cs.race_group("bob", at)
+	cs.race.lobby_step(FWConst.GROUP_LOBBY_TIME, ["ann", "bob"])
+	var cm: int = int(cs.accounts["ann"]["money"])
+	var cevs: Array = []
+	for g in cs.race.public_state("ann")["pts"]:
+		cevs.append_array(cs.race_step(0.2, {"ann": Vector2(g[0], g[1]), "bob": far}))
+	var cend := {}
+	for ev in cevs:
+		if ev["kind"] == "end" and ev["name"] == "ann":
+			cend = ev
+	check(not cend.is_empty() and int(cend["reward"]) == 0 and int(cs.accounts["ann"]["money"]) == cm, "creative: group race pays no coins")
 
 
 func test_race() -> void:

@@ -1,7 +1,7 @@
 extends RefCounted
 ## ثابت‌های مشترک بین سرور و کلاینت.
 
-const PROTOCOL_VERSION := 28
+const PROTOCOL_VERSION := 29
 # ترافیک شبکه با DTLS رمز می‌شود (نسخهٔ ۴ به بعد). فقط برای عیب‌یابی خاموش شود.
 const USE_DTLS := true
 const DEFAULT_PORT := 7777
@@ -267,6 +267,10 @@ const CAR_RACE_RADIUS := 70.0
 const CAR_RACE_GATE_RANGE := 5.0
 const CAR_RACE_TIME := 75.0
 const CAR_RACE_REWARD := 50
+# مسابقهٔ گروهی هم‌زمان (پروتکل ۲۹): همه روی یک مسیر پیاده؛ جایزه بر اساس رتبه.
+const GROUP_LOBBY_TIME := 15.0
+const GROUP_MAX := 10
+const GROUP_REWARDS := [80, 50, 30]
 const RACE_REWARDED_RUNS := 3
 # ابزارهای خلقت (World Mode، فقط مدیران): درخت، سنگ و حیوانات آرام. وضعیتشان با شهر ذخیره می‌شود.
 const GOD_STATIC := ["tree", "rock"]

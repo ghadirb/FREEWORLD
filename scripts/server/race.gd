@@ -12,6 +12,10 @@ var best_boat: Dictionary = {}   # نام ← بهترین زمان مسابقه
 var best_car: Dictionary = {}    # نام ← بهترین زمان مسابقهٔ ماشین (پروتکل ۲۸، جدول جدا)
 var plays: Dictionary = {}   # نام ← {"day": int, "n": int} دورهای جایزه‌دار امروز
 var _counter: int = 0
+## مسابقهٔ گروهی (پروتکل ۲۹): سالن انتظار موقت (ذخیره نمی‌شود) و گروه‌های در حال اجرا.
+var lobby: Dictionary = {}     # {} یا {"host","pos","pts","members","t"}
+var groups: Dictionary = {}    # شناسه ← {"members": Array, "finished": Array}
+var _group_id: int = 0
 
 
 func is_running(player_name: String) -> bool:
@@ -75,6 +79,53 @@ func start(world, seed_value: int, player_name: String, pos: Vector2, boat: bool
 	return {"ok": true}
 
 
+## درخواست مسابقهٔ گروهی: اگر سالن بسته است باز می‌کند (مسیر دور میزبان)، وگرنه بازیکن را اضافه می‌کند.
+func group_request(world, seed_value: int, player_name: String, pos: Vector2) -> Dictionary:
+	if runs.has(player_name):
+		return {"ok": false, "error": "mg_running"}
+	if lobby.is_empty():
+		_counter += 1
+		var pts := _make_ring(world, seed_value, player_name, pos)
+		if pts.is_empty():
+			return {"ok": false, "error": "race_no_space"}
+		lobby = {"host": player_name, "pos": pos, "pts": pts, "members": [player_name], "t": FWConst.GROUP_LOBBY_TIME}
+		return {"ok": true, "opened": true}
+	if (lobby["members"] as Array).has(player_name):
+		return {"ok": false, "error": "grace_already"}
+	if (lobby["members"] as Array).size() >= FWConst.GROUP_MAX:
+		return {"ok": false, "error": "grace_full"}
+	(lobby["members"] as Array).append(player_name)
+	return {"ok": true, "opened": false}
+
+
+func lobby_info() -> Dictionary:
+	if lobby.is_empty():
+		return {}
+	return {"host": str(lobby["host"]), "n": (lobby["members"] as Array).size(), "t": int(ceil(float(lobby["t"])))}
+
+
+## شمارش معکوس سالن. present: نام بازیکنان آنلاین. رویداد start (≥۲ نفر) یا cancel.
+func lobby_step(dt: float, present: Array) -> Array:
+	if lobby.is_empty():
+		return []
+	lobby["t"] = float(lobby["t"]) - dt
+	if float(lobby["t"]) > 0.0:
+		return []
+	var members: Array = []
+	for m in lobby["members"]:
+		if present.has(m) and not runs.has(m) and not members.has(m):
+			members.append(m)
+	var info := lobby
+	lobby = {}
+	if members.size() < 2:
+		return [{"kind": "cancel", "members": info["members"]}]
+	_group_id += 1
+	for m in members:
+		runs[m] = {"t": FWConst.RACE_TIME, "total": FWConst.RACE_TIME, "next": 0, "pts": info["pts"], "boat": false, "car": false, "group": _group_id}
+	groups[_group_id] = {"members": members.duplicate(), "finished": []}
+	return [{"kind": "start", "members": members, "pos": info["pos"]}]
+
+
 func is_boat_race(player_name: String) -> bool:
 	return runs.has(player_name) and bool(runs[player_name].get("boat", false))
 
@@ -116,6 +167,9 @@ func _finish(player_name: String, day: int, finished: bool) -> Dictionary:
 	var table: Dictionary = best_boat if boat else (best_car if car else best)
 	var new_best := false
 	var reward := 0
+	var gid: int = int(run.get("group", 0))
+	if gid != 0:
+		return _finish_group(player_name, day, finished, gid, run, elapsed_cs)
 	if finished:
 		var old: int = int(table.get(player_name, 0))
 		if old == 0 or elapsed_cs < old:
@@ -131,6 +185,32 @@ func _finish(player_name: String, day: int, finished: bool) -> Dictionary:
 		plays[key] = p
 	return {"name": player_name, "kind": "end", "finished": finished, "time": elapsed_cs, "boat": boat, "car": car,
 		"best": int(table.get(player_name, 0)), "new_best": new_best, "reward": reward}
+
+
+## پایان دور در مسابقهٔ گروهی: رتبه به ترتیب رسیدن؛ جایزه فقط برای ۳ نفر اول و ۳ بار در روز.
+func _finish_group(player_name: String, day: int, finished: bool, gid: int, run: Dictionary, elapsed_cs: int) -> Dictionary:
+	var g: Dictionary = groups.get(gid, {"members": [player_name], "finished": []})
+	var rank := 0
+	var reward := 0
+	if finished:
+		(g["finished"] as Array).append(player_name)
+		rank = (g["finished"] as Array).size()
+		var key := "group:" + player_name
+		var p: Dictionary = plays.get(key, {"day": day, "n": 0})
+		if int(p["day"]) != day:
+			p = {"day": day, "n": 0}
+		if rank <= FWConst.GROUP_REWARDS.size() and int(p["n"]) < FWConst.RACE_REWARDED_RUNS:
+			reward = int(FWConst.GROUP_REWARDS[rank - 1])
+		p["n"] = int(p["n"]) + 1
+		plays[key] = p
+	var still := false
+	for n in runs:
+		if int(runs[n].get("group", 0)) == gid:
+			still = true
+	if not still:
+		groups.erase(gid)
+	return {"name": player_name, "kind": "end", "finished": finished, "time": elapsed_cs, "boat": false, "car": false,
+		"best": 0, "new_best": false, "reward": reward, "group": true, "rank": rank, "of": (g["members"] as Array).size()}
 
 
 func board(boat: bool = false, car: bool = false) -> Array:
@@ -151,6 +231,7 @@ func public_state(player_name: String) -> Dictionary:
 		var run: Dictionary = runs[player_name]
 		out["boat"] = bool(run.get("boat", false))
 		out["car"] = bool(run.get("car", false))
+		out["group"] = int(run.get("group", 0)) != 0
 		out["total"] = float(run.get("total", FWConst.RACE_TIME))
 		out["t"] = snappedf(float(run["t"]), 0.1)
 		out["next"] = int(run["next"])

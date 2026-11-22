@@ -464,6 +464,11 @@ func race_start() -> void:
 		_tx("c2s_race_start", [])
 
 
+func group_race() -> void:
+	if is_logged_in:
+		_tx("c2s_grace", [])
+
+
 func race_active() -> bool:
 	return bool(race.get("active", false))
 

@@ -22,7 +22,7 @@ const LOCAL_PID := 1
 const LOCAL_METHODS := [
 	"c2s_login", "c2s_move", "c2s_place", "c2s_remove", "c2s_collect",
 	"c2s_chat", "c2s_set_role", "c2s_get_audit", "c2s_job", "c2s_set_world", "c2s_enter", "c2s_leave",
-	"c2s_place_block", "c2s_remove_block", "c2s_paint_block", "c2s_build_region", "c2s_paste", "c2s_undo", "c2s_gather", "c2s_dig", "c2s_fill", "c2s_craft", "c2s_trade", "c2s_offer", "c2s_offer_answer", "c2s_npc", "c2s_npc_sell", "c2s_npc_buy", "c2s_furn_place", "c2s_furn_remove", "c2s_minigame_start", "c2s_race_start", "c2s_boat", "c2s_horse", "c2s_car", "c2s_fish", "c2s_disaster", "c2s_god",
+	"c2s_place_block", "c2s_remove_block", "c2s_paint_block", "c2s_build_region", "c2s_paste", "c2s_undo", "c2s_gather", "c2s_dig", "c2s_fill", "c2s_craft", "c2s_trade", "c2s_offer", "c2s_offer_answer", "c2s_npc", "c2s_npc_sell", "c2s_npc_buy", "c2s_furn_place", "c2s_furn_remove", "c2s_minigame_start", "c2s_race_start", "c2s_grace", "c2s_boat", "c2s_horse", "c2s_car", "c2s_fish", "c2s_disaster", "c2s_god",
 	"c2s_mine_enter", "c2s_mine_leave", "c2s_mine_gather",
 ]
 
@@ -290,6 +290,12 @@ func on_disaster(pid: int, kind: String) -> void:
 
 
 func _race_step(dt: float) -> void:
+	if not cs.race.lobby.is_empty():
+		var present: Array = []
+		for pid in _auth_peers():
+			present.append(peers[pid]["name"])
+		for ev in cs.race.lobby_step(dt, present):
+			_group_event(ev)
 	if cs.race.runs.is_empty():
 		return
 	var positions: Dictionary = {}
@@ -305,8 +311,66 @@ func _race_step(dt: float) -> void:
 		if ev["kind"] == "end":
 			if int(ev["reward"]) > 0:
 				_send(pid, "s2c_money", int(ev["money"]))
-			_notice(pid, "race_end", {"boat": ev.get("boat", false), "car": ev.get("car", false), "finished": ev["finished"], "time": ev["time"], "best": ev["best"], "new_best": ev["new_best"], "reward": ev["reward"]})
+			_notice(pid, "race_end", {"boat": ev.get("boat", false), "car": ev.get("car", false), "group": ev.get("group", false), "rank": ev.get("rank", 0), "of": ev.get("of", 0), "finished": ev["finished"], "time": ev["time"], "best": ev["best"], "new_best": ev["new_best"], "reward": ev["reward"]})
 			_dirty = true
+
+
+## سالن انتظار مسابقهٔ گروهی را به همهٔ بازیکنان اعلام می‌کند.
+func _announce_lobby() -> void:
+	var info: Dictionary = cs.race.lobby_info()
+	if info.is_empty():
+		return
+	for pid in _auth_peers():
+		_notice(pid, "grace_lobby", info)
+
+
+func _group_event(ev: Dictionary) -> void:
+	if ev["kind"] == "cancel":
+		for nm in ev["members"]:
+			if by_name.has(nm):
+				_notice(by_name[nm], "grace_cancel")
+		return
+	var members: Array = ev["members"]
+	var center: Vector2 = ev["pos"]
+	for i in members.size():
+		var nm: String = members[i]
+		if not by_name.has(nm):
+			continue
+		var pid: int = by_name[nm]
+		var p: Dictionary = peers[pid]
+		var a: float = TAU * float(i) / float(members.size())
+		var x: float = center.x + cos(a) * 1.5
+		var z: float = center.y + sin(a) * 1.5
+		if not cs.is_walkable(x, z, float(p["pos"].y)):
+			x = center.x
+			z = center.y
+		p["pos"] = Vector3(x, cs.ground_height(x, z, float(p["pos"].y)), z)
+		p["last_move"] = Time.get_ticks_msec()
+		_send(pid, "s2c_teleport", x, z)
+		_send(pid, "s2c_race", cs.race.public_state(nm))
+		_notice(pid, "grace_start", {"n": members.size()})
+	_dirty = true
+
+
+## مسابقهٔ گروهی هم‌زمان (پروتکل ۲۹): اولین نفر سالن را باز می‌کند؛ بقیه با همین دکمه می‌پیوندند.
+func on_grace(pid: int) -> void:
+	var p := _player_of(pid)
+	if p.is_empty():
+		return
+	if not _allow_action(p):
+		_notice(pid, "rate_limited")
+		return
+	var nm: String = p["name"]
+	if _indoors(p) or str(p.get("mine", "")) != "" or bool(p.get("boat", false)) or bool(p.get("horse", false)) or bool(p.get("car", false)) \
+			or float(p.get("alt", 0.0)) > FWConst.FLY_MIN_ALT or cs.race.is_running(nm) or cs.minigame.is_running(nm):
+		_notice(pid, "grace_busy")
+		return
+	var pos: Vector3 = p["pos"]
+	var res: Dictionary = cs.race_group(nm, Vector2(pos.x, pos.z))
+	if not res["ok"]:
+		_notice(pid, str(res["error"]))
+		return
+	_announce_lobby()
 
 
 func on_race_start(pid: int) -> void:

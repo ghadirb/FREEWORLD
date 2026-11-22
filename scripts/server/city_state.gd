@@ -1536,11 +1536,22 @@ func race_start(player_name: String, pos: Vector2, boat: bool = false, car: bool
 	return race.start(world, seed_value, player_name, pos, boat, car)
 
 
+## درخواست/پیوستن به مسابقهٔ گروهی هم‌زمان (پروتکل ۲۹).
+func race_group(player_name: String, pos: Vector2) -> Dictionary:
+	if not accounts.has(player_name):
+		return {"ok": false, "error": "no_account"}
+	if minigame.is_running(player_name):
+		return {"ok": false, "error": "mg_running"}
+	return race.group_request(world, seed_value, player_name, pos)
+
+
 func race_step(dt: float, positions: Dictionary) -> Array:
 	var events: Array = race.step(dt, positions, day_count)
 	for ev in events:
 		if ev["kind"] == "end":
 			var nm: String = ev["name"]
+			if creative:
+				ev["reward"] = 0   # جهان خلاقانه: بدون سکه
 			if int(ev["reward"]) > 0 and accounts.has(nm):
 				_gain(accounts[nm], int(ev["reward"]))
 				_log(nm, "race_reward", {"time": ev["time"], "reward": ev["reward"]})

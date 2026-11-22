@@ -670,6 +670,29 @@ func _run() -> void:
 	ok(await wait_until(func(): return host_c.players.has("guesty"), 15.0), "host sees the remote guest")
 	host_c.send_chat("hello from host")
 	await create_timer(1.0).timeout
+	# مسابقهٔ گروهی با مهمان واقعی (پروتکل ۲۹)
+	# جای باز برای حلقهٔ مسابقه پیدا می‌کنیم (کنار آب/شهر ممکن است جا نباشد)
+	var grp_pos: Vector3 = server.peers[1]["pos"]
+	var found_grp := false
+	for gx in range(30, 220, 6):
+		for gz in range(30, 220, 6):
+			if server.cs.is_walkable(float(gx), float(gz)) and server.cs.race._make_ring(server.cs.world, server.cs.seed_value, "hosty", Vector2(gx, gz)).size() == FWConst.RACE_GATES:
+				grp_pos = Vector3(gx, server.cs.ground_height(float(gx), float(gz)), gz)
+				found_grp = true
+				break
+		if found_grp:
+			break
+	ok(found_grp, "found open land for the group race")
+	server.peers[1]["pos"] = grp_pos
+	host_c.group_race()
+	ok(await wait_until(func(): return not server.cs.race.lobby.is_empty(), 3.0), "the host opens a group race lobby")
+	ok(server.cs.race_group("guesty", Vector2(grp_pos.x, grp_pos.z))["ok"], "the remote guest joins the lobby")
+	server.cs.race.lobby["t"] = 0.3
+	ok(await wait_until(func(): return host_c.race_active() and bool(host_c.race.get("group", false)), 5.0), "the group race starts for the host")
+	ok(server.cs.race.is_running("hosty") and server.cs.race.is_running("guesty"), "both players run the same race")
+	ok(server.cs.race.public_state("hosty")["pts"] == server.cs.race.public_state("guesty")["pts"], "they share one track")
+	server.cs.race.runs.clear()
+	server.cs.race.groups.clear()
 	host_c.disconnect_from_server()
 	server.stop()
 	OS.kill(pid)
