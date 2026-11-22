@@ -287,6 +287,38 @@ func paint_block(v: Vector3i, color: int) -> void:
 		_tx("c2s_paint_block", [v.x, v.y, v.z, color])
 
 
+## ابزارهای دسته‌ای: op = "fill" | "walls" | "clear"
+func build_region(op: String, a: Vector3i, b: Vector3i, type: String, color: int) -> void:
+	if is_logged_in:
+		_tx("c2s_build_region", [op, a.x, a.y, a.z, b.x, b.y, b.z, type, color])
+
+
+## کپی: بلوک‌های جعبهٔ a..b را نسبت به گوشهٔ کم‌مختصات برمی‌گرداند (۵ عدد برای هر بلوک).
+func copy_region(a: Vector3i, b: Vector3i) -> PackedInt32Array:
+	var out := PackedInt32Array()
+	if mirror == null:
+		return out
+	var cells: Array = CityState.region_cells(a, b)
+	var lo := Vector3i(mini(a.x, b.x), mini(a.y, b.y), mini(a.z, b.z))
+	for v in cells:
+		if mirror.blocks.has(v):
+			var e: Array = mirror.blocks[v]
+			var tid: int = FWConst.BLOCK_ORDER.find(str(e[0]))
+			if tid >= 0:
+				out.append_array(PackedInt32Array([v.x - lo.x, v.y - lo.y, v.z - lo.z, tid, int(e[1])]))
+	return out
+
+
+func paste_blocks(origin: Vector3i, data: PackedInt32Array) -> void:
+	if is_logged_in and data.size() > 0:
+		_tx("c2s_paste", [origin.x, origin.y, origin.z, data])
+
+
+func undo_build() -> void:
+	if is_logged_in:
+		_tx("c2s_undo", [])
+
+
 func gather(rx: int, rz: int, tool: String) -> void:
 	if is_logged_in:
 		_tx("c2s_gather", [rx, rz, tool])

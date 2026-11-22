@@ -21,7 +21,7 @@ const LOCAL_PID := 1
 const LOCAL_METHODS := [
 	"c2s_login", "c2s_move", "c2s_place", "c2s_remove", "c2s_collect",
 	"c2s_chat", "c2s_set_role", "c2s_get_audit", "c2s_job", "c2s_set_world", "c2s_enter", "c2s_leave",
-	"c2s_place_block", "c2s_remove_block", "c2s_paint_block", "c2s_gather", "c2s_dig", "c2s_fill", "c2s_craft", "c2s_trade", "c2s_offer", "c2s_offer_answer", "c2s_npc", "c2s_npc_sell", "c2s_minigame_start", "c2s_race_start", "c2s_disaster", "c2s_god",
+	"c2s_place_block", "c2s_remove_block", "c2s_paint_block", "c2s_build_region", "c2s_paste", "c2s_undo", "c2s_gather", "c2s_dig", "c2s_fill", "c2s_craft", "c2s_trade", "c2s_offer", "c2s_offer_answer", "c2s_npc", "c2s_npc_sell", "c2s_minigame_start", "c2s_race_start", "c2s_disaster", "c2s_god",
 	"c2s_mine_enter", "c2s_mine_leave", "c2s_mine_gather",
 ]
 
@@ -966,6 +966,122 @@ func on_paint_block(pid: int, x: int, y: int, z: int, color: int) -> void:
 	_dirty = true
 
 
+## ---------------- ابزارهای ساخت دسته‌ای (پروتکل ۲۰) ----------------
+
+func _can_build_cell(p: Dictionary, v: Vector3i) -> bool:
+	return _near(p, float(v.x) + 0.5, float(v.y) + 0.5, float(v.z) + 0.5, FWConst.BLOCK_REACH) and not _player_in_cell(v.x, v.y, v.z)
+
+
+## نتیجهٔ عمل دسته‌ای را به همه می‌فرستد (چند بسته)، موجودی‌ها را تازه می‌کند و پیام خلاصه می‌دهد.
+func _finish_batch(pid: int, p: Dictionary, res: Dictionary) -> void:
+	var flat := PackedInt32Array()
+	for ch in res["changed"]:
+		var v: Vector3i = ch[0]
+		flat.append_array(PackedInt32Array([v.x, v.y, v.z, int(ch[1]), int(ch[2])]))
+		if flat.size() >= FWConst.BLOCK_SEND_BATCH * 5:
+			_broadcast("s2c_blocks", flat)
+			flat = PackedInt32Array()
+	if flat.size() > 0:
+		_broadcast("s2c_blocks", flat)
+	_push_inv(pid, p["name"])
+	for owner_name in res.get("owners", {}):
+		if str(owner_name) != str(p["name"]) and by_name.has(owner_name):
+			_push_inv(by_name[owner_name], owner_name)
+	var n: int = int(res["placed"]) + int(res["removed"])
+	if n > 0:
+		_notice(pid, "batch_done", {"n": n, "skipped": int(res["skipped"])})
+		_dirty = true
+	elif str(res["error"]) != "":
+		_notice(pid, str(res["error"]))
+	else:
+		_notice(pid, "no_target")
+
+
+## op: fill (پر کردن), walls (فقط پوسته), clear (پاک کردن). دو گوشهٔ جعبه.
+func on_build_region(pid: int, op: String, x1: int, y1: int, z1: int, x2: int, y2: int, z2: int, type: String, color: int) -> void:
+	var p := _player_of(pid)
+	if p.is_empty() or _indoors(p):
+		return
+	if not _allow_action(p):
+		_notice(pid, "rate_limited")
+		return
+	if not (op == "fill" or op == "walls" or op == "clear"):
+		return
+	var cells: Array = CityState.region_cells(Vector3i(x1, y1, z1), Vector3i(x2, y2, z2), op == "walls")
+	if cells.is_empty():
+		_notice(pid, "region_too_big")
+		return
+	var reachable: Array = []
+	for v in cells:
+		if _near(p, float(v.x) + 0.5, float(v.y) + 0.5, float(v.z) + 0.5, FWConst.BLOCK_REACH):
+			reachable.append(v)
+	if reachable.is_empty():
+		_notice(pid, "too_far")
+		return
+	var res: Dictionary
+	if op == "clear":
+		res = cs.batch_remove(p["name"], reachable)
+	else:
+		if not FWConst.BLOCK_TYPES.has(type) or not FWConst.meta_valid(color):
+			return
+		var entries: Array = []
+		for v in reachable:
+			entries.append([v, type, color])
+		res = cs.batch_place(p["name"], entries, func(v: Vector3i) -> bool: return not _player_in_cell(v.x, v.y, v.z))
+	_finish_batch(pid, p, res)
+
+
+## data: هر ۵ عدد یک بلوک: [dx, dy, dz, نوع, رنگ] نسبت به مبدأ (ox, oy, oz).
+func on_paste(pid: int, ox: int, oy: int, oz: int, data: PackedInt32Array) -> void:
+	var p := _player_of(pid)
+	if p.is_empty() or _indoors(p):
+		return
+	if not _allow_action(p):
+		_notice(pid, "rate_limited")
+		return
+	if data.size() == 0 or data.size() % 5 != 0 or data.size() > FWConst.REGION_MAX_VOLUME * 5:
+		_notice(pid, "region_too_big")
+		return
+	var entries: Array = []
+	var seen: Dictionary = {}
+	var i := 0
+	while i < data.size():
+		var dx := data[i]
+		var dy := data[i + 1]
+		var dz := data[i + 2]
+		var tid := data[i + 3]
+		var col := data[i + 4]
+		i += 5
+		if absi(dx) > 2 * FWConst.REGION_MAX_SIDE or absi(dy) > 2 * FWConst.REGION_MAX_SIDE or absi(dz) > 2 * FWConst.REGION_MAX_SIDE:
+			continue
+		if tid < 0 or tid >= FWConst.BLOCK_ORDER.size() or not FWConst.meta_valid(col):
+			continue
+		var v := Vector3i(ox + dx, oy + dy, oz + dz)
+		if seen.has(v):
+			continue
+		seen[v] = true
+		if _near(p, float(v.x) + 0.5, float(v.y) + 0.5, float(v.z) + 0.5, FWConst.BLOCK_REACH):
+			entries.append([v, str(FWConst.BLOCK_ORDER[tid]), col])
+	if entries.is_empty():
+		_notice(pid, "too_far")
+		return
+	var res: Dictionary = cs.batch_place(p["name"], entries, func(v: Vector3i) -> bool: return not _player_in_cell(v.x, v.y, v.z))
+	_finish_batch(pid, p, res)
+
+
+func on_undo(pid: int) -> void:
+	var p := _player_of(pid)
+	if p.is_empty() or _indoors(p):
+		return
+	if not _allow_action(p):
+		_notice(pid, "rate_limited")
+		return
+	var res: Dictionary = cs.undo_last(p["name"], func(v: Vector3i) -> bool: return _can_build_cell(p, v))
+	if int(res["placed"]) + int(res["removed"]) == 0 and str(res["error"]) == "":
+		res["error"] = "nothing_to_undo"
+	_finish_batch(pid, p, res)
+
+
 func on_gather(pid: int, rx: int, rz: int, tool: String) -> void:
 	var p := _player_of(pid)
 	if p.is_empty():
@@ -1050,6 +1166,19 @@ func on_god(pid: int, action: String, kind: String, x: float, z: float) -> void:
 		return
 	if not _allow_action(p):
 		_notice(pid, "rate_limited")
+		return
+	if action == "shape":
+		var sres: Dictionary = cs.shape_terrain(p["name"], kind, x, z)
+		if not sres["ok"]:
+			_notice(pid, str(sres["error"]))
+			return
+		var sflat := PackedInt32Array()
+		for c in sres["changes"]:
+			sflat.append(int(c[0]))
+			sflat.append(int(c[1]))
+			sflat.append(int(c[2]))
+		_broadcast("s2c_terrain_edit", sflat)
+		_dirty = true
 		return
 	var res: Dictionary = cs.god_action(p["name"], action, kind, x, z)
 	if not res["ok"]:

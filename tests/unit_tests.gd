@@ -55,6 +55,8 @@ func _init() -> void:
 	test_terrain()
 	test_mines()
 	test_creative()
+	test_batch_build()
+	test_terrain_shapes()
 	test_villages()
 	test_tls_pinning()
 	print("\nRESULT: %d passed, %d failed" % [_pass, _fail])
@@ -1480,7 +1482,9 @@ func test_terrain() -> void:
 	var mid: float = w.height_at(vx + 1.0, vz)
 	check(absf(mid - (w.base_height_at(vx + 1.0, vz) - 0.5)) < 0.3, "height blends smoothly between edited and neighbouring vertices")
 	w.set_edit(ix, iz, -9999)
-	check(w.edit_units(ix, iz) == FWConst.TERRAIN_MIN_UNITS, "edits are clamped to the maximum depth")
+	check(w.edit_units(ix, iz) == FWConst.TERRAIN_ADMIN_MIN_UNITS, "edits are clamped to the admin maximum depth")
+	w.set_edit(ix, iz, 9999)
+	check(w.edit_units(ix, iz) == FWConst.TERRAIN_ADMIN_MAX_UNITS, "edits are clamped to the admin maximum height")
 	w.set_edit(ix, iz, 0)
 	check(w.edits.is_empty(), "setting an edit to zero removes it")
 
@@ -1835,6 +1839,144 @@ func test_creative() -> void:
 	check(bool(cr.world_public()["creative"]) and not bool(sv.world_public()["creative"]), "welcome info carries the mode")
 	var back = CityState.from_dict(JSON.parse_string(JSON.stringify(cr.to_dict())))
 	check(back != null and back.creative and not CityState.from_dict(JSON.parse_string(JSON.stringify(sv.to_dict()))).creative, "mode survives save and load")
+
+
+func _flat_patch(c, role: String, size: int) -> Vector3i:
+	for gx in range(20, 200, 3):
+		for gz in range(20, 200, 3):
+			var base_h: int = maxi(0, int(floor(c.world.height_at(gx + 0.5, gz + 0.5))))
+			var good: bool = c.world.height_at(gx + 0.5, gz + 0.5) >= 0.2
+			for dx in range(size):
+				for dz in range(size):
+					var hh: float = c.world.height_at(gx + dx + 0.5, gz + dz + 0.5)
+					if hh < 0.2 or maxi(0, int(floor(hh))) != base_h or c.check_block(role, gx + dx, base_h, gz + dz, "stone") != "":
+						good = false
+			if good:
+				return Vector3i(gx, base_h, gz)
+	return Vector3i(-999, 0, 0)
+
+
+func test_batch_build() -> void:
+	print("[batch build]")
+	var cr = CityState.new(12345)
+	cr.creative = true
+	_login(cr, "cora")
+	_login(cr, "dan")
+	var o := _flat_patch(cr, "player", 4)
+	check(o.x != -999, "found a flat patch for tests")
+	var a := o
+	var b := o + Vector3i(3, 0, 3)
+	var cells: Array = CityState.region_cells(a, b)
+	check(cells.size() == 16, "4x1x4 region has 16 cells")
+	check(CityState.region_cells(a, a + Vector3i(40, 0, 0)).is_empty(), "region wider than the side limit is refused")
+	check(CityState.region_cells(a, a + Vector3i(15, 15, 15)).is_empty(), "region over the volume limit is refused")
+	check(CityState.region_cells(a, a + Vector3i(3, 3, 3), true).size() == 56, "hollow 4x4x4 shell has 56 cells")
+	# پر کردن
+	var entries: Array = []
+	for v in cells:
+		entries.append([v, "stone", 0])
+	var r: Dictionary = cr.batch_place("cora", entries)
+	check(int(r["placed"]) == 16 and (r["changed"] as Array).size() == 16, "fill places all 16 blocks")
+	check(cr.blocks.size() == 16 and cr.undo_depth("cora") == 1, "one fill is one undo step")
+	# واگرد پر کردن
+	var u: Dictionary = cr.undo_last("cora")
+	check(int(u["removed"]) == 16 and cr.blocks.is_empty(), "undo removes the whole fill")
+	check(cr.undo_last("cora")["error"] == "nothing_to_undo", "undo with empty history reports it")
+	# پاک کردن و واگرد پاک کردن
+	cr.batch_place("cora", entries)
+	var rc: Dictionary = cr.batch_remove("cora", cells)
+	check(int(rc["removed"]) == 16 and cr.blocks.is_empty(), "clear removes all 16")
+	var u2: Dictionary = cr.undo_last("cora")
+	check(int(u2["placed"]) == 16 and cr.blocks.size() == 16, "undo of clear restores the blocks")
+	# بلوک دیگران پاک نمی‌شود
+	var rd: Dictionary = cr.batch_remove("dan", cells)
+	check(int(rd["removed"]) == 0 and cr.blocks.size() == 16, "a normal player cannot clear someone else's blocks")
+	# واگرد تک‌بلوک
+	var one := Vector3i(o.x, o.y + 1, o.z)
+	check(cr.place_block("dan", 0, one.x, one.y, one.z, "wood", 0)["ok"], "single place on top works")
+	check(cr.undo_depth("dan") == 1, "single place is recorded for undo")
+	check(int(cr.undo_last("dan")["removed"]) == 1 and not cr.blocks.has(one), "undo of a single place")
+	# دیوارهای تو خالی و چینش لایه‌ای (لایهٔ بالا به تکیه‌گاه پایین نیاز دارد)
+	var cr2 = CityState.new(12345)
+	cr2.creative = true
+	_login(cr2, "erin")
+	var shell: Array = []
+	for v in CityState.region_cells(o, o + Vector3i(3, 3, 3), true):
+		shell.append([v, "brick", 0])
+	shell.reverse()  # عمداً از بالا به پایین؛ سرور باید مرتب کند
+	var rs: Dictionary = cr2.batch_place("erin", shell)
+	check(int(rs["placed"]) == 56, "hollow shell stacks correctly even when sent top-down (%d)" % int(rs["placed"]))
+	# هزینه در حالت بقا
+	var sv = CityState.new(12345)
+	_login(sv, "sam")
+	sv.accounts["sam"]["inv"] = {}
+	var rn: Dictionary = sv.batch_place("sam", entries)
+	check(int(rn["placed"]) == 0 and sv.blocks.is_empty(), "survival: batch fill without materials places nothing")
+	check(sv.undo_depth("sam") == 0, "a failed batch leaves no undo record")
+	# سقف عمق واگرد
+	for i in range(FWConst.UNDO_DEPTH + 5):
+		cr.push_undo("cora", [Vector3i(i, 0, 0)], [])
+	check(cr.undo_depth("cora") == FWConst.UNDO_DEPTH, "undo history is capped")
+
+
+func _open_ground(c, role: String) -> Vector2:
+	for gx in range(60, 400, 12):
+		for gz in range(60, 400, 12):
+			var v: Vector2i = CityState.terrain_vertex(float(gx), float(gz))
+			if c.terrain_check(role, v, FWConst.SHAPE_RADIUS) == "" and c.world.height_at(float(gx), float(gz)) >= 1.0:
+				return Vector2(gx, gz)
+	return Vector2(-1, -1)
+
+
+func test_terrain_shapes() -> void:
+	print("[admin terrain shapes: mountain, lake, flatten]")
+	var cs = CityState.new(12345)
+	_login(cs, "root")
+	cs.accounts["root"]["role"] = FWConst.ROLE_WORLD_ADMIN
+	_login(cs, "pat")
+	var at: Vector2 = _open_ground(cs, "admin")
+	check(at.x >= 0.0, "found open ground for terrain tests")
+	var h0: float = cs.world.height_at(at.x, at.y)
+	check(cs.shape_terrain("pat", "mountain", at.x, at.y)["error"] == "forbidden", "normal players cannot shape terrain")
+	check(cs.shape_terrain("root", "volcano", at.x, at.y)["error"] == "bad_request", "unknown shape is refused")
+	var r: Dictionary = cs.shape_terrain("root", "mountain", at.x, at.y)
+	check(r["ok"] and (r["changes"] as Array).size() > 20, "mountain changes many vertices")
+	var h1: float = cs.world.height_at(at.x, at.y)
+	check(h1 > h0 + 6.0, "one mountain raises the centre by ~8 m (%.1f -> %.1f)" % [h0, h1])
+	for i in range(3):
+		cs.shape_terrain("root", "mountain", at.x, at.y)
+	var peak: float = cs.world.height_at(at.x, at.y)
+	check(peak <= cs.world.base_height_at(at.x, at.y) + float(FWConst.TERRAIN_ADMIN_MAX_UNITS) * FWConst.TERRAIN_UNIT + 0.01, "mountain height is capped at the admin limit")
+	var edge: float = cs.world.height_at(at.x + float(FWConst.SHAPE_RADIUS) * FWConst.TERRAIN_EDIT_STEP + 4.0, at.y)
+	check(absf(edge - cs.world.base_height_at(at.x + float(FWConst.SHAPE_RADIUS) * FWConst.TERRAIN_EDIT_STEP + 4.0, at.y)) < 0.01, "mountain does not leak outside its radius")
+	# دریاچه
+	var cs2 = CityState.new(12345)
+	_login(cs2, "root")
+	cs2.accounts["root"]["role"] = FWConst.ROLE_WORLD_ADMIN
+	var rl: Dictionary = cs2.shape_terrain("root", "lake", at.x, at.y)
+	check(rl["ok"], "lake tool works")
+	var hl: float = cs2.world.height_at(at.x, at.y)
+	check(hl < 0.2, "lake centre is below the water line (%.2f)" % hl)
+	# صاف کردن
+	var cs3 = CityState.new(12345)
+	_login(cs3, "root")
+	cs3.accounts["root"]["role"] = FWConst.ROLE_WORLD_ADMIN
+	cs3.shape_terrain("root", "mountain", at.x + 6.0, at.y)
+	var rf: Dictionary = cs3.shape_terrain("root", "flatten", at.x, at.y)
+	check(rf["ok"] or rf["error"] == "terrain_limit", "flatten runs")
+	# پایداری ذخیره
+	var back = CityState.from_dict(JSON.parse_string(JSON.stringify(cs.to_dict())))
+	check(back != null and absf(back.world.height_at(at.x, at.y) - peak) < 0.01, "shaped terrain survives save and load")
+	# بازیکن عادی روی کوه مدیر زمین را پایین نمی‌آورد/بالا نمی‌برد اشتباهی
+	var old_units: int = cs.world.edit_units(CityState.terrain_vertex(at.x, at.y).x, CityState.terrain_vertex(at.x, at.y).y)
+	cs.apply_terraform(CityState.terrain_vertex(at.x, at.y), 1, 1)
+	check(cs.world.edit_units(CityState.terrain_vertex(at.x, at.y).x, CityState.terrain_vertex(at.x, at.y).y) == old_units, "a player's fill does not flatten an admin mountain")
+	# قفل زیر ساختمان
+	var cs4 = CityState.new(12345)
+	_login(cs4, "root")
+	cs4.accounts["root"]["role"] = FWConst.ROLE_WORLD_ADMIN
+	cs4.occupied[Placement.cell_key(int(at.x / FWConst.CELL_SIZE), int(at.y / FWConst.CELL_SIZE))] = 1
+	check(cs4.shape_terrain("root", "mountain", at.x, at.y)["error"] == "terrain_locked", "shaping is refused under buildings")
 
 
 func test_villages() -> void:

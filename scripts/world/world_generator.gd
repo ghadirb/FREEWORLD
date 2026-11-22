@@ -45,9 +45,9 @@ func edit_units(ix: int, iz: int) -> int:
 	return int(edits.get(edit_key(ix, iz), 0))
 
 
-## مقدار جدید یک رأس را می‌گذارد (۰ = حذف تغییر). مقدار در بازهٔ مجاز بریده می‌شود.
+## مقدار جدید یک رأس را می‌گذارد (۰ = حذف تغییر). مقدار در بازهٔ مجاز مدیر بریده می‌شود (محدودیت بازیکن عادی در apply_terraform).
 func set_edit(ix: int, iz: int, units: int) -> void:
-	var u := clampi(units, FWConst.TERRAIN_MIN_UNITS, FWConst.TERRAIN_MAX_UNITS)
+	var u := clampi(units, FWConst.TERRAIN_ADMIN_MIN_UNITS, FWConst.TERRAIN_ADMIN_MAX_UNITS)
 	if u == 0:
 		edits.erase(edit_key(ix, iz))
 	else:

@@ -27,6 +27,7 @@ var wheat_price: float = FWConst.WHEAT_BASE_PRICE
 var time_speed: float = 1.0
 ## حالت خلاقانه: ساخت و ابزار رایگان و نامحدود، بدون سکه و بدون افت انرژی. هنگام ساخت جهان تعیین و ذخیره می‌شود.
 var creative: bool = false
+var undo_stacks: Dictionary = {}  # نام بازیکن -> پشتهٔ واگرد (فقط در حافظه)
 ## روستاها یک بار حیوان گرفته‌اند (برای جهان‌های قدیمی هم یک بار اجرا می‌شود).
 var villages_seeded: bool = false
 var day_count: int = 0
@@ -772,7 +773,7 @@ func check_block(role: String, x: int, y: int, z: int, type: String) -> String:
 	return ""
 
 
-func place_block(player_name: String, req_id: int, x: int, y: int, z: int, type: String, color: int) -> Dictionary:
+func place_block(player_name: String, req_id: int, x: int, y: int, z: int, type: String, color: int, record: bool = true) -> Dictionary:
 	if not accounts.has(player_name):
 		return {"ok": false, "error": "no_account"}
 	var acc: Dictionary = accounts[player_name]
@@ -793,10 +794,12 @@ func place_block(player_name: String, req_id: int, x: int, y: int, z: int, type:
 	for item in cost:
 		acc["inv"][item] = int(acc["inv"][item]) - int(cost[item])
 	_add_block(Vector3i(x, y, z), type, color, player_name)
+	if record:
+		push_undo(player_name, [Vector3i(x, y, z)], [])
 	return {"ok": true, "type": type, "color": color}
 
 
-func remove_block(player_name: String, x: int, y: int, z: int) -> Dictionary:
+func remove_block(player_name: String, x: int, y: int, z: int, record: bool = true) -> Dictionary:
 	if not accounts.has(player_name):
 		return {"ok": false, "error": "no_account"}
 	var v := Vector3i(x, y, z)
@@ -812,8 +815,131 @@ func remove_block(player_name: String, x: int, y: int, z: int) -> Dictionary:
 			_inv_add(accounts[owner_name], str(item), int(cost[item]))
 	if owner_name != player_name:
 		_log(player_name, "admin_remove_block", {"owner": owner_name, "type": str(b[0]), "x": x, "y": y, "z": z})
+	if record:
+		push_undo(player_name, [], [[v, str(b[0]), int(b[1]), owner_name]])
 	_del_block(v)
 	return {"ok": true, "owner": owner_name}
+
+
+
+# ---------------- عملیات دسته‌ای و واگرد (پروتکل ۲۰) ----------------
+
+## خانه‌های یک جعبه (دو گوشهٔ دلخواه). اگر از سقف ابعاد/حجم بزرگ‌تر باشد آرایهٔ خالی برمی‌گرداند.
+## hollow: فقط پوستهٔ بیرونی (دیوار/کف/سقف).
+static func region_cells(a: Vector3i, b: Vector3i, hollow: bool = false) -> Array:
+	var lo := Vector3i(mini(a.x, b.x), mini(a.y, b.y), mini(a.z, b.z))
+	var hi := Vector3i(maxi(a.x, b.x), maxi(a.y, b.y), maxi(a.z, b.z))
+	var size := hi - lo + Vector3i.ONE
+	if size.x > FWConst.REGION_MAX_SIDE or size.y > FWConst.REGION_MAX_SIDE or size.z > FWConst.REGION_MAX_SIDE:
+		return []
+	if size.x * size.y * size.z > FWConst.REGION_MAX_VOLUME:
+		return []
+	var out: Array = []
+	for y in range(lo.y, hi.y + 1):
+		for z in range(lo.z, hi.z + 1):
+			for x in range(lo.x, hi.x + 1):
+				if hollow and x > lo.x and x < hi.x and y > lo.y and y < hi.y and z > lo.z and z < hi.z:
+					continue
+				out.append(Vector3i(x, y, z))
+	return out
+
+
+func push_undo(player_name: String, added: Array, removed: Array) -> void:
+	if added.is_empty() and removed.is_empty():
+		return
+	var st: Array = undo_stacks.get(player_name, [])
+	st.append({"add": added, "del": removed})
+	while st.size() > FWConst.UNDO_DEPTH:
+		st.pop_front()
+	undo_stacks[player_name] = st
+
+
+func undo_depth(player_name: String) -> int:
+	return (undo_stacks.get(player_name, []) as Array).size()
+
+
+## entries: [[Vector3i, type, color], ...]. پایین‌ترین لایه اول چیده می‌شود تا تکیه‌گاه لایهٔ بالا باشد.
+## can_place(v) -> bool اختیاری است (مثلاً بازیکنی روی آن خانه نایستاده باشد).
+func batch_place(player_name: String, entries: Array, can_place: Callable = Callable()) -> Dictionary:
+	var out := {"changed": [], "placed": 0, "removed": 0, "skipped": 0, "error": ""}
+	if not accounts.has(player_name):
+		out["error"] = "no_account"
+		return out
+	var sorted := entries.duplicate()
+	sorted.sort_custom(func(p, q): return (p[0] as Vector3i).y < (q[0] as Vector3i).y)
+	var added: Array = []
+	for e in sorted:
+		var v: Vector3i = e[0]
+		if can_place.is_valid() and not can_place.call(v):
+			out["skipped"] += 1
+			continue
+		var res := place_block(player_name, 0, v.x, v.y, v.z, str(e[1]), int(e[2]), false)
+		if res["ok"]:
+			added.append(v)
+			out["changed"].append([v, FWConst.BLOCK_ORDER.find(str(e[1])), int(e[2])])
+		else:
+			out["skipped"] += 1
+			out["error"] = str(res["error"])
+	out["placed"] = added.size()
+	push_undo(player_name, added, [])
+	return out
+
+
+func batch_remove(player_name: String, cells: Array) -> Dictionary:
+	var out := {"changed": [], "placed": 0, "removed": 0, "skipped": 0, "error": "", "owners": {}}
+	if not accounts.has(player_name):
+		out["error"] = "no_account"
+		return out
+	var removed: Array = []
+	for v in cells:
+		if not blocks.has(v):
+			continue
+		var b: Array = blocks[v]
+		var rec := [v, str(b[0]), int(b[1]), str(b[2])]
+		var res := remove_block(player_name, v.x, v.y, v.z, false)
+		if res["ok"]:
+			removed.append(rec)
+			out["changed"].append([v, -1, 0])
+			out["owners"][str(res["owner"])] = true
+		else:
+			out["skipped"] += 1
+			out["error"] = str(res["error"])
+	out["removed"] = removed.size()
+	push_undo(player_name, [], removed)
+	return out
+
+
+## آخرین عمل بازیکن را برمی‌گرداند. بلوک‌هایی که دیگر مال او نیستند یا جایشان پر شده دست نمی‌خورند.
+func undo_last(player_name: String, can_place: Callable = Callable()) -> Dictionary:
+	var out := {"changed": [], "placed": 0, "removed": 0, "skipped": 0, "error": "", "owners": {}}
+	var st: Array = undo_stacks.get(player_name, [])
+	if st.is_empty() or not accounts.has(player_name):
+		out["error"] = "nothing_to_undo"
+		return out
+	var rec: Dictionary = st.pop_back()
+	undo_stacks[player_name] = st
+	for v in rec["add"]:
+		if blocks.has(v) and str(blocks[v][2]) == player_name:
+			var res := remove_block(player_name, v.x, v.y, v.z, false)
+			if res["ok"]:
+				out["removed"] += 1
+				out["changed"].append([v, -1, 0])
+				continue
+		out["skipped"] += 1
+	var dels: Array = (rec["del"] as Array).duplicate()
+	dels.sort_custom(func(p, q): return (p[0] as Vector3i).y < (q[0] as Vector3i).y)
+	for d in dels:
+		var v: Vector3i = d[0]
+		if str(d[3]) != player_name or (can_place.is_valid() and not can_place.call(v)):
+			out["skipped"] += 1
+			continue
+		var res := place_block(player_name, 0, v.x, v.y, v.z, str(d[1]), int(d[2]), false)
+		if res["ok"]:
+			out["placed"] += 1
+			out["changed"].append([v, FWConst.BLOCK_ORDER.find(str(d[1])), int(d[2])])
+		else:
+			out["skipped"] += 1
+	return out
 
 
 func paint_block(player_name: String, x: int, y: int, z: int, color: int) -> Dictionary:
@@ -1232,7 +1358,13 @@ func apply_terraform(v: Vector2i, sign: int, r: int = 1) -> Array:
 			var ix := v.x + dx
 			var iz := v.y + dz
 			var old: int = world.edit_units(ix, iz)
-			world.set_edit(ix, iz, old + sign * int(st[ring]))
+			var want: int = old + sign * int(st[ring])
+			# حد بازیکن عادی؛ اگر مدیر جایی را بالاتر/پایین‌تر برده، زمین به‌زور کم یا زیاد نمی‌شود.
+			if sign > 0:
+				want = mini(want, maxi(FWConst.TERRAIN_MAX_UNITS, old))
+			else:
+				want = maxi(want, mini(FWConst.TERRAIN_MIN_UNITS, old))
+			world.set_edit(ix, iz, want)
 			var now: int = world.edit_units(ix, iz)
 			if now != old:
 				changed.append([ix, iz, now])
@@ -1290,6 +1422,58 @@ func _terraform(player_name: String, x: float, z: float, tool: String, pos: Vect
 	else:
 		_inv_add(acc, item, -1)
 	return {"ok": true, "item": item, "count": n, "changes": changed, "mode": "dig" if sign < 0 else "fill"}
+
+
+## ابزار شکل‌دهی زمین برای مدیر: mountain (کوه)، lake (دریاچه)، flatten (صاف کردن به ارتفاع مرکز).
+## فقط روی لایهٔ ویرایش زمین عمل می‌کند؛ زمین پایه از Seed دست‌نخورده می‌ماند.
+func shape_terrain(actor: String, kind: String, x: float, z: float) -> Dictionary:
+	if not FWConst.is_admin(role_of(actor)):
+		return {"ok": false, "error": "forbidden"}
+	if not FWConst.GOD_SHAPES.has(kind) or not (is_finite(x) and is_finite(z)):
+		return {"ok": false, "error": "bad_request"}
+	var v := terrain_vertex(x, z)
+	var rad := FWConst.SHAPE_RADIUS
+	var err := terrain_check(role_of(actor), v, rad)
+	if err != "":
+		return {"ok": false, "error": err}
+	var step := FWConst.TERRAIN_EDIT_STEP
+	var center_h: float = world.height_at(float(v.x) * step, float(v.y) * step)
+	var plan: Array = []
+	var fresh := 0
+	for dx in range(-rad, rad + 1):
+		for dz in range(-rad, rad + 1):
+			var d := sqrt(float(dx * dx + dz * dz))
+			if d >= float(rad):
+				continue
+			var w := 0.5 * (1.0 + cos(PI * d / float(rad)))
+			var ix := v.x + dx
+			var iz := v.y + dz
+			var h: float = world.height_at(float(ix) * step, float(iz) * step)
+			var old: int = world.edit_units(ix, iz)
+			var nu := old
+			match kind:
+				"mountain":
+					nu = old + int(round(w * float(FWConst.SHAPE_MOUNTAIN_UNITS)))
+				"lake":
+					if h > FWConst.SHAPE_LAKE_FLOOR:
+						nu = old + int(round((FWConst.SHAPE_LAKE_FLOOR - h) * w / FWConst.TERRAIN_UNIT))
+				"flatten":
+					nu = old + int(round((center_h - h) * w / FWConst.TERRAIN_UNIT))
+			nu = clampi(nu, FWConst.TERRAIN_ADMIN_MIN_UNITS, FWConst.TERRAIN_ADMIN_MAX_UNITS)
+			if nu != old:
+				plan.append([ix, iz, nu])
+				if old == 0:
+					fresh += 1
+	if plan.is_empty():
+		return {"ok": false, "error": "terrain_limit"}
+	if world.edits.size() + fresh > FWConst.TERRAIN_MAX_EDITS:
+		return {"ok": false, "error": "terrain_full"}
+	var changed: Array = []
+	for e in plan:
+		world.set_edit(int(e[0]), int(e[1]), int(e[2]))
+		changed.append([int(e[0]), int(e[1]), world.edit_units(int(e[0]), int(e[1]))])
+	_log(actor, "terrain_shape", {"kind": kind, "x": snappedf(x, 0.1), "z": snappedf(z, 0.1)})
+	return {"ok": true, "changes": changed}
 
 
 ## کندن زمین با بیل: خاک یا شن می‌دهد و زمین را پایین می‌برد؛ زیر ۰ متر آب می‌آید (دریاچه).

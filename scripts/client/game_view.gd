@@ -62,6 +62,11 @@ var joy_active: bool = false
 var joy_origin: Vector2 = Vector2.ZERO
 var joy_zone: Rect2 = Rect2()
 var build_type: String = ""
+## حالت چکش (FWConst.BUILD_MODES): single = تک‌بلوک؛ بقیه دو لمس (دو گوشه) می‌خواهند.
+var build_mode: String = "single"
+var region_a: Vector3i = Vector3i.ZERO
+var region_has_a: bool = false
+var clipboard: PackedInt32Array = PackedInt32Array()
 var ghost_cell: Vector2i = Vector2i(-1, -1)
 var ghost_err: String = "not_ready"
 var is_over_ui: Callable = func(_p): return false
@@ -476,6 +481,58 @@ func set_tool(t: String) -> void:
 	tool_changed.emit()
 
 
+func set_build_mode(m: String) -> void:
+	if not FWConst.BUILD_MODES.has(m):
+		return
+	build_mode = m
+	region_has_a = false
+	tool_changed.emit()
+
+
+func undo_build() -> void:
+	client.undo_build()
+
+
+## لمس‌های ابزار دسته‌ای: پر کردن/دیوار/پاک کردن/کپی (دو گوشه) و چسباندن (یک نقطه).
+func _region_tap(hit: Dictionary) -> void:
+	var on_block: bool = hit["kind"] == "block"
+	var cell: Vector3i
+	if build_mode == "clear" or build_mode == "copy":
+		cell = hit["hit"] if on_block else hit["cell"]
+	else:
+		cell = hit["prev"] if on_block else hit["cell"]
+	if not _in_reach(cell):
+		Sfx.play(self, "error")
+		_feedback("too_far")
+		return
+	if build_mode == "paste":
+		if clipboard.is_empty():
+			Sfx.play(self, "error")
+			_feedback("clipboard_empty")
+			return
+		Sfx.play(self, "place")
+		client.paste_blocks(cell, clipboard)
+		return
+	if not region_has_a:
+		region_a = cell
+		region_has_a = true
+		Sfx.play(self, "click")
+		client.notice.emit("corner_set", {})
+		tool_changed.emit()
+		return
+	region_has_a = false
+	tool_changed.emit()
+	Sfx.play(self, "place")
+	match build_mode:
+		"fill", "walls":
+			client.build_region(build_mode, region_a, cell, block_type, paint_color)
+		"clear":
+			client.build_region("clear", region_a, cell, "", 0)
+		"copy":
+			clipboard = client.copy_region(region_a, cell)
+			client.notice.emit("copied", {"n": clipboard.size() / 5})
+
+
 func set_block_type(t: String) -> void:
 	if FWConst.BLOCK_TYPES.has(t):
 		block_type = t
@@ -586,6 +643,9 @@ func _tool_tap(pos: Vector2) -> void:
 			var hit: Dictionary = block_view.raycast(o, d)
 			if hit.is_empty():
 				return
+			if build_mode != "single":
+				_region_tap(hit)
+				return
 			var cell: Vector3i = hit["prev"] if hit["kind"] == "block" else hit["cell"]
 			if not _in_reach(cell):
 				Sfx.play(self, "error")
@@ -673,6 +733,8 @@ func _tap(pos: Vector2) -> void:
 			Sfx.play(self, "click")
 			if god_kind == "remove":
 				client.god("remove", "", gh.x, gh.z)
+			elif FWConst.GOD_SHAPES.has(god_kind):
+				client.god("shape", god_kind, gh.x, gh.z)
 			else:
 				client.god("add", god_kind, gh.x, gh.z)
 		return

@@ -1,7 +1,7 @@
 extends RefCounted
 ## ثابت‌های مشترک بین سرور و کلاینت.
 
-const PROTOCOL_VERSION := 19
+const PROTOCOL_VERSION := 20
 # ترافیک شبکه با DTLS رمز می‌شود (نسخهٔ ۴ به بعد). فقط برای عیب‌یابی خاموش شود.
 const USE_DTLS := true
 const DEFAULT_PORT := 7777
@@ -119,6 +119,9 @@ const MAX_BLOCKS_PER_PLAYER := 2500
 const MAX_BLOCKS_TOTAL := 25000
 const MAX_BLOCK_HEIGHT := 24  # بالاتر از سطح زمین همان ستون
 const BLOCK_SEND_BATCH := 400
+const REGION_MAX_SIDE := 16      # بیشینهٔ طول هر ضلع جعبهٔ پر کردن/پاک کردن/چسباندن
+const REGION_MAX_VOLUME := 512   # بیشینهٔ تعداد خانه در یک عمل دسته‌ای
+const UNDO_DEPTH := 20           # تعداد عمل‌های قابل واگرد برای هر بازیکن
 const ITEM_CAP := 999
 const COLOR_COUNT := 12  # ۰ = رنگ طبیعی
 # فیلد color هر بلوک یک «متا» است: رنگ (۰..۱۱) + ۱۶×جهت (۰..۳؛ فقط برای پله: جهت بالا رفتن).
@@ -216,12 +219,21 @@ const GOD_MAX := 150
 const GOD_REMOVE_RANGE := 3.0
 const GOD_MIN_HEIGHT := 0.3
 const TOOLS := ["hand", "axe", "pickaxe", "shovel", "fill", "hammer", "brush"]
+## حالت‌های چکش: تک‌بلوک و ابزارهای دسته‌ای (دو گوشه → اجرا)
+const BUILD_MODES := ["single", "fill", "walls", "clear", "copy", "paste"]
 
 ## تغییر زمین (پروتکل ۱۶): شبکهٔ ۲ متری، واحد ۱/۸ متر؛ هر بار کندن مرکز ۰٫۵ متر پایین می‌برد.
 const TERRAIN_EDIT_STEP := 2.0
 const TERRAIN_UNIT := 0.125
 const TERRAIN_MIN_UNITS := -40      # حداکثر ۵ متر عمق نسبت به زمین پایه
 const TERRAIN_MAX_UNITS := 24       # حداکثر ۳ متر بلندی
+const TERRAIN_ADMIN_MIN_UNITS := -80   # ابزار مدیر: تا ۱۰ متر عمق
+const TERRAIN_ADMIN_MAX_UNITS := 160   # ابزار مدیر: تا ۲۰ متر بلندی
+## ابزار شکل‌دهی زمین برای مدیر (World Mode): کوه، دریاچه، صاف کردن
+const GOD_SHAPES := ["mountain", "lake", "flatten"]
+const SHAPE_RADIUS := 5                # شعاع به رأس (هر رأس ۲ متر → ۱۰ متر)
+const SHAPE_MOUNTAIN_UNITS := 64       # هر بار بلندی مرکز کوه (۸ متر)
+const SHAPE_LAKE_FLOOR := -1.5         # کف دریاچه (متر)؛ آب زیر ۰٫۲ متر است
 const TERRAIN_MAX_EDITS := 6000     # سقف رأس‌های تغییرکرده در هر شهر
 const TERRAIN_DIG_STRENGTH := [4, 2, 1]  # بیل معمولی ۳×۳: بر اساس فاصلهٔ منهتن از مرکز
 const TERRAIN_DIG_STRENGTH_IRON := [4, 3, 2, 1, 1]  # بیل آهنی ۵×۵

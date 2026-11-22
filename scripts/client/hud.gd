@@ -57,6 +57,7 @@ var _hint_panel: PanelContainer
 var _tool_btns: Dictionary = {}
 var _tool_hint: Label
 var _block_box: VBoxContainer
+var _mode_btns: Dictionary = {}
 var _block_btns: Dictionary = {}
 var _color_row: HBoxContainer
 var _color_btns: Array = []
@@ -380,6 +381,28 @@ func _build_tools_panel() -> void:
 	sc.custom_minimum_size = Vector2(620, 66)
 	sc.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	_block_box.add_child(sc)
+	var msc := ScrollContainer.new()
+	msc.custom_minimum_size = Vector2(620, 50)
+	msc.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_block_box.add_child(msc)
+	var mrow := HBoxContainer.new()
+	mrow.add_theme_constant_override("separation", 5)
+	msc.add_child(mrow)
+	for m in FWConst.BUILD_MODES:
+		var mb := UiTheme.button(Loc.t("mode_" + m), Vector2(96, 44))
+		mb.add_theme_font_size_override("font_size", 16)
+		mb.toggle_mode = true
+		mb.pressed.connect(func():
+			Sfx.play(self, "click")
+			view.set_build_mode(m))
+		mrow.add_child(mb)
+		_mode_btns[m] = mb
+	var ub := UiTheme.button(Loc.t("btn_undo"), Vector2(96, 44))
+	ub.add_theme_font_size_override("font_size", 16)
+	ub.pressed.connect(func():
+		Sfx.play(self, "click")
+		view.undo_build())
+	mrow.add_child(ub)
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 5)
 	sc.add_child(row)
@@ -421,10 +444,16 @@ func _refresh_tools() -> void:
 		for item in cost:
 			parts.append("%s %s" % [Loc.digits(str(cost[item])), Loc.t("item_" + str(item))])
 		hint = "%s: %s  |  %s" % [Loc.t("block_" + view.block_type), " + ".join(parts), Loc.t("hold_remove")]
+		if view.build_mode != "single":
+			hint = Loc.t("hint_mode_" + view.build_mode)
+			if view.region_has_a:
+				hint += "  ←  " + Loc.t("msg_corner_set")
 	_tool_hint.text = hint
 	_hint_panel.visible = _tools_panel.visible
 	_block_box.visible = view.tool == "hammer"
 	_color_row.visible = view.tool == "hammer" or view.tool == "brush"
+	for m in _mode_btns:
+		_mode_btns[m].button_pressed = (m == view.build_mode)
 	for t in _block_btns:
 		var b: Button = _block_btns[t]
 		b.text = "%s\n×%s" % [Loc.t("block_" + t), Loc.digits(str(_affordable(t)))]
@@ -658,7 +687,7 @@ func _build_god_panel() -> void:
 	row.add_theme_constant_override("h_separation", 8)
 	row.add_theme_constant_override("v_separation", 8)
 	v.add_child(row)
-	for k in FWConst.GOD_STATIC + FWConst.GOD_ANIMALS.keys() + ["remove"]:
+	for k in FWConst.GOD_STATIC + FWConst.GOD_ANIMALS.keys() + FWConst.GOD_SHAPES + ["remove"]:
 		var b := UiTheme.button(Loc.t("god_" + str(k)), Vector2(120, 70))
 		b.add_theme_font_size_override("font_size", 22)
 		b.toggle_mode = true
@@ -1165,6 +1194,16 @@ func _on_notice(code: String, args: Dictionary) -> void:
 			Sfx.play(self, "error")
 			var need := str(args.get("tool", ""))
 			toast(Loc.fmt("msg_need_tool", [Loc.t("tool_" + need)]) if need != "" else Loc.err(code), Color("ff9a8a"))
+		"batch_done":
+			Sfx.play(self, "place")
+			var bt: String = Loc.fmt("msg_batch_done", [Loc.digits(str(args["n"]))])
+			if int(args.get("skipped", 0)) > 0:
+				bt += " " + Loc.fmt("msg_batch_skipped", [Loc.digits(str(args["skipped"]))])
+			toast(bt, Color("c8f08a"))
+		"corner_set":
+			toast(Loc.t("msg_corner_set"))
+		"copied":
+			toast(Loc.fmt("msg_copied", [Loc.digits(str(args["n"]))]), Color("c8f08a"))
 		"role_set":
 			toast(Loc.fmt("msg_role_set", [args["target"], Loc.role_name(str(args["role"]))]))
 		"your_building_removed":

@@ -178,6 +178,51 @@ func _run() -> void:
 	server.stop()
 	server.queue_free()
 	c.queue_free()
+
+	print("== batch build tools: fill, copy/paste, clear, undo (protocol 20) ==")
+	var cdir := OS.get_user_data_dir().path_join("local_test_batch_%d" % Time.get_ticks_msec())
+	server = ServerMain.launch(root, {"port": 0, "seed": 777, "data_dir": cdir, "admins": [["hosty", "secret-secret-1"]], "max_seconds": 0.0, "creative": true})
+	c = _mk_client()
+	c.connect_local(server, "hosty", "secret-secret-1")
+	ok(await wait_until(func(): return c.is_logged_in and not c.inv.is_empty(), 3.0), "creative login works")
+	var pp: Vector3 = server.peers[1]["pos"]
+	var o := Vector3i(-999, 0, 0)
+	for ddx in range(3, 9):
+		for ddz in range(-6, 7):
+			var gx := int(floor(pp.x)) + ddx
+			var gz := int(floor(pp.z)) + ddz
+			var h0: float = server.cs.world.height_at(gx + 0.5, gz + 0.5)
+			var lv := maxi(0, int(floor(h0)))
+			var good: bool = h0 >= 0.2 and o.x == -999
+			for ax in range(3):
+				for az in range(3):
+					var hh: float = server.cs.world.height_at(gx + ax + 0.5, gz + az + 0.5)
+					if hh < 0.2 or maxi(0, int(floor(hh))) != lv or server.cs.check_block("admin", gx + ax, lv, gz + az, "stone") != "":
+						good = false
+			if good:
+				o = Vector3i(gx, lv, gz)
+	ok(o.x != -999, "found a flat 3x3 patch near the player")
+	var o2 := o + Vector3i(2, 0, 2)
+	c.build_region("fill", o, o2, "stone", 2)
+	ok(await wait_until(func(): return server.cs.blocks.size() == 9 and c.mirror.blocks.size() == 9, 3.0), "fill: 9 blocks on server and client mirror")
+	var clip: PackedInt32Array = c.copy_region(o, o2)
+	ok(clip.size() == 45, "copy captures 9 blocks (5 ints each)")
+	c.undo_build()
+	ok(await wait_until(func(): return server.cs.blocks.is_empty() and c.mirror.blocks.is_empty(), 3.0), "undo removes the fill")
+	c.paste_blocks(o, clip)
+	ok(await wait_until(func(): return server.cs.blocks.size() == 9 and c.mirror.blocks.size() == 9, 3.0), "paste rebuilds the copy")
+	ok(int(server.cs.blocks[o][1]) == 2, "paste keeps block colours")
+	c.build_region("clear", o, o2, "", 0)
+	ok(await wait_until(func(): return server.cs.blocks.is_empty() and c.mirror.blocks.is_empty(), 3.0), "clear removes the blocks")
+	c.undo_build()
+	ok(await wait_until(func(): return server.cs.blocks.size() == 9, 3.0), "undo of clear brings them back")
+	c.build_region("fill", o, o + Vector3i(40, 0, 0), "stone", 0)
+	await create_timer(0.4).timeout
+	ok(server.cs.blocks.size() == 9, "oversized region is refused by the server")
+	c.disconnect_from_server()
+	server.stop()
+	server.queue_free()
+	c.queue_free()
 	await create_timer(0.3).timeout
 
 	print("== tools UI smoke (real GameView + HUD) ==")

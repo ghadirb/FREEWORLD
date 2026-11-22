@@ -117,6 +117,24 @@ func c2s_paint_block(x: int, y: int, z: int, color: int) -> void:
 
 
 @rpc("any_peer", "call_remote", "reliable")
+func c2s_build_region(op: String, x1: int, y1: int, z1: int, x2: int, y2: int, z2: int, type: String, color: int) -> void:
+	if server:
+		server.on_build_region(multiplayer.get_remote_sender_id(), op, x1, y1, z1, x2, y2, z2, type, color)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func c2s_paste(ox: int, oy: int, oz: int, data: PackedInt32Array) -> void:
+	if server:
+		server.on_paste(multiplayer.get_remote_sender_id(), ox, oy, oz, data)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func c2s_undo() -> void:
+	if server:
+		server.on_undo(multiplayer.get_remote_sender_id())
+
+
+@rpc("any_peer", "call_remote", "reliable")
 func c2s_gather(rx: int, rz: int, tool: String) -> void:
 	if server:
 		server.on_gather(multiplayer.get_remote_sender_id(), rx, rz, tool)
