@@ -86,7 +86,7 @@ static func _portal_mesh() -> ArrayMesh:
 
 ## نزدیک‌ترین ورودی در فاصلهٔ max_dist از نقطهٔ (x, z) بیرون؛ دیکشنری خالی اگر نبود.
 func nearest_entrance(x: float, z: float, max_dist: float) -> Dictionary:
-	return world.nearest_mine_entrance(x, z, max_dist)
+	return world.nearest_site(x, z, max_dist)
 
 
 func _process(delta: float) -> void:
@@ -121,8 +121,7 @@ func layout() -> Dictionary:
 
 func enter(id: String, depleted: Dictionary) -> void:
 	leave()
-	var v: Vector2i = Mine.parse_id(id)
-	_layout = Mine.layout(world.seed_value, v.x, v.y)
+	_layout = Mine.layout_of(world.seed_value, id)
 	_mine_id = id
 	_root = Node3D.new()
 	_root.position = ORIGIN
@@ -137,7 +136,7 @@ func enter(id: String, depleted: Dictionary) -> void:
 		node.mesh = _ore_mesh(str(n["kind"]))
 		node.material_override = mat
 		node.position = Vector3(float(n["x"]), 0.0, float(n["z"]))
-		node.rotation.y = float((idx * 97) % 360) * PI / 180.0
+		node.rotation.y = 0.0 if id.begins_with("h") else float((idx * 97) % 360) * PI / 180.0
 		node.visible = not depleted.has(idx)
 		_root.add_child(node)
 		_ore_nodes[idx] = node
@@ -149,7 +148,7 @@ func enter(id: String, depleted: Dictionary) -> void:
 	door.position = Vector3(ex.x, 0.0, ex.y + Mine.TILE * 0.5 + 0.1)
 	_root.add_child(door)
 	var lbl := Label3D.new()
-	lbl.text = Loc.t("mine_exit")
+	lbl.text = Loc.t("house_exit") if id.begins_with("h") else Loc.t("mine_exit")
 	lbl.font = Avatar.font()
 	lbl.font_size = 40
 	lbl.pixel_size = 0.008
@@ -161,8 +160,8 @@ func enter(id: String, depleted: Dictionary) -> void:
 	lbl.no_depth_test = true
 	_root.add_child(lbl)
 	_lamp = OmniLight3D.new()
-	_lamp.omni_range = 14.0
-	_lamp.light_energy = 1.6
+	_lamp.omni_range = 14.0 if not id.begins_with("h") else 18.0
+	_lamp.light_energy = 1.6 if not id.begins_with("h") else 0.9
 	_lamp.light_color = Color(1.0, 0.86, 0.62)
 	_lamp.position = ORIGIN + Vector3(ex.x, 2.6, ex.y)
 	add_child(_lamp)
@@ -235,6 +234,7 @@ static func _tile_hash(tx: int, tz: int) -> float:
 static func _build_mesh(l: Dictionary) -> ArrayMesh:
 	var mb := MeshBuilder.new()
 	var T := Mine.TILE
+	var house: bool = str(l.get("style", "")) == "house"
 	for tz in range(Mine.SIZE):
 		for tx in range(Mine.SIZE):
 			var h := _tile_hash(tx, tz)
@@ -242,9 +242,12 @@ static func _build_mesh(l: Dictionary) -> ArrayMesh:
 			var z0 := float(tz) * T
 			if Mine.tile_open(l, tx, tz):
 				var fc := Color("5b554d").lerp(Color("6d665c"), h)
+				if house:
+					fc = Color("a9784a").lerp(Color("b98a58"), float((tx + tz) % 2) * 0.6 + h * 0.2)
 				var pts := [Vector3(x0, 0, z0), Vector3(x0 + T, 0, z0), Vector3(x0 + T, 0, z0 + T), Vector3(x0, 0, z0 + T)]
 				mb.add_poly(pts, Vector3(x0 + T * 0.5, -1.0, z0 + T * 0.5), fc)
-				_add_support(mb, l, tx, tz, x0, z0)
+				if not house:
+					_add_support(mb, l, tx, tz, x0, z0)
 				continue
 			# دیوار فقط جایی که به فضای باز می‌چسبد (هشت همسایه).
 			var touches := false
@@ -256,7 +259,22 @@ static func _build_mesh(l: Dictionary) -> ArrayMesh:
 				continue
 			var wc := Color("3c3834").lerp(Color("57514a"), h)
 			var tall := WALL_H + (h - 0.5) * 0.5
+			if house:
+				wc = Color("e2d2ae").lerp(Color("d6c29a"), h)
+				tall = WALL_H
 			mb.add_box(Vector3(x0 + T * 0.5, tall * 0.5, z0 + T * 0.5), Vector3(T, tall, T), wc)
+	if house:
+		# میز و دو چهارپایه وسط اتاق.
+		var c := Mine.tile_center(12, 12)
+		mb.add_box(Vector3(c.x, 0.75, c.y), Vector3(1.8, 0.12, 1.1), Color("8a5a2c"))
+		mb.add_box(Vector3(c.x - 0.75, 0.37, c.y - 0.4), Vector3(0.12, 0.74, 0.12), Color("6e4723"))
+		mb.add_box(Vector3(c.x + 0.75, 0.37, c.y - 0.4), Vector3(0.12, 0.74, 0.12), Color("6e4723"))
+		mb.add_box(Vector3(c.x - 0.75, 0.37, c.y + 0.4), Vector3(0.12, 0.74, 0.12), Color("6e4723"))
+		mb.add_box(Vector3(c.x + 0.75, 0.37, c.y + 0.4), Vector3(0.12, 0.74, 0.12), Color("6e4723"))
+		mb.add_box(Vector3(c.x - 1.3, 0.3, c.y + 0.9), Vector3(0.5, 0.6, 0.5), Color("7a5230"))
+		mb.add_box(Vector3(c.x + 1.3, 0.3, c.y + 0.9), Vector3(0.5, 0.6, 0.5), Color("7a5230"))
+		# فرش.
+		mb.add_box(Vector3(c.x, 0.02, c.y + 0.1), Vector3(3.0, 0.04, 2.2), Color("a8483a"))
 	return mb.build()
 
 
@@ -323,7 +341,12 @@ static func _ore_mesh(kind: String) -> ArrayMesh:
 			mb.add_cylinder(Vector3(-0.15, 0.4, 0.0), 0.2, 0.0, 0.9, 5, Color("5fe6ff"))
 			mb.add_cylinder(Vector3(0.2, 0.4, 0.15), 0.16, 0.0, 0.65, 5, Color("a98bff"))
 			mb.add_cylinder(Vector3(0.05, 0.4, -0.2), 0.13, 0.0, 0.5, 5, Color("7dffd6"))
-		"chest":
+		"bed":
+			mb.add_box(Vector3(0, 0.25, 0), Vector3(1.3, 0.5, 2.2), Color("7a5230"))
+			mb.add_box(Vector3(0, 0.6, 0.1), Vector3(1.2, 0.25, 1.9), Color("e9e4d8"))
+			mb.add_box(Vector3(0, 0.82, -0.75), Vector3(0.9, 0.2, 0.4), Color("ffffff"))
+			mb.add_box(Vector3(0, 0.72, 0.5), Vector3(1.22, 0.1, 1.0), Color("4a6fa8"))
+		"chest", "hchest":
 			mb.add_box(Vector3(0, 0.3, 0), Vector3(1.0, 0.6, 0.65), Color("8a5a2c"))
 			mb.add_box(Vector3(0, 0.68, 0), Vector3(1.04, 0.18, 0.69), Color("a56f38"))
 			mb.add_box(Vector3(0, 0.45, 0.34), Vector3(0.16, 0.22, 0.05), Color("ffd24a"))

@@ -1,7 +1,7 @@
 extends RefCounted
 ## ثابت‌های مشترک بین سرور و کلاینت.
 
-const PROTOCOL_VERSION := 18
+const PROTOCOL_VERSION := 19
 # ترافیک شبکه با DTLS رمز می‌شود (نسخهٔ ۴ به بعد). فقط برای عیب‌یابی خاموش شود.
 const USE_DTLS := true
 const DEFAULT_PORT := 7777
@@ -244,6 +244,17 @@ const MINE_CAVERNS := 5
 const MINE_LOOP_CHANCE := 0.07
 const MINE_ORE_CHANCE := 0.14       # احتمال سنگ در کاشی معمولی (بن‌بست‌ها همیشه سنگ دارند)
 const MINE_CHESTS := 3
+# روستاهای از پیش‌ساخته (پروتکل ۱۹): قطعی از Seed، بیرون از شهر، روی زمین هموار.
+const VILLAGE_CELL := 128.0
+const VILLAGE_RADIUS := 22.0
+const VILLAGE_MIN_CITY_DIST := 140.0
+const VILLAGE_MIN_H := 1.2
+const VILLAGE_MAX_H := 10.0
+const HOUSE_HALF := 2.5            # خانه ۵×۵ متر، هم‌تراز محورها
+const HOUSE_ENTER_RANGE := 4.5
+const VILLAGE_ANIMALS := ["sheep", "sheep", "rabbit"]
+const HOME_REST_COOLDOWN := 90.0   # تخت: هر ۹۰ ثانیه یک بار انرژی کامل
+const HOME_CHEST := {"respawn": 900.0, "reward_min": 15, "reward_max": 45}
 const MINE_ORES := {
 	"stone": {"item": "stone", "min": 2, "max": 4, "respawn": 120.0},
 	"coal": {"item": "coal", "min": 2, "max": 4, "respawn": 150.0},

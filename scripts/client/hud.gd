@@ -1139,6 +1139,9 @@ func _on_notice(code: String, args: Dictionary) -> void:
 		"upgraded":
 			Sfx.play(self, "coin")
 			toast(Loc.fmt("msg_upgraded", [Loc.t("tool_" + str(args["tool"]))]), Color("ffd84a"))
+		"rested":
+			Sfx.play(self, "coin")
+			toast(Loc.t("msg_rested"), Color("c8f08a"))
 		"treasure":
 			Sfx.play(self, "coin")
 			toast(Loc.fmt("msg_treasure", [Loc.digits(str(args["reward"]))]), Color("ffd84a"))
@@ -1204,7 +1207,9 @@ func _process(delta: float) -> void:
 	_mine_acc += delta
 	if _mine_acc > 0.25:
 		_mine_acc = 0.0
-		_mine_btn.visible = view.near_mine_id() != ""
+		var nid: String = view.near_mine_id()
+		_mine_btn.visible = nid != ""
+		_mine_btn.text = Loc.t("enter_house") if nid.begins_with("h") else Loc.t("enter_mine")
 
 
 func _update_mode_btn() -> void:

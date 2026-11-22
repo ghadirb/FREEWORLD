@@ -112,6 +112,38 @@ static func _open_neighbors(l_tiles: PackedByteArray, tx: int, tz: int) -> int:
 	return n
 
 
+## چیدمان براساس شناسه: "mx,mz" معدن است و "h..." داخل خانهٔ روستا.
+static func layout_of(seed_value: int, id: String) -> Dictionary:
+	if id.begins_with("h"):
+		return house_layout(id)
+	var v: Vector2i = parse_id(id)
+	return layout(seed_value, v.x, v.y)
+
+
+## اتاق خانهٔ روستا: ۳×۳ کاشی (۹×۹ متر)، ورودی ضلع جنوبی، تخت و صندوق. مستقل از Seed.
+static func house_layout(id: String) -> Dictionary:
+	if _cache.has(id):
+		return _cache[id]
+	var tiles := PackedByteArray()
+	tiles.resize(SIZE * SIZE)
+	tiles.fill(0)
+	var dist := PackedInt32Array()
+	dist.resize(SIZE * SIZE)
+	dist.fill(0)
+	for tz in range(11, 14):
+		for tx in range(11, 14):
+			tiles[tile_index(tx, tz)] = 1
+	var bed := tile_center(11, 11) + Vector2(-0.6, -0.6)
+	var chest := tile_center(13, 11) + Vector2(0.7, -0.95)
+	var nodes: Array = [
+		{"idx": 0, "kind": "bed", "x": bed.x, "z": bed.y, "tx": 11, "tz": 11, "n": 0, "reward": 0, "depth": 0},
+		{"idx": 1, "kind": "hchest", "x": chest.x, "z": chest.y, "tx": 13, "tz": 11, "n": 0, "reward": 0, "depth": 0},
+	]
+	var l := {"tiles": tiles, "dist": dist, "entry": Vector2i(12, 13), "nodes": nodes, "max_dist": 1, "style": "house"}
+	_cache[id] = l
+	return l
+
+
 ## چیدمان کامل یک معدن: {tiles, dist, entry, nodes, max_dist}. نتیجه کش می‌شود.
 static func layout(seed_value: int, mx: int, mz: int) -> Dictionary:
 	var key := "%d:%d:%d" % [seed_value, mx, mz]

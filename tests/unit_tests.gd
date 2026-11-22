@@ -55,6 +55,7 @@ func _init() -> void:
 	test_terrain()
 	test_mines()
 	test_creative()
+	test_villages()
 	test_tls_pinning()
 	print("\nRESULT: %d passed, %d failed" % [_pass, _fail])
 	quit(1 if _fail > 0 else 0)
@@ -1834,3 +1835,52 @@ func test_creative() -> void:
 	check(bool(cr.world_public()["creative"]) and not bool(sv.world_public()["creative"]), "welcome info carries the mode")
 	var back = CityState.from_dict(JSON.parse_string(JSON.stringify(cr.to_dict())))
 	check(back != null and back.creative and not CityState.from_dict(JSON.parse_string(JSON.stringify(sv.to_dict()))).creative, "mode survives save and load")
+
+
+func test_villages() -> void:
+	print("[villages]")
+	var w = WorldGen.new(12345)
+	var vs: Array = w.villages()
+	check(vs.size() >= 3, "world has villages (%d)" % vs.size())
+	var w2 = WorldGen.new(12345)
+	check(JSON.stringify(w2.villages()) == JSON.stringify(vs), "villages are deterministic")
+	var half := FWConst.CITY_SIZE * 0.5
+	var all_ok := true
+	var houses := 0
+	for v in vs:
+		check(Vector2(float(v["x"]), float(v["z"])).distance_to(Vector2(half, half)) >= FWConst.VILLAGE_MIN_CITY_DIST, "village outside city")
+		for h in v["houses"]:
+			houses += 1
+			if w.base_height_at(float(h["cx"]), float(h["cz"])) < 1.0 or w.river_weight(float(h["cx"]), float(h["cz"])) > 0.0:
+				all_ok = false
+			if w.village_solid_at(float(h["ex"]), float(h["ez"]), 0.3):
+				all_ok = false
+			if w.house_site(str(h["id"])).is_empty() or w.mine_entrance(str(h["id"])).is_empty():
+				all_ok = false
+	check(all_ok and houses >= 12, "houses on dry land, exit free, lookup works (%d houses)" % houses)
+	var h0: Dictionary = vs[0]["houses"][0]
+	check(w.village_solid_at(float(h0["cx"]), float(h0["cz"])), "house footprint is solid")
+	check(not w.nearest_house_door(float(h0["x"]), float(h0["z"]), 2.0).is_empty(), "door found nearby")
+	check(w.nearest_site(float(h0["ex"]), float(h0["ez"]), 6.0).get("id", "") == str(h0["id"]), "nearest_site returns the house")
+	check(w.house_site("h999,999,0").is_empty() and w.house_site("hx").is_empty(), "bad house ids rejected")
+	# سرور
+	var cs = CityState.new(12345)
+	_login(cs, "vil")
+	var hid := str(h0["id"])
+	check(cs.mine_enter_error("vil", hid, Vector2(float(h0["x"]) + 30.0, float(h0["z"]))) == "too_far", "house: too far to enter")
+	check(cs.mine_enter_error("vil", hid, Vector2(float(h0["ex"]), float(h0["ez"]))) == "", "house: can enter at the door")
+	check(not cs.is_walkable(float(h0["cx"]), float(h0["cz"])), "cannot walk through a house")
+	var lay: Dictionary = cs.mine_layout(hid)
+	check(String(lay.get("style", "")) == "house" and Mine.walkable(lay, Mine.spawn_point(lay).x, Mine.spawn_point(lay).y), "house interior has a walkable entry")
+	check(cs.mine_gather("vil", hid, 1, Vector2(float(lay["nodes"][1]["x"]), float(lay["nodes"][1]["z"])))["ok"], "house chest pays coins")
+	cs.accounts["vil"]["energy"] = 10.0
+	var rb: Dictionary = cs.mine_gather("vil", hid, 0, Vector2(float(lay["nodes"][0]["x"]), float(lay["nodes"][0]["z"])))
+	check(rb["ok"] and rb.get("rested", false) and float(cs.accounts["vil"]["energy"]) == FWConst.ENERGY_MAX, "bed restores energy")
+	check(not cs.mine_gather("vil", hid, 0, Vector2(float(lay["nodes"][0]["x"]), float(lay["nodes"][0]["z"])))["ok"], "bed has a cooldown")
+	# حیوانات روستا یک بار
+	var n1: int = cs.seed_village_life()
+	check(n1 > 0 and cs.seed_village_life() == 0, "village animals seeded once (%d)" % n1)
+	check(cs.check_block("player", int(floor(float(h0["cx"]))), 3, int(floor(float(h0["cz"]))), "stone") == "near_village", "no blocks on a house")
+	for i in range(1, 8):
+		var r := w.resource_in_cell(int(float(vs[0]["x"]) / FWConst.RESOURCE_CELL) + i % 3, int(float(vs[0]["z"]) / FWConst.RESOURCE_CELL) + i / 3)
+		check(r.is_empty(), "no wild resources inside the village")

@@ -27,6 +27,8 @@ var wheat_price: float = FWConst.WHEAT_BASE_PRICE
 var time_speed: float = 1.0
 ## حالت خلاقانه: ساخت و ابزار رایگان و نامحدود، بدون سکه و بدون افت انرژی. هنگام ساخت جهان تعیین و ذخیره می‌شود.
 var creative: bool = false
+## روستاها یک بار حیوان گرفته‌اند (برای جهان‌های قدیمی هم یک بار اجرا می‌شود).
+var villages_seeded: bool = false
 var day_count: int = 0
 var god: Dictionary = {}
 var next_god_id: int = 1
@@ -157,6 +159,8 @@ func is_walkable(x: float, z: float, ref_y: float = NAN) -> bool:
 		var t: String = buildings[occupied[key]]["type"]
 		if t != "road" and t != "well":
 			return false
+	if world.village_solid_at(x, z, 0.3):
+		return false
 	return not is_nan(surface_at(x, z, ref_y))
 
 
@@ -735,6 +739,8 @@ func check_block(role: String, x: int, y: int, z: int, type: String) -> String:
 		return "occupied"
 	if world.near_mine_entrance(float(x) + 0.5, float(z) + 0.5, FWConst.MINE_NO_BUILD_RADIUS):
 		return "near_mine"
+	if world.village_solid_at(float(x) + 0.5, float(z) + 0.5, 1.0):
+		return "near_village"
 	if occupied.has(Placement.cell_key(x >> 1, z >> 1)):
 		return "occupied"
 	if not FWConst.is_admin(role):
@@ -869,8 +875,32 @@ func god_action(actor: String, action: String, kind: String, x: float, z: float)
 	return {"ok": true, "id": id}
 
 
+## یک بار برای هر جهان: چند گوسفند و خرگوش پرسه‌زن کنار چاه هر روستا (قطعی از Seed، قابل حذف توسط مدیر).
+func seed_village_life() -> int:
+	if villages_seeded:
+		return 0
+	villages_seeded = true
+	var added := 0
+	for v in world.villages():
+		for i in range(FWConst.VILLAGE_ANIMALS.size()):
+			if god.size() >= FWConst.GOD_MAX:
+				return added
+			var a: float = float(i) * 2.1 + float(absi(hash(str(v["id"]))) % 628) / 100.0
+			var x: float = float(v["x"]) + cos(a) * 3.5
+			var z: float = float(v["z"]) + sin(a) * 3.5
+			if not _god_spot_ok(x, z):
+				continue
+			var id := next_god_id
+			next_god_id += 1
+			god[id] = {"id": id, "kind": FWConst.VILLAGE_ANIMALS[i], "x": x, "z": z, "tx": x, "tz": z, "wait": 1.0}
+			added += 1
+	return added
+
+
 func _god_spot_ok(x: float, z: float) -> bool:
 	if world.height_at(x, z) < FWConst.GOD_MIN_HEIGHT:
+		return false
+	if world.village_solid_at(x, z, 0.4):
 		return false
 	return not occupied.has(Placement.cell_key(int(floor(x / FWConst.CELL_SIZE)), int(floor(z / FWConst.CELL_SIZE))))
 
@@ -1087,8 +1117,7 @@ func gather(player_name: String, rx: int, rz: int, tool: String, pos: Vector2) -
 # ---------------- معدن زیرزمینی (پروتکل ۱۷) ----------------
 
 func mine_layout(mine_id: String) -> Dictionary:
-	var v: Vector2i = Mine.parse_id(mine_id)
-	return Mine.layout(seed_value, v.x, v.y)
+	return Mine.layout_of(seed_value, mine_id)
 
 
 ## خطای ورود به معدن یا رشتهٔ خالی. pos موقعیت بازیکن روی نقشهٔ بیرون است.
@@ -1098,7 +1127,8 @@ func mine_enter_error(player_name: String, mine_id: String, pos: Vector2) -> Str
 	var e: Dictionary = world.mine_entrance(mine_id)
 	if e.is_empty():
 		return "no_mine"
-	if pos.distance_to(Vector2(float(e["x"]), float(e["z"]))) > FWConst.MINE_ENTER_RANGE:
+	var rng := FWConst.HOUSE_ENTER_RANGE if mine_id.begins_with("h") else FWConst.MINE_ENTER_RANGE
+	if pos.distance_to(Vector2(float(e["x"]), float(e["z"]))) > rng:
 		return "too_far"
 	return ""
 
@@ -1118,8 +1148,17 @@ func mine_gather(player_name: String, mine_id: String, idx: int, mpos: Vector2) 
 		return {"ok": false, "error": "depleted"}
 	if mpos.distance_to(Vector2(float(node["x"]), float(node["z"]))) > FWConst.MINE_GATHER_RANGE:
 		return {"ok": false, "error": "too_far"}
-	var def: Dictionary = FWConst.MINE_ORES[str(node["kind"])]
 	var acc: Dictionary = accounts[player_name]
+	if str(node["kind"]) == "bed":
+		mine_depleted[key] = FWConst.HOME_REST_COOLDOWN
+		acc["energy"] = FWConst.ENERGY_MAX
+		return {"ok": true, "rested": true, "idx": idx}
+	if str(node["kind"]) == "hchest":
+		var hr: int = randi_range(int(FWConst.HOME_CHEST["reward_min"]), int(FWConst.HOME_CHEST["reward_max"]))
+		acc["money"] = int(acc["money"]) + hr
+		mine_depleted[key] = float(FWConst.HOME_CHEST["respawn"])
+		return {"ok": true, "treasure": true, "reward": hr, "money": int(acc["money"]), "idx": idx}
+	var def: Dictionary = FWConst.MINE_ORES[str(node["kind"])]
 	if def.has("reward_min"):
 		var reward: int = int(node["reward"])
 		acc["money"] = int(acc["money"]) + reward
@@ -1164,6 +1203,8 @@ func terrain_check(role: String, v: Vector2i, r: int = 1) -> String:
 		return "out_of_bounds"
 	if world.near_mine_entrance(float(v.x) * FWConst.TERRAIN_EDIT_STEP, float(v.y) * FWConst.TERRAIN_EDIT_STEP, FWConst.MINE_NO_BUILD_RADIUS + float(r) * FWConst.TERRAIN_EDIT_STEP):
 		return "near_mine"
+	if world.village_solid_at(float(v.x) * FWConst.TERRAIN_EDIT_STEP, float(v.y) * FWConst.TERRAIN_EDIT_STEP, 2.5 + float(r) * FWConst.TERRAIN_EDIT_STEP):
+		return "near_village"
 	for dx in range(-r, r + 1):
 		for dz in range(-r, r + 1):
 			var vx := v.x + dx
@@ -1523,6 +1564,7 @@ func to_dict() -> Dictionary:
 		"wheat_price": wheat_price,
 		"time_speed": time_speed,
 		"creative": creative,
+		"villages_seeded": villages_seeded,
 		"weather": weather,
 		"bread_price": bread_price,
 		"market": market,
@@ -1597,6 +1639,7 @@ static func from_dict(d: Dictionary):
 	cs.world_time = float(d.get("world_time", 8.0 * 3600.0))
 	cs.day_count = int(d.get("day_count", 0))
 	cs.creative = bool(d.get("creative", false))
+	cs.villages_seeded = bool(d.get("villages_seeded", false))
 	cs.next_god_id = maxi(1, int(d.get("next_god_id", 1)))
 	var gl = d.get("god", [])
 	if gl is Array:

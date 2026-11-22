@@ -362,6 +362,44 @@ func _run() -> void:
 	c.queue_free()
 	await create_timer(0.3).timeout
 
+	print("== village house over the local RPC path ==")
+	var house_dir := OS.get_user_data_dir().path_join("local_test_house_%d" % Time.get_ticks_msec())
+	server = _start_server(0, house_dir)
+	c = _mk_client()
+	c.connect_local(server, "hosty", "secret-secret-1")
+	ok(await wait_until(func(): return c.is_logged_in and not c.inv.is_empty(), 3.0), "login for the house test")
+	var house_vs: Array = server.cs.world.villages()
+	ok(house_vs.size() > 0, "the world has villages")
+	var house_h: Dictionary = house_vs[0]["houses"][0]
+	var house_id: String = str(house_h["id"])
+	ok(server.cs.god.size() > 0, "villages come with animals")
+	c.enter_mine(house_id)
+	await create_timer(0.3).timeout
+	ok(c.mine_id == "", "cannot enter a house from far away")
+	server.peers[1]["pos"] = Vector3(float(house_h["ex"]), 0.0, float(house_h["ez"]))
+	c.enter_mine(house_id)
+	ok(await wait_until(func(): return c.mine_id == house_id, 3.0), "entering a house works at the door")
+	var house_lay: Dictionary = server.cs.mine_layout(house_id)
+	var house_sp: Vector2 = Mine.spawn_point(house_lay)
+	var bed: Dictionary = house_lay["nodes"][0]
+	server.cs.accounts["hosty"]["energy"] = 20.0
+	var at2 := house_sp
+	var bgoal := Vector2(float(bed["x"]), float(bed["z"]) + 1.0)
+	while at2.distance_to(bgoal) > 0.01:
+		at2 = at2.move_toward(bgoal, 0.5)
+		c.send_move(at2.x, at2.y, 0.0)
+		await create_timer(0.07).timeout
+	c.mine_gather(0)
+	ok(await wait_until(func(): return float(server.cs.accounts["hosty"]["energy"]) >= FWConst.ENERGY_MAX - 0.5, 3.0), "sleeping in the bed restores energy")
+	c.leave_mine()
+	ok(await wait_until(func(): return c.mine_id == "", 3.0), "leaving the house works")
+	ok(Vector2((server.peers[1]["pos"] as Vector3).x, (server.peers[1]["pos"] as Vector3).z).distance_to(Vector2(float(house_h["ex"]), float(house_h["ez"]))) < 1.0, "player stands outside the door")
+	c.disconnect_from_server()
+	server.stop()
+	server.queue_free()
+	c.queue_free()
+	await create_timer(0.3).timeout
+
 	print("== host + remote guest ==")
 	var port := 17891
 	server = _start_server(port, dir)

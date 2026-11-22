@@ -68,6 +68,7 @@ func start(port: int, seed_value: int, data_dir: String, admins: Array, tls_dir:
 	for a in admins:
 		cs.provision_admin(str(a[0]), str(a[1]))
 	NpcSim.ensure_npcs(cs)
+	cs.seed_village_life()
 	if port > 0:
 		var peer := ENetMultiplayerPeer.new()
 		var err: int = peer.create_server(port, FWConst.MAX_PLAYERS + 6)
@@ -823,7 +824,9 @@ func on_mine_gather(pid: int, idx: int) -> void:
 		_notice(pid, str(res["error"]), {"tool": "pickaxe"})
 		return
 	_send_to_mine(mine_id, "s2c_mine_node", idx, false)
-	if res.get("treasure", false):
+	if res.get("rested", false):
+		_notice(pid, "rested")
+	elif res.get("treasure", false):
 		_send(pid, "s2c_money", int(res["money"]))
 		_notice(pid, "treasure", {"reward": res["reward"]})
 	else:

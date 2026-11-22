@@ -250,6 +250,8 @@ func _on_logged_in() -> void:
 		_debug_enter(str(_args["enter"]))
 	if _args.has("mine") and client.local_server != null:
 		_debug_mine(str(_args["mine"]))
+	elif _args.has("village"):
+		_debug_village(str(_args["village"]))
 	if _shot_path != "":
 		_take_shot_later()
 
@@ -309,6 +311,24 @@ func _debug_mine(mode: String) -> void:
 	var c := Vector2((float(pick["tx"]) + 0.5) * FWConst.MINE_TILE, (float(pick["tz"]) + 0.5) * FWConst.MINE_TILE)
 	srv.peers[1]["mpos"] = Vector3(c.x, 0.0, c.y)
 	srv._send(1, "s2c_teleport", c.x, c.y)
+
+
+## آزمایشی (--village surface|inside): جلوی نخستین خانهٔ روستا می‌رود یا وارد آن می‌شود.
+func _debug_village(mode: String) -> void:
+	var srv = client.local_server
+	var vs: Array = srv.cs.world.villages()
+	if vs.is_empty():
+		return
+	var h: Dictionary = vs[0]["houses"][0]
+	await get_tree().create_timer(0.5).timeout
+	var out := Vector2(float(h["x"]), float(h["z"])) + Vector2(sin(float(h["yaw"])), cos(float(h["yaw"]))) * (9.0 if mode == "surface" else 3.0)
+	srv.peers[1]["pos"] = Vector3(out.x, 0.0, out.y)
+	srv._send(1, "s2c_teleport", out.x, out.y)
+	if mode == "surface":
+		view.cam.yaw = float(h["yaw"])
+		return
+	await get_tree().create_timer(0.4).timeout
+	client.enter_mine(str(h["id"]))
 
 
 func _take_shot_later() -> void:

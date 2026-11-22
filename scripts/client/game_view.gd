@@ -14,6 +14,7 @@ const CameraRig = preload("res://scripts/client/camera_rig.gd")
 const Streamer = preload("res://scripts/client/terrain_streamer.gd")
 const BlockView = preload("res://scripts/client/block_view.gd")
 const MineView = preload("res://scripts/client/mine_view.gd")
+const VillageView = preload("res://scripts/client/village_view.gd")
 const Mine = preload("res://scripts/shared/mine.gd")
 
 signal building_tapped(id: int)
@@ -72,6 +73,7 @@ var block_type: String = "wood"
 var paint_color: int = 0
 var block_view
 var mine_view
+var village_view
 var quality: int = 1
 
 var _ghost: MeshInstance3D
@@ -106,6 +108,10 @@ func setup(game_client, quality_level: int) -> void:
 	mine_view.name = "Mines"
 	add_child(mine_view)
 	mine_view.setup(world)
+	village_view = VillageView.new()
+	village_view.name = "Villages"
+	add_child(village_view)
+	village_view.setup(world)
 	client.mine_changed.connect(_on_mine_changed)
 	client.mine_node_changed.connect(func(idx: int, alive: bool): mine_view.set_node_alive(idx, alive))
 	client.resource_changed.connect(func(rx: int, rz: int, _alive: bool): streamer.refresh_resource(rx, rz))
@@ -1024,7 +1030,8 @@ func _enter_mine(id: String) -> void:
 	set_mode("life")
 	joy = Vector2.ZERO
 	mine_view.enter(id, client.mine_depleted)
-	_set_underground(true)
+	village_view.visible = false
+	_set_underground(true, id.begins_with("h"))
 	var sp: Vector2 = Mine.spawn_point(mine_view.layout())
 	my_pos = mine_view.to_world(sp.x, sp.y)
 	my_yaw = PI
@@ -1045,6 +1052,7 @@ func _exit_mine() -> void:
 		return
 	var e: Dictionary = world.mine_entrance(mine_view.mine_id())
 	mine_view.leave()
+	village_view.visible = true
 	_set_underground(false)
 	if e.is_empty():
 		my_pos = _outside_pos
@@ -1065,8 +1073,20 @@ func _exit_mine() -> void:
 
 
 ## زیرزمین: آسمان و خورشید و مه خاموش، فقط چراغ شخصیت و نور محیطی ضعیف.
-func _set_underground(on: bool) -> void:
-	if on:
+func _set_underground(on: bool, bright: bool = false) -> void:
+	if on and bright:
+		# داخل خانهٔ روستا: روشن و گرم (نه غار تاریک).
+		env.background_mode = Environment.BG_COLOR
+		env.background_color = Color(0.5, 0.62, 0.74)
+		env.ambient_light_color = Color(0.95, 0.9, 0.82)
+		env.ambient_light_energy = 1.1
+		env.fog_enabled = false
+		sun.light_energy = 0.6
+		sun.shadow_enabled = false
+		water.visible = false
+		if _rain != null:
+			_rain.emitting = false
+	elif on:
 		env.background_mode = Environment.BG_COLOR
 		env.background_color = Color(0.012, 0.012, 0.018)
 		env.ambient_light_color = Color(0.34, 0.33, 0.4)
