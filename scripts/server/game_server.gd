@@ -39,6 +39,7 @@ var _name_re := RegEx.new()
 var _dirty: bool = false
 var _last_save_msec: int = 0
 var _tick_acc: float = 0.0
+var _train_acc: float = FWConst.TRAIN_CLOCK_INTERVAL   # بلافاصله بعد از شروع یک بار می‌فرستد
 var _god_acc: float = 0.0
 var _stock_acc: float = 0.0
 var _autosave_acc: float = 0.0
@@ -241,6 +242,10 @@ func _process(delta: float) -> void:
 	if _tick_acc >= TICK_INTERVAL:
 		_tick_acc = 0.0
 		_broadcast_tick()
+	_train_acc += dt
+	if _train_acc >= FWConst.TRAIN_CLOCK_INTERVAL:
+		_train_acc = 0.0
+		_broadcast("s2c_trains", snappedf(cs.train_clock, 0.01))
 	_stock_acc += dt
 	if _stock_acc >= STOCK_INTERVAL:
 		_stock_acc = 0.0

@@ -1,7 +1,7 @@
 extends RefCounted
 ## ثابت‌های مشترک بین سرور و کلاینت.
 
-const PROTOCOL_VERSION := 31
+const PROTOCOL_VERSION := 32
 # ترافیک شبکه با DTLS رمز می‌شود (نسخهٔ ۴ به بعد). فقط برای عیب‌یابی خاموش شود.
 const USE_DTLS := true
 const DEFAULT_PORT := 7777
@@ -179,6 +179,11 @@ const CAR_ROAD_MULT := 1.5
 const NPC_ROAD_WEIGHT := 0.5
 ## ریل (بلوک «ریل» روی سطح زمین): ماشین روی آن حتی از جاده سریع‌تر است.
 const CAR_RAIL_MULT := 2.0
+## قطار خودکار روی ریل (پروتکل ۳۲): سرعت بر حسب واحد بر ثانیه؛ ساعت قطار را سرور هر TRAIN_CLOCK_INTERVAL ثانیه می‌فرستد.
+const TRAIN_SPEED := 6.0
+const TRAIN_CLOCK_INTERVAL := 1.0
+const TRAIN_WAGONS := 2
+const TRAIN_MAX_LINES := 12
 # ماهیگیری: کنار آب یا از روی قایق؛ هر بار ۰ تا ۲ ماهی، با فاصلهٔ زمانی بین دو بار.
 const FISH_COOLDOWN_MS := 3000
 const FISH_RANGE := 4.0

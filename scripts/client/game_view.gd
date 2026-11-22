@@ -18,6 +18,7 @@ const BlockView = preload("res://scripts/client/block_view.gd")
 const MineView = preload("res://scripts/client/mine_view.gd")
 const VillageView = preload("res://scripts/client/village_view.gd")
 const Mine = preload("res://scripts/shared/mine.gd")
+const RailNetwork = preload("res://scripts/shared/rail_network.gd")
 
 signal building_tapped(id: int)
 signal npc_tapped(id: int)
@@ -50,6 +51,10 @@ var npc_avatars: Dictionary = {}
 var god_kind: String = ""
 var god_nodes: Dictionary = {}
 var coin_nodes: Array = []
+var train_nodes: Array = []   # برای هر خط ریل: [گرهٔ لوکوموتیو، گره‌های واگن‌ها...]
+var _train_line_count: int = -1
+var _train_mesh_loco: ArrayMesh
+var _train_mesh_wagon: ArrayMesh
 var race_nodes: Array = []
 var _race_mesh_next: ArrayMesh
 var _race_mesh_other: ArrayMesh
@@ -1073,6 +1078,7 @@ func _process(delta: float) -> void:
 	if not underground:
 		_update_sky(fposmod(_time, 86400.0) / 3600.0)
 	_sync_remote(dt)
+	_sync_trains()
 	_label_acc += dt
 	if _label_acc > 0.25:
 		_label_acc = 0.0
@@ -1541,6 +1547,47 @@ func _sync_god() -> void:
 		if not seen.has(id):
 			god_nodes[id].queue_free()
 			god_nodes.erase(id)
+
+
+## قطار خودکار: موقعیت از چیدمان ریل‌ها و ساعت مشترک سرور محاسبه می‌شود (بدون ارسال موقعیت).
+func _sync_trains() -> void:
+	var lines: Array = client.mirror.train_lines()
+	if lines.size() != _train_line_count or train_nodes.size() != lines.size():
+		for grp in train_nodes:
+			for n in grp:
+				n.queue_free()
+		train_nodes.clear()
+		_train_line_count = lines.size()
+		if _train_mesh_loco == null:
+			var a := MeshBuilder.new()
+			a.add_box(Vector3(0, 0.55, 0), Vector3(0.9, 0.6, 1.5), Color("b3392f"))
+			a.add_box(Vector3(0, 1.05, -0.35), Vector3(0.8, 0.5, 0.6), Color("ece3d0"))
+			a.add_box(Vector3(0, 1.0, 0.4), Vector3(0.3, 0.5, 0.3), Color("3a3a40"))
+			_train_mesh_loco = a.build()
+			var b := MeshBuilder.new()
+			b.add_box(Vector3(0, 0.55, 0), Vector3(0.9, 0.6, 1.3), Color("3d6ea8"))
+			b.add_box(Vector3(0, 0.95, 0), Vector3(0.8, 0.2, 1.1), Color("d9b45a"))
+			_train_mesh_wagon = b.build()
+		if _god_mat == null:
+			_god_mat = MeshBuilder.material()
+		for _i in range(lines.size()):
+			var grp: Array = []
+			for k in range(1 + FWConst.TRAIN_WAGONS):
+				var node := MeshInstance3D.new()
+				node.mesh = _train_mesh_loco if k == 0 else _train_mesh_wagon
+				node.material_override = _god_mat
+				node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+				add_child(node)
+				grp.append(node)
+			train_nodes.append(grp)
+	var dist: float = client.train_clock_now() * FWConst.TRAIN_SPEED
+	for i in range(lines.size()):
+		var grp: Array = train_nodes[i]
+		for k in range(grp.size()):
+			var pose: Vector3 = RailNetwork.position_on(lines[i], dist - float(k) * 1.5)
+			var node: Node3D = grp[k]
+			node.position = Vector3(pose.x, float(maxi(0, int(floor(world.height_at(pose.x, pose.y))))) + 0.1, pose.y)
+			node.rotation.y = pose.z
 
 
 func _sync_coins() -> void:

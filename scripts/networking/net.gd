@@ -272,6 +272,12 @@ func c2s_car() -> void:
 		server.on_car(multiplayer.get_remote_sender_id())
 
 
+@rpc("authority", "call_remote", "unreliable")
+func s2c_trains(clock: float) -> void:
+	if client:
+		client.on_trains(clock)
+
+
 @rpc("authority", "call_remote", "reliable")
 func s2c_car(on: bool) -> void:
 	if client:

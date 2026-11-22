@@ -91,6 +91,8 @@ var disaster_stamp: float = 0.0
 var race: Dictionary = {"active": false, "t": 0.0, "next": 0, "pts": [], "best": 0, "board": []}
 var race_stamp: float = 0.0
 var mounted: bool = false   # سوار اسب (از سرور)
+var _train_clock: float = 0.0
+var _train_clock_msec: int = -1
 var driving: bool = false   # پشت‌فرمان ماشین (از سرور)
 var boating: bool = false   # سوار قایق (از سرور)
 var minigame_stamp: float = 0.0   # لحظهٔ دریافت وضعیت؛ برای شمارش معکوس محلی
@@ -482,6 +484,18 @@ func on_horse(on: bool) -> void:
 func toggle_horse() -> void:
 	if is_logged_in:
 		_tx("c2s_horse", [])
+
+
+## ساعت قطار از سرور؛ بین دو پیام با ساعت محلی جلو می‌رود تا حرکت روان بماند.
+func on_trains(clock: float) -> void:
+	_train_clock = clock
+	_train_clock_msec = Time.get_ticks_msec()
+
+
+func train_clock_now() -> float:
+	if _train_clock_msec < 0:
+		return 0.0
+	return _train_clock + float(Time.get_ticks_msec() - _train_clock_msec) / 1000.0
 
 
 func on_car(on: bool) -> void:

@@ -11,6 +11,7 @@ const Race = preload("res://scripts/server/race.gd")
 const Blueprints = preload("res://scripts/server/blueprints.gd")
 const Arenas = preload("res://scripts/server/arenas.gd")
 const Mine = preload("res://scripts/shared/mine.gd")
+const RailNetwork = preload("res://scripts/shared/rail_network.gd")
 
 const SAVE_VERSION := 1
 const MAX_REQUEST_MEMORY := 64
@@ -60,6 +61,10 @@ var arenas = Arenas.new()
 var blocks: Dictionary = {}
 var block_cells: Dictionary = {}
 var block_owner_count: Dictionary = {}
+## قطار خودکار: ساعت قطار (ثانیهٔ واقعی از شروع سرور؛ ذخیره نمی‌شود) و خطوط ریل که با تغییر ریل‌ها دوباره ساخته می‌شوند.
+var train_clock: float = 0.0
+var _train_lines: Array = []
+var _train_dirty: bool = true
 ## منابع برداشت‌شده: "rx,rz" -> ثانیهٔ باقی‌مانده تا رویش دوباره. respawned را سرور تخلیه می‌کند.
 var depleted: Dictionary = {}
 var respawned: Array = []
@@ -699,6 +704,8 @@ func _add_block(v: Vector3i, type: String, color: int, owner_name: String) -> vo
 	if blocks.has(v):
 		return
 	blocks[v] = [type, color, owner_name]
+	if type == "rail":
+		_train_dirty = true
 	var k := Placement.cell_key(v.x >> 1, v.z >> 1)
 	block_cells[k] = int(block_cells.get(k, 0)) + 1
 	block_owner_count[owner_name] = int(block_owner_count.get(owner_name, 0)) + 1
@@ -709,6 +716,8 @@ func _del_block(v: Vector3i) -> void:
 	if not blocks.has(v):
 		return
 	var owner_name: String = str(blocks[v][2])
+	if str(blocks[v][0]) == "rail":
+		_train_dirty = true
 	blocks.erase(v)
 	var k := Placement.cell_key(v.x >> 1, v.z >> 1)
 	var left := int(block_cells.get(k, 0)) - 1
@@ -2118,7 +2127,25 @@ func depleted_flat() -> PackedInt32Array:
 	return out
 
 
+## خطوط ریل (هر مؤلفهٔ متصل یک خط)؛ فقط وقتی ریلی اضافه یا حذف شده دوباره ساخته می‌شود.
+func train_lines() -> Array:
+	if _train_dirty:
+		var lines: Array = RailNetwork.build_lines(RailNetwork.rail_cells(blocks))
+		_train_lines = lines.slice(0, FWConst.TRAIN_MAX_LINES)
+		_train_dirty = false
+	return _train_lines
+
+
+## موقعیت لوکوموتیو هر خط در ساعت داده‌شده: [Vector3(x, z, yaw), ...] هم‌ترتیب با train_lines().
+func train_poses(clock: float) -> Array:
+	var out: Array = []
+	for line in train_lines():
+		out.append(RailNetwork.position_on(line, clock * FWConst.TRAIN_SPEED))
+	return out
+
+
 func tick(delta: float) -> void:
+	train_clock += delta
 	_tick_resources(delta)
 	var prev_time := world_time
 	world_time = fposmod(world_time + delta * FWConst.TIME_SCALE * time_speed, 86400.0)

@@ -14,6 +14,7 @@ const Settings = preload("res://scripts/client/settings.gd")
 const NpcNav = preload("res://scripts/server/npc_nav.gd")
 const Mine = preload("res://scripts/shared/mine.gd")
 const Boat = preload("res://scripts/shared/boat.gd")
+const RailNetwork = preload("res://scripts/shared/rail_network.gd")
 
 var _fail := 0
 var _pass := 0
@@ -52,6 +53,7 @@ func _init() -> void:
 	test_disasters()
 	test_race()
 	test_car_race()
+	test_trains()
 	test_group_race()
 	test_boat()
 	test_god_tools()
@@ -1002,6 +1004,65 @@ func _race_run(cs, who: String, order: Array, others: Dictionary = {}) -> Array:
 		pos[who] = g
 		evs.append_array(cs.race_step(0.2, pos))
 	return evs
+
+
+func _row(x0: int, x1: int, z: int) -> Array:
+	var out: Array = []
+	for x in range(x0, x1 + 1):
+		out.append(Vector2i(x, z))
+	return out
+
+
+func test_trains() -> void:
+	print("-- trains")
+	# یک خط مستقیم ۶ سلولی: رفت‌وبرگشت، طول ۵ پاره‌خط.
+	var lines: Array = RailNetwork.build_lines(_row(0, 5, 0))
+	check(lines.size() == 1 and not bool(lines[0]["loop"]) and is_equal_approx(float(lines[0]["length"]), 5.0), "six connected rails make one straight line")
+	var p0: Vector3 = RailNetwork.position_on(lines[0], 0.0)
+	check(is_equal_approx(p0.x, 0.5) and is_equal_approx(p0.y, 0.5), "the train starts at the first rail centre")
+	var p_end: Vector3 = RailNetwork.position_on(lines[0], 5.0)
+	check(is_equal_approx(p_end.x, 5.5), "the train reaches the far end after the line length")
+	var p_back: Vector3 = RailNetwork.position_on(lines[0], 7.0)
+	check(is_equal_approx(p_back.x, 3.5) and absf(absf(p_back.z) - PI / 2.0) < 0.01, "it then turns around and drives back")
+	check(is_equal_approx(RailNetwork.position_on(lines[0], 10.0).x, 0.5), "a full round trip returns to the start")
+	# جدا بودن دو خط و نادیده گرفتن ریل تک‌افتاده.
+	var cells: Array = _row(0, 3, 0) + _row(0, 3, 10) + [Vector2i(50, 50)]
+	check(RailNetwork.build_lines(cells).size() == 2, "separate rails make separate lines; a lone rail makes none")
+	# حلقهٔ ۴×۴ (۱۲ سلول): حلقه است و پس از یک دور به جای اول برمی‌گردد.
+	var ring: Array = []
+	for x in range(0, 4):
+		ring.append(Vector2i(x, 0))
+		ring.append(Vector2i(x, 3))
+	for z in range(1, 3):
+		ring.append(Vector2i(0, z))
+		ring.append(Vector2i(3, z))
+	var rl: Array = RailNetwork.build_lines(ring)
+	check(rl.size() == 1 and bool(rl[0]["loop"]) and is_equal_approx(float(rl[0]["length"]), 12.0), "a closed ring of 12 rails is a loop")
+	var a: Vector3 = RailNetwork.position_on(rl[0], 3.0)
+	var b: Vector3 = RailNetwork.position_on(rl[0], 15.0)
+	check(is_equal_approx(a.x, b.x) and is_equal_approx(a.y, b.y), "the loop train comes back after one lap")
+	# شاخه: طولانی‌ترین مسیر اصلی انتخاب می‌شود و ساختار قطعی است.
+	var tee: Array = _row(0, 6, 0) + [Vector2i(3, 1), Vector2i(3, 2)]
+	var tl: Array = RailNetwork.build_lines(tee)
+	check(tl.size() == 1 and not bool(tl[0]["loop"]) and is_equal_approx(float(tl[0]["length"]), 6.0), "a branched line uses its longest main path")
+	check(RailNetwork.build_lines(tee) == tl, "line building is deterministic")
+	# اتصال به CityState: افزودن و حذف ریل، و ساعت قطار.
+	var cs = CityState.new(31337)
+	check(cs.train_lines().is_empty(), "a city without rails has no trains")
+	var y: int = maxi(0, int(floor(cs.world.height_at(100.5, 90.5))))
+	for x in range(100, 104):
+		cs._add_block(Vector3i(x, y, 90), "rail", 0, "builder")
+	check(cs.train_lines().size() == 1, "laying four rail blocks creates a train line")
+	cs._add_block(Vector3i(110, y, 95), "stone", 0, "builder")
+	check(cs.train_lines().size() == 1, "non-rail blocks do not change the lines")
+	cs._del_block(Vector3i(101, y, 90))
+	check(cs.train_lines().size() == 1 and float(cs.train_lines()[0]["length"]) == 1.0, "breaking the middle rail leaves a lone rail (ignored) and a two-rail line")
+	cs._add_block(Vector3i(101, y, 90), "rail", 0, "builder")
+	var poses: Array = cs.train_poses(0.0)
+	check(poses.size() == 1 and is_equal_approx(poses[0].x, 100.5), "train_poses gives the locomotive position per line")
+	cs.tick(2.0)
+	check(is_equal_approx(cs.train_clock, 2.0), "the server train clock advances with ticks")
+	check(FWConst.PROTOCOL_VERSION >= 32 and FWConst.TRAIN_SPEED > 0.0, "protocol bumped for the train clock message")
 
 
 func test_car_race() -> void:
