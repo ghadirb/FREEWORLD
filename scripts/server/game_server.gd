@@ -2,6 +2,7 @@ extends Node
 ## سرور معتبر (Authoritative). همهٔ تصمیم‌ها اینجا و در CityState گرفته می‌شود؛
 ## کلاینت فقط درخواست می‌فرستد و نتیجه را می‌گیرد.
 
+const Boat = preload("res://scripts/shared/boat.gd")
 const FWConst = preload("res://scripts/core/const.gd")
 const CityState = preload("res://scripts/server/city_state.gd")
 const Persistence = preload("res://scripts/server/persistence.gd")
@@ -21,7 +22,7 @@ const LOCAL_PID := 1
 const LOCAL_METHODS := [
 	"c2s_login", "c2s_move", "c2s_place", "c2s_remove", "c2s_collect",
 	"c2s_chat", "c2s_set_role", "c2s_get_audit", "c2s_job", "c2s_set_world", "c2s_enter", "c2s_leave",
-	"c2s_place_block", "c2s_remove_block", "c2s_paint_block", "c2s_build_region", "c2s_paste", "c2s_undo", "c2s_gather", "c2s_dig", "c2s_fill", "c2s_craft", "c2s_trade", "c2s_offer", "c2s_offer_answer", "c2s_npc", "c2s_npc_sell", "c2s_npc_buy", "c2s_furn_place", "c2s_furn_remove", "c2s_minigame_start", "c2s_race_start", "c2s_disaster", "c2s_god",
+	"c2s_place_block", "c2s_remove_block", "c2s_paint_block", "c2s_build_region", "c2s_paste", "c2s_undo", "c2s_gather", "c2s_dig", "c2s_fill", "c2s_craft", "c2s_trade", "c2s_offer", "c2s_offer_answer", "c2s_npc", "c2s_npc_sell", "c2s_npc_buy", "c2s_furn_place", "c2s_furn_remove", "c2s_minigame_start", "c2s_race_start", "c2s_boat", "c2s_disaster", "c2s_god",
 	"c2s_mine_enter", "c2s_mine_leave", "c2s_mine_gather",
 ]
 
@@ -183,7 +184,7 @@ func _sync_positions() -> void:
 	for pid in peers:
 		var p: Dictionary = peers[pid]
 		if p["auth"] and cs.accounts.has(p["name"]):
-			var pos: Vector3 = p["pos"]
+			var pos: Vector3 = _rest_pos(p)
 			cs.accounts[p["name"]]["pos"] = [pos.x, pos.y, pos.z]
 
 
@@ -304,7 +305,7 @@ func _race_step(dt: float) -> void:
 		if ev["kind"] == "end":
 			if int(ev["reward"]) > 0:
 				_send(pid, "s2c_money", int(ev["money"]))
-			_notice(pid, "race_end", {"finished": ev["finished"], "time": ev["time"], "best": ev["best"], "new_best": ev["new_best"], "reward": ev["reward"]})
+			_notice(pid, "race_end", {"boat": ev.get("boat", false), "finished": ev["finished"], "time": ev["time"], "best": ev["best"], "new_best": ev["new_best"], "reward": ev["reward"]})
 			_dirty = true
 
 
@@ -318,11 +319,50 @@ func on_race_start(pid: int) -> void:
 	if _indoors(p):
 		return
 	var pos: Vector3 = p["pos"]
-	var res: Dictionary = cs.race_start(p["name"], Vector2(pos.x, pos.z))
+	var res: Dictionary = cs.race_start(p["name"], Vector2(pos.x, pos.z), bool(p.get("boat", false)))
 	if not res["ok"]:
 		_notice(pid, str(res["error"]))
 		return
 	_send(pid, "s2c_race", cs.race.public_state(p["name"]))
+
+
+func on_boat(pid: int) -> void:
+	var p := _player_of(pid)
+	if p.is_empty():
+		return
+	if not _allow_action(p):
+		_notice(pid, "rate_limited")
+		return
+	if _indoors(p):
+		return
+	var nm: String = p["name"]
+	if cs.race.is_running(nm) or cs.minigame.is_running(nm):
+		_notice(pid, "boat_busy")
+		return
+	var pos: Vector3 = p["pos"]
+	var here := Vector2(pos.x, pos.z)
+	if bool(p.get("boat", false)):
+		var land: Vector2 = Boat.find_land_near(cs, here, FWConst.BOAT_BOARD_RANGE, pos.y)
+		if not Boat.found(land):
+			_notice(pid, "boat_no_shore")
+			return
+		p["boat"] = false
+		p["pos"] = Vector3(land.x, cs.ground_height(land.x, land.y), land.y)
+		_send(pid, "s2c_boat", false)
+		_send(pid, "s2c_teleport", land.x, land.y)
+	else:
+		if float(p.get("alt", 0.0)) > FWConst.FLY_MIN_ALT:
+			_notice(pid, "boat_busy")
+			return
+		var water: Vector2 = Boat.find_water_near(cs, here, FWConst.BOAT_BOARD_RANGE)
+		if not Boat.found(water):
+			_notice(pid, "boat_no_water")
+			return
+		p["boat"] = true
+		p["pos"] = Vector3(water.x, FWConst.SEA_LEVEL, water.y)
+		_send(pid, "s2c_boat", true)
+		_send(pid, "s2c_teleport", water.x, water.y)
+	_dirty = true
 
 
 func on_minigame_start(pid: int) -> void:
@@ -438,7 +478,7 @@ func _players_public() -> Dictionary:
 		var pos: Vector3 = p["mpos"] if mine != "" else p["pos"]   # داخل معدن: مختصات محلی معدن
 		out[p["name"]] = [snappedf(pos.x, 0.01), snappedf(pos.y, 0.01), snappedf(pos.z, 0.01),
 			snappedf(float(p["yaw"]), 0.01), cs.role_of(p["name"]), int(p.get("inside", 0)), mine,
-			snappedf(float(p.get("alt", 0.0)), 0.1)]
+			snappedf(float(p.get("alt", 0.0)), 0.1), 1 if bool(p.get("boat", false)) else 0]
 	return out
 
 
@@ -484,7 +524,7 @@ func _on_peer_connected(pid: int) -> void:
 		"bucket": 10.0, "bucket_t": Time.get_ticks_msec(),
 		"allow": 6.0, "last_move": Time.get_ticks_msec(), "last_tp": 0,
 		"pos": Vector3.ZERO, "yaw": 0.0, "alt": 0.0, "failures": 0,
-		"mine": "", "mpos": Vector3.ZERO,
+		"mine": "", "mpos": Vector3.ZERO, "boat": false,
 	}
 
 
@@ -495,7 +535,7 @@ func _on_peer_disconnected(pid: int) -> void:
 	peers.erase(pid)
 	if p["auth"] and by_name.get(p["name"], -1) == pid:
 		by_name.erase(p["name"])
-		var pos: Vector3 = p["pos"]
+		var pos: Vector3 = _rest_pos(p)
 		cs.accounts[p["name"]]["pos"] = [pos.x, pos.y, pos.z]
 		_broadcast("s2c_player_left", p["name"])
 		_dirty = true
@@ -577,12 +617,15 @@ func on_move(pid: int, x: float, z: float, yaw: float, alt: float = 0.0) -> void
 		return  # داخل ساختمان موقعیت بیرونی تغییر نمی‌کند
 	if not (is_finite(x) and is_finite(z) and is_finite(yaw) and is_finite(alt)):
 		return
-	# پرواز فقط در جهان خلاقانه؛ در غیر این صورت ارتفاع نادیده گرفته می‌شود.
-	var flying: bool = cs.creative and alt > FWConst.FLY_MIN_ALT
+	var boating: bool = bool(p.get("boat", false))
+	# پرواز فقط در جهان خلاقانه و نه سوار قایق؛ در غیر این صورت ارتفاع نادیده گرفته می‌شود.
+	var flying: bool = cs.creative and alt > FWConst.FLY_MIN_ALT and not boating
 	var now := Time.get_ticks_msec()
 	var dt: float = clampf(float(now - int(p["last_move"])) / 1000.0, 0.0, 0.5)
 	p["last_move"] = now
 	var speed_mult: float = FWConst.RACE_SPEED_MULT if cs.race.is_running(str(p["name"])) else 1.0
+	if boating:
+		speed_mult = FWConst.BOAT_SPEED_MULT
 	if flying:
 		speed_mult *= FWConst.FLY_SPEED_MULT
 	p["allow"] = minf(float(p["allow"]) + FWConst.PLAYER_SPEED * 1.3 * speed_mult * dt, 6.0 * speed_mult)
@@ -590,12 +633,29 @@ func on_move(pid: int, x: float, z: float, yaw: float, alt: float = 0.0) -> void
 	var d: float = Vector2(x, z).distance_to(Vector2(cur.x, cur.z))
 	var lo: float = -FWConst.WORLD_LIMIT
 	var hi: float = FWConst.CITY_SIZE + FWConst.WORLD_LIMIT
-	var valid: bool = d <= float(p["allow"]) + 0.05 and x >= lo and x <= hi and z >= lo and z <= hi and (flying or cs.is_walkable(x, z, cur.y))
+	var in_bounds: bool = x >= lo and x <= hi and z >= lo and z <= hi
+	var terrain_ok: bool
+	var beaching := false
+	if boating:
+		# قایق فقط روی آب می‌رود؛ رسیدن به ساحل (بیرون از مسابقه) پیاده می‌کند.
+		terrain_ok = Boat.is_water(cs, x, z)
+		if not terrain_ok and not cs.race.is_running(str(p["name"])) and cs.is_walkable(x, z, cur.y):
+			terrain_ok = true
+			beaching = true
+	else:
+		terrain_ok = flying or cs.is_walkable(x, z, cur.y)
+	var valid: bool = d <= float(p["allow"]) + 0.05 and in_bounds and terrain_ok
 	if valid:
 		p["alt"] = clampf(alt, 0.0, FWConst.FLY_MAX_ALT) if flying else 0.0
 		p["allow"] = float(p["allow"]) - d
-		p["pos"] = Vector3(x, cs.ground_height(x, z, cur.y), z)
+		if boating and not beaching:
+			p["pos"] = Vector3(x, FWConst.SEA_LEVEL, z)
+		else:
+			p["pos"] = Vector3(x, cs.ground_height(x, z, cur.y), z)
 		p["yaw"] = yaw
+		if beaching:
+			p["boat"] = false
+			_send(pid, "s2c_boat", false)
 	elif d > 0.001 and now - int(p["last_tp"]) > 500:
 		p["last_tp"] = now
 		_send(pid, "s2c_teleport", cur.x, cur.z)
@@ -722,6 +782,9 @@ func on_enter(pid: int, id: int) -> void:
 	if _indoors(p):
 		_notice(pid, "already_inside")
 		return
+	if bool(p.get("boat", false)):
+		_notice(pid, "boat_busy")
+		return
 	var pos: Vector3 = p["pos"]
 	var err: String = cs.enter_error(p["name"], id, Vector2(pos.x, pos.z))
 	if err != "":
@@ -745,6 +808,17 @@ func on_leave(pid: int) -> void:
 
 
 ## داخل ساختمان یا معدن؟ در این حالت اقدام‌های دنیای بیرون (ساخت، برداشت، مینی‌بازی…) رد می‌شوند.
+## جایی که موقعیت بازیکن ذخیره می‌شود: سوار قایق نزدیک‌ترین ساحل، تا بعداً وسط آب بیدار نشود.
+func _rest_pos(p: Dictionary) -> Vector3:
+	var pos: Vector3 = p["pos"]
+	if not bool(p.get("boat", false)):
+		return pos
+	var land: Vector2 = Boat.find_land_near(cs, Vector2(pos.x, pos.z), 30.0)
+	if Boat.found(land):
+		return Vector3(land.x, cs.ground_height(land.x, land.y), land.y)
+	return cs.spawn_position()
+
+
 func _indoors(p: Dictionary) -> bool:
 	return int(p.get("inside", 0)) > 0 or str(p.get("mine", "")) != ""
 
@@ -786,7 +860,7 @@ func on_mine_enter(pid: int, mine_id: String) -> void:
 		_notice(pid, "already_inside")
 		return
 	var nm: String = p["name"]
-	if cs.race.is_running(nm) or cs.minigame.is_running(nm):
+	if cs.race.is_running(nm) or cs.minigame.is_running(nm) or bool(p.get("boat", false)):
 		_notice(pid, "mine_busy")
 		return
 	var pos: Vector3 = p["pos"]

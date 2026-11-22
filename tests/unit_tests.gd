@@ -13,6 +13,7 @@ const GameClient = preload("res://scripts/networking/game_client.gd")
 const Settings = preload("res://scripts/client/settings.gd")
 const NpcNav = preload("res://scripts/server/npc_nav.gd")
 const Mine = preload("res://scripts/shared/mine.gd")
+const Boat = preload("res://scripts/shared/boat.gd")
 
 var _fail := 0
 var _pass := 0
@@ -49,6 +50,7 @@ func _init() -> void:
 	test_minigame()
 	test_disasters()
 	test_race()
+	test_boat()
 	test_god_tools()
 	test_stairs_and_floors()
 	test_p2p_trade()
@@ -1056,6 +1058,112 @@ func test_race() -> void:
 	var old: Dictionary = cs.to_dict()
 	old.erase("race")
 	check(CityState.from_dict(old) != null, "old saves without race data still load")
+
+
+## نقطه‌ای که در ۱۶ جهت تا ۳۰ متر آب باشد (داخل مرز جهان)؛ اگر نبود INF.
+func _open_water(cs) -> Vector2:
+	var x := -360.0
+	while x < -40.0:
+		var z := -360.0
+		while z < -40.0:
+			var all := Boat.is_water(cs, x, z)
+			for k in 16:
+				if not all:
+					break
+				var a := TAU * float(k) / 16.0
+				if not Boat.is_water(cs, x + cos(a) * 30.0, z + sin(a) * 30.0):
+					all = false
+			if all:
+				return Vector2(x, z)
+			z += 10.0
+		x += 10.0
+	return Vector2(INF, INF)
+
+
+func test_boat() -> void:
+	print("== Boat (protocol 24) ==")
+	var cs = CityState.new(4246)
+	_login(cs, "sailor")
+	_login(cs, "walker")
+	# آب و خشکی
+	var sp: Vector3 = cs.spawn_position()
+	check(not Boat.is_water(cs, sp.x, sp.z), "the spawn is not water")
+	var water := Vector2(-398.0, -398.0)
+	check(Boat.is_water(cs, water.x, water.y), "deep terrain below the threshold is water")
+	check(not cs.is_walkable(water.x, water.y), "players cannot walk on water")
+	var near_w: Vector2 = Boat.find_water_near(cs, Vector2(sp.x, sp.z), FWConst.BOAT_BOARD_RANGE)
+	check(not Boat.found(near_w), "no water is found next to the spawn")
+	var land: Vector2 = Boat.find_land_near(cs, water, 40.0)
+	check(Boat.found(land) and cs.is_walkable(land.x, land.y), "the nearest shore is walkable land")
+	var back: Vector2 = Boat.find_water_near(cs, land, FWConst.BOAT_BOARD_RANGE)
+	check(Boat.found(back) and Boat.is_water(cs, back.x, back.y), "water is found from the shore")
+	check(Boat.find_land_near(cs, Vector2(sp.x, sp.z), 1.0) == Vector2(sp.x, sp.z), "standing on land returns the same point")
+	# یک بلوک پل روی آب آن را قابل‌ایستادن و در نتیجه «غیرآب» می‌کند
+	var bx := int(floor(water.x))
+	var bz := int(floor(water.y))
+	check(Boat.is_water(cs, float(bx) + 0.5, float(bz) + 0.5), "open water cell is water")
+	# مسابقهٔ قایق
+	var wcs = CityState.new(4246)
+	_login(wcs, "sailor")
+	check(wcs.race_start("sailor", Vector2(sp.x, sp.z), true)["error"] == "boat_race_no_space", "no boat race without open water")
+	var open_w: Vector2 = _open_water(wcs)
+	check(Boat.found(open_w), "open water exists in the world")
+	check(wcs.race_start("sailor", open_w, true)["ok"], "a boat race starts on open water")
+	check(wcs.race.is_boat_race("sailor"), "the run is marked as a boat race")
+	var st: Dictionary = wcs.race.public_state("sailor")
+	check(st["boat"] and st["pts"].size() == FWConst.RACE_GATES and float(st["total"]) == FWConst.BOAT_RACE_TIME, "boat track has all gates and its own time limit")
+	var gates: Array = []
+	var all_water := true
+	for g in st["pts"]:
+		var v := Vector2(float(g[0]), float(g[1]))
+		gates.append(v)
+		if not Boat.is_water(wcs, v.x, v.y):
+			all_water = false
+	check(all_water, "every boat gate is on water")
+	var wcs_b = CityState.new(4246)
+	_login(wcs_b, "sailor")
+	wcs_b.race_start("sailor", Vector2(sp.x, sp.z), true)   # همان تعداد شروعِ قبلی تا شمارندهٔ مسیر یکسان باشد
+	wcs_b.race_start("sailor", open_w, true)
+	check(wcs_b.race.public_state("sailor")["pts"] == st["pts"], "the boat track is deterministic")
+	wcs.race_step(0.1, {"sailor": gates[1]})
+	check(int(wcs.race.public_state("sailor")["next"]) == 0, "boat gates must be passed in order")
+	# ایستگاه قایق با شعاع بزرگ‌تر ثبت می‌شود
+	wcs.race_step(0.1, {"sailor": gates[0] + Vector2(FWConst.BOAT_RACE_GATE_RANGE - 0.2, 0.0)})
+	check(int(wcs.race.public_state("sailor")["next"]) == 1, "boat gate range applies")
+	var m0: int = int(wcs.accounts["sailor"]["money"])
+	var end_ev: Dictionary = {}
+	for ev in _race_run(wcs, "sailor", gates.slice(1), {}):
+		if ev["kind"] == "end":
+			end_ev = ev
+	check(not end_ev.is_empty() and end_ev["finished"] and end_ev["boat"], "finishing a boat race ends it")
+	check(int(end_ev["reward"]) == FWConst.BOAT_RACE_REWARD and int(wcs.accounts["sailor"]["money"]) == m0 + FWConst.BOAT_RACE_REWARD, "a boat race pays the boat reward")
+	check(wcs.race.board(true)[0][0] == "sailor" and wcs.race.board().is_empty(), "the boat time goes to its own leaderboard")
+	check(wcs.race.best.is_empty() and wcs.race.best_boat.has("sailor"), "boat and land records are separate")
+	# سقف جایزهٔ روزانه جدا از مسابقهٔ پیاده است
+	check(wcs.race.plays.has("boat:sailor") and not wcs.race.plays.has("sailor"), "daily reward cap is counted per race kind")
+	# مهلت مسابقهٔ قایق
+	wcs.race_start("sailor", open_w, true)
+	var guard := 0
+	var fail_ev: Dictionary = {}
+	while wcs.race.is_running("sailor") and guard < 300:
+		guard += 1
+		for ev in wcs.race_step(1.0, {"sailor": open_w + Vector2(300, 300)}):
+			if ev["kind"] == "end":
+				fail_ev = ev
+	check(not fail_ev.is_empty() and not fail_ev["finished"] and fail_ev["boat"] and int(fail_ev["reward"]) == 0, "a boat race times out without reward")
+	# ذخیره و بارگذاری
+	var cs2 = CityState.from_dict(wcs.to_dict())
+	check(cs2 != null and cs2.race.best_boat == wcs.race.best_boat and cs2.race.plays.has("boat:sailor"), "boat records survive save/load")
+	var old: Dictionary = wcs.to_dict()
+	old["race"].erase("best_boat")
+	var cs3 = CityState.from_dict(old)
+	check(cs3 != null and cs3.race.best_boat.is_empty(), "old saves without boat records still load")
+	var bad: Dictionary = wcs.to_dict()
+	bad["race"]["best_boat"] = {"x": 999999999}
+	var cs4 = CityState.from_dict(bad)
+	check(cs4 != null and int(cs4.race.best_boat["x"]) <= int(FWConst.BOAT_RACE_TIME * 100.0), "loaded boat times are clamped")
+	# مسابقهٔ پیاده روی خشکی هنوز مثل قبل
+	check(cs.race_start("walker", Vector2(FWConst.CITY_SIZE * 0.5, FWConst.CITY_SIZE * 0.5))["ok"] and not cs.race.is_boat_race("walker"), "walking races are unchanged")
 
 
 func test_disasters() -> void:

@@ -37,6 +37,7 @@ signal fire_changed
 signal minigame_changed
 signal disaster_changed
 signal race_changed
+signal boat_changed
 signal inventory_changed
 signal offer_received(data: Dictionary)
 signal block_changed(pos: Vector3i, type_id: int, color: int)
@@ -84,6 +85,7 @@ var disaster: Dictionary = {"kind": "", "t": 0.0}
 var disaster_stamp: float = 0.0
 var race: Dictionary = {"active": false, "t": 0.0, "next": 0, "pts": [], "best": 0, "board": []}
 var race_stamp: float = 0.0
+var boating: bool = false   # سوار قایق (از سرور)
 var minigame_stamp: float = 0.0   # لحظهٔ دریافت وضعیت؛ برای شمارش معکوس محلی
 var sell_prices: Dictionary = {}
 var is_logged_in: bool = false
@@ -418,6 +420,16 @@ func on_race(data: Dictionary) -> void:
 	race_changed.emit()
 
 
+func on_boat(on: bool) -> void:
+	boating = on
+	boat_changed.emit()
+
+
+func toggle_boat() -> void:
+	if is_logged_in:
+		_tx("c2s_boat", [])
+
+
 func race_start() -> void:
 	if is_logged_in:
 		_tx("c2s_race_start", [])
@@ -432,7 +444,7 @@ func race_elapsed() -> float:
 	if not race_active():
 		return 0.0
 	var left: float = maxf(0.0, float(race.get("t", 0.0)) - (Time.get_ticks_msec() / 1000.0 - race_stamp))
-	return FWConst.RACE_TIME - left
+	return float(race.get("total", FWConst.RACE_TIME)) - left
 
 
 func minigame_start() -> void:
@@ -577,6 +589,7 @@ func preview_error(type: String, cx: int, cz: int) -> String:
 # ---------------- پاسخ‌های سرور ----------------
 
 func on_login_result(ok: bool, error: String, info: Dictionary) -> void:
+	boating = false
 	if not ok:
 		login_failed.emit(error)
 		return
@@ -618,6 +631,7 @@ func _apply_players(player_dict: Dictionary) -> void:
 		entry["inside"] = int(a[5]) if a.size() > 5 else 0
 		entry["mine"] = str(a[6]) if a.size() > 6 else ""
 		entry["alt"] = float(a[7]) if a.size() > 7 else 0.0
+		entry["boat"] = int(a[8]) == 1 if a.size() > 8 else false
 		players[n] = entry
 	for n in players.keys():
 		if not player_dict.has(n):

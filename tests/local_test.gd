@@ -9,6 +9,7 @@ const GameClient = preload("res://scripts/networking/game_client.gd")
 const ServerMain = preload("res://scripts/server/server_main.gd")
 const Placement = preload("res://scripts/shared/placement.gd")
 const Mine = preload("res://scripts/shared/mine.gd")
+const Boat = preload("res://scripts/shared/boat.gd")
 const GameViewScript = preload("res://scripts/client/game_view.gd")
 const HudScript = preload("res://scripts/client/hud.gd")
 
@@ -47,6 +48,12 @@ func _mk_client() -> Node:
 
 func _start_server(port: int, dir: String) -> Node:
 	return ServerMain.launch(root, {"port": port, "seed": 777, "data_dir": dir, "admins": [["hosty", "secret-secret-1"]], "max_seconds": 0.0})
+
+
+
+func bp_dir(shore: Vector2, from: Vector3) -> Vector2:
+	var d := Vector2(from.x, from.z) - shore
+	return d.normalized() if d.length() > 0.01 else Vector2(-1.0, -1.0).normalized()
 
 
 func _run() -> void:
@@ -499,6 +506,84 @@ func _run() -> void:
 		server.queue_free()
 		c.queue_free()
 		await create_timer(0.3).timeout
+
+	print("== boat (protocol 24) ==")
+	var sl_dir := OS.get_user_data_dir().path_join("local_test_boat_%d" % Time.get_ticks_msec())
+	server = ServerMain.launch(root, {"port": 0, "seed": 777, "data_dir": sl_dir, "admins": [["hosty", "secret-secret-1"]], "max_seconds": 0.0})
+	c = _mk_client()
+	c.connect_local(server, "hosty", "secret-secret-1")
+	ok(await wait_until(func(): return c.is_logged_in, 3.0), "boat test login")
+	c.toggle_boat()
+	await create_timer(0.3).timeout
+	ok(not c.boating and not bool(server.peers[1].get("boat", false)), "no boarding away from water")
+	var sl_shore: Vector2 = Boat.find_land_near(server.cs, Vector2(-398.0, -386.0), 40.0)
+	ok(Boat.found(sl_shore), "found a shoreline for the test")
+	server.peers[1]["pos"] = Vector3(sl_shore.x, server.cs.ground_height(sl_shore.x, sl_shore.y), sl_shore.y)
+	c.toggle_boat()
+	ok(await wait_until(func(): return c.boating, 3.0), "boarding next to water works")
+	var sl_p0: Vector3 = server.peers[1]["pos"]
+	ok(bool(server.peers[1]["boat"]) and Boat.is_water(server.cs, sl_p0.x, sl_p0.z) and is_equal_approx(sl_p0.y, FWConst.SEA_LEVEL), "the boat is placed on the water")
+	ok(await wait_until(func(): return bool(c.players.get("hosty", {}).get("boat", false)), 3.0), "the boat flag is broadcast to clients")
+	await create_timer(1.2).timeout
+	# نقطهٔ آب باز: همهٔ ۱۶ جهت تا ۳۰ متر آب باشند (و داخل مرز جهان)
+	var sl_open := Vector2(INF, INF)
+	var sl_x := -360.0
+	while sl_x < -40.0 and not Boat.found(sl_open):
+		var sl_z := -360.0
+		while sl_z < -40.0 and not Boat.found(sl_open):
+			var sl_all := true
+			for k in 16:
+				var ang := TAU * float(k) / 16.0
+				var q := Vector2(sl_x, sl_z) + Vector2(cos(ang), sin(ang)) * 30.0
+				if not Boat.is_water(server.cs, q.x, q.y):
+					sl_all = false
+					break
+			if sl_all and Boat.is_water(server.cs, sl_x, sl_z):
+				sl_open = Vector2(sl_x, sl_z)
+			sl_z += 10.0
+		sl_x += 10.0
+	ok(Boat.found(sl_open), "found open water for sailing")
+	server.peers[1]["pos"] = Vector3(sl_open.x, FWConst.SEA_LEVEL, sl_open.y)
+	await create_timer(1.2).timeout
+	var sl_out := Vector2(1.0, 0.0)
+	var sl_p0b: Vector3 = server.peers[1]["pos"]
+	var sl_tgt := Vector2(sl_p0b.x, sl_p0b.z) + sl_out * 6.0
+	c.send_move(sl_tgt.x, sl_tgt.y, 0.0)
+	await create_timer(0.3).timeout
+	var sl_p1: Vector3 = server.peers[1]["pos"]
+	ok(Vector2(sl_p1.x, sl_p1.z).distance_to(sl_tgt) < 0.1, "the boat moves on water")
+	var sl_far := Vector2(sl_p1.x, sl_p1.z) + sl_out * 60.0
+	c.send_move(sl_far.x, sl_far.y, 0.0)
+	await create_timer(0.3).timeout
+	var sl_p2: Vector3 = server.peers[1]["pos"]
+	ok(Vector2(sl_p2.x, sl_p2.z).distance_to(Vector2(sl_p1.x, sl_p1.z)) < 1.0, "the boat cannot teleport across water")
+	var sl_tries := 0
+	while bool(server.peers[1]["boat"]) and sl_tries < 60:
+		sl_tries += 1
+		var sl_cur: Vector3 = server.peers[1]["pos"]
+		var sl_to: Vector2 = sl_shore - Vector2(sl_cur.x, sl_cur.z)
+		var sl_step: Vector2 = sl_to.normalized() * minf(sl_to.length(), 1.5)
+		c.send_move(sl_cur.x + sl_step.x, sl_cur.z + sl_step.y, 0.0)
+		await create_timer(0.25).timeout
+	ok(not bool(server.peers[1]["boat"]), "reaching the shore gets you off the boat")
+	ok(await wait_until(func(): return not c.boating, 3.0), "the client learns it left the boat")
+	c.toggle_boat()
+	ok(await wait_until(func(): return c.boating, 3.0), "boarding again")
+	server.peers[1]["pos"] = Vector3(sl_open.x, FWConst.SEA_LEVEL, sl_open.y)
+	c.race_start()
+	ok(await wait_until(func(): return c.race_active() and bool(c.race.get("boat", false)), 3.0), "a boat race starts from the boat")
+	c.toggle_boat()
+	await create_timer(0.3).timeout
+	ok(c.boating and bool(server.peers[1]["boat"]), "cannot leave the boat during a race")
+	server.cs.race.runs.clear()
+	server._sync_positions()
+	var sl_saved: Array = server.cs.accounts["hosty"]["pos"]
+	ok(not Boat.is_water(server.cs, float(sl_saved[0]), float(sl_saved[2])), "saved position of a sailor is on land")
+	c.disconnect_from_server()
+	server.stop()
+	server.queue_free()
+	c.queue_free()
+	await create_timer(0.3).timeout
 
 	print("== host + remote guest ==")
 	var port := 17891

@@ -1508,12 +1508,12 @@ func minigame_start(player_name: String, pos: Vector2) -> Dictionary:
 
 
 ## شروع مسابقهٔ ایستگاه‌ها. هم‌زمان با سکه‌یاب ممکن نیست.
-func race_start(player_name: String, pos: Vector2) -> Dictionary:
+func race_start(player_name: String, pos: Vector2, boat: bool = false) -> Dictionary:
 	if not accounts.has(player_name):
 		return {"ok": false, "error": "no_account"}
 	if minigame.is_running(player_name):
 		return {"ok": false, "error": "mg_running"}
-	return race.start(world, seed_value, player_name, pos)
+	return race.start(world, seed_value, player_name, pos, boat)
 
 
 func race_step(dt: float, positions: Dictionary) -> Array:

@@ -74,6 +74,9 @@ var _mg_bar: Label
 var _was_disaster: bool = false
 var _race_btn: Button
 var _fly_btn: Button
+var _boat_btn: Button
+var _race_title: Label
+var _race_start_btn: Button
 var _forest_btn: Button
 var _fly_pad: HBoxContainer
 var _race_panel: PanelContainer
@@ -285,6 +288,9 @@ func _build_side_buttons() -> void:
 	_race_btn.pressed.connect(func(): Sfx.play(self, "click"); _race_panel.visible = not _race_panel.visible; _refresh_race())
 	_fly_btn = UiTheme.button(Loc.t("fly"), Vector2(180, 58))
 	_fly_btn.pressed.connect(func(): Sfx.play(self, "click"); view.toggle_flight())
+	_boat_btn = UiTheme.button(Loc.t("boat"), Vector2(180, 58))
+	_boat_btn.pressed.connect(func(): Sfx.play(self, "click"); client.toggle_boat())
+	client.boat_changed.connect(_on_boat_changed)
 	_fly_pad = HBoxContainer.new()
 	_fly_pad.add_theme_constant_override("separation", 12)
 	_fly_pad.visible = false
@@ -297,7 +303,7 @@ func _build_side_buttons() -> void:
 		_fly_pad.add_child(ab)
 		_interactive.append(ab)
 	view.fly_changed.connect(func(on: bool): _fly_btn.text = Loc.t("land") if on else Loc.t("fly"); _fly_pad.visible = on)
-	for b in [_mode_btn, _view_btn, _build_btn, _tools_btn, _inv_btn, chat_btn, _admin_btn, _god_btn, _mg_btn, _race_btn, _fly_btn, menu_btn]:
+	for b in [_mode_btn, _view_btn, _build_btn, _tools_btn, _inv_btn, chat_btn, _admin_btn, _god_btn, _mg_btn, _race_btn, _boat_btn, _fly_btn, menu_btn]:
 		v.add_child(b)
 		_interactive.append(b)
 	_update_mode_btn()
@@ -780,7 +786,8 @@ func _build_race() -> void:
 	var v := VBoxContainer.new()
 	v.add_theme_constant_override("separation", 8)
 	_race_panel.add_child(v)
-	v.add_child(_label(Loc.t("race_title"), 28, Color("ffd24a")))
+	_race_title = _label(Loc.t("race_title"), 28, Color("ffd24a"))
+	v.add_child(_race_title)
 	_race_best = _label("", 22)
 	_race_board = _label("", 20)
 	v.add_child(_race_best)
@@ -789,6 +796,7 @@ func _build_race() -> void:
 	v.add_child(row)
 	var start := UiTheme.button(Loc.t("race_start"), Vector2(0, 64))
 	start.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_race_start_btn = start
 	start.pressed.connect(func(): client.race_start(); _race_panel.visible = false)
 	var close := UiTheme.button("✕", Vector2(64, 64))
 	close.pressed.connect(func(): _race_panel.visible = false)
@@ -811,11 +819,14 @@ func _refresh_race() -> void:
 	if _race_panel == null:
 		return
 	var r: Dictionary = client.race
-	var b: int = int(r.get("best", 0))
+	var on_boat: bool = client.boating
+	_race_title.text = Loc.t("boat_race_title") if on_boat else Loc.t("race_title")
+	_race_start_btn.text = Loc.t("boat_race_start") if on_boat else Loc.t("race_start")
+	var b: int = int(r.get("boat_best" if on_boat else "best", 0))
 	_race_best.text = Loc.fmt("race_best", [race_time_text(b)]) if b > 0 else Loc.t("race_none")
 	var lines: Array = []
 	var rank := 1
-	for row in r.get("board", []):
+	for row in r.get("boat_board" if on_boat else "board", []):
 		lines.append("%s. %s — %s" % [Loc.digits(str(rank)), str(row[0]), race_time_text(int(row[1]))])
 		rank += 1
 	_race_board.text = "\n".join(lines) if not lines.is_empty() else "—"
@@ -829,6 +840,12 @@ func _update_race_bar() -> void:
 	_race_bar.visible = active
 	if active:
 		_race_bar.text = Loc.fmt("race_status", [Loc.digits(str(int(client.race.get("next", 0)) + 1)), Loc.digits(str(FWConst.RACE_GATES)), Loc.digits("%.1f" % client.race_elapsed())])
+
+
+func _on_boat_changed() -> void:
+	_boat_btn.text = Loc.t("boat_leave") if client.boating else Loc.t("boat")
+	_fly_btn.visible = view.mode == "life" and client.creative and not client.boating
+	_refresh_race()
 
 
 func _on_disaster_changed() -> void:
@@ -1282,6 +1299,8 @@ func _on_notice(code: String, args: Dictionary) -> void:
 				Sfx.play(self, "coin")
 				var tt: String = race_time_text(int(args["time"]))
 				rtxt = Loc.fmt("msg_race_end_reward", [tt, Loc.digits(str(args["reward"]))]) if int(args["reward"]) > 0 else Loc.fmt("msg_race_end", [tt])
+				if bool(args.get("boat", false)):
+					rtxt = Loc.t("msg_boat_prefix") + " " + rtxt
 				if bool(args["new_best"]):
 					rtxt += " " + Loc.t("msg_race_new_best")
 			else:
@@ -1392,7 +1411,8 @@ func _on_mode_changed(_m: String) -> void:
 	_tools_btn.visible = view.mode == "life"
 	_mg_btn.visible = view.mode == "life"
 	_race_btn.visible = view.mode == "life"
-	_fly_btn.visible = view.mode == "life" and client.creative
+	_fly_btn.visible = view.mode == "life" and client.creative and not client.boating
+	_boat_btn.visible = view.mode == "life"
 	_refresh_role()
 	if view.mode == "world":
 		_set_tools_visible(false)

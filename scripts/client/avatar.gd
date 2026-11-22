@@ -12,6 +12,8 @@ var sub_label: Label3D
 var body: MeshInstance3D
 var _phase: float = 0.0
 var _moving: bool = false
+var boat_node: MeshInstance3D = null
+var _boat_t: float = 0.0
 
 
 static func font() -> Font:
@@ -75,12 +77,40 @@ static func color_for(player_name: String) -> Color:
 	return Color.from_hsv(h, 0.55, 0.85)
 
 
+## قایق زیر پای شخصیت (پروتکل ۲۴): بدنه و دماغهٔ low-poly، بالای آب کمی تکان می‌خورد.
+func set_boat(on: bool) -> void:
+	if on == (boat_node != null):
+		return
+	if not on:
+		boat_node.queue_free()
+		boat_node = null
+		return
+	var mb := MeshBuilder.new()
+	var wood := Color("8a5a35")
+	var dark := Color("5e3b22")
+	mb.add_box(Vector3(0, 0.05, 0), Vector3(1.2, 0.4, 2.2), wood)
+	mb.add_box(Vector3(0, 0.05, 1.35), Vector3(0.7, 0.36, 0.7), wood)
+	mb.add_box(Vector3(0, 0.05, 1.8), Vector3(0.3, 0.32, 0.4), wood)
+	mb.add_box(Vector3(-0.62, 0.3, 0), Vector3(0.1, 0.16, 2.2), dark)
+	mb.add_box(Vector3(0.62, 0.3, 0), Vector3(0.1, 0.16, 2.2), dark)
+	mb.add_box(Vector3(0, 0.3, -1.1), Vector3(1.34, 0.16, 0.1), dark)
+	boat_node = MeshInstance3D.new()
+	boat_node.mesh = mb.build()
+	boat_node.material_override = MeshBuilder.material()
+	boat_node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(boat_node)
+
+
 func teleport_to(p: Vector3) -> void:
 	position = p
 	target = p
 
 
 func _process(delta: float) -> void:
+	if boat_node != null:
+		_boat_t += delta
+		boat_node.position.y = -0.12 + sin(_boat_t * 2.1) * 0.03
+		boat_node.rotation.z = sin(_boat_t * 1.4) * 0.025
 	var k := 1.0 - exp(-12.0 * delta)
 	var before := position
 	position = position.lerp(target, k)

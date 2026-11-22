@@ -1,7 +1,7 @@
 extends RefCounted
 ## ثابت‌های مشترک بین سرور و کلاینت.
 
-const PROTOCOL_VERSION := 23
+const PROTOCOL_VERSION := 24
 # ترافیک شبکه با DTLS رمز می‌شود (نسخهٔ ۴ به بعد). فقط برای عیب‌یابی خاموش شود.
 const USE_DTLS := true
 const DEFAULT_PORT := 7777
@@ -241,6 +241,14 @@ const FLY_MIN_ALT := 0.3
 const FLY_CLIMB_SPEED := 8.0
 const FLY_SPEED_MULT := 1.6
 const RACE_REWARD := 30
+## قایق (پروتکل ۲۴): فقط روی آب حرکت می‌کند، سرعت بیشتر از پیاده‌روی؛ مسابقهٔ قایق ایستگاه‌هایش روی آب است.
+const BOAT_SPEED_MULT := 1.8
+const BOAT_BOARD_RANGE := 5.0
+const BOAT_MIN_H := -0.3
+const BOAT_RACE_RADIUS := 14.0
+const BOAT_RACE_GATE_RANGE := 3.5
+const BOAT_RACE_TIME := 120.0
+const BOAT_RACE_REWARD := 40
 const RACE_REWARDED_RUNS := 3
 # ابزارهای خلقت (World Mode، فقط مدیران): درخت، سنگ و حیوانات آرام. وضعیتشان با شهر ذخیره می‌شود.
 const GOD_STATIC := ["tree", "rock"]

@@ -2,6 +2,7 @@ extends Node3D
 ## دنیای سه‌بعدی: زمین، ساختمان‌ها، بازیکنان، NPCها، دوربین، ورودی و حالت ساخت.
 ## منطق بازی اینجا نیست؛ فقط درخواست می‌فرستد و وضعیت سرور را نشان می‌دهد.
 
+const Boat = preload("res://scripts/shared/boat.gd")
 const FWConst = preload("res://scripts/core/const.gd")
 const InteriorMesh = preload("res://scripts/client/interior_mesh.gd")
 const Placement = preload("res://scripts/shared/placement.gd")
@@ -135,6 +136,7 @@ func setup(game_client, quality_level: int) -> void:
 	client.fire_changed.connect(_sync_nfire)
 	client.minigame_changed.connect(_sync_coins)
 	client.race_changed.connect(_sync_race)
+	client.boat_changed.connect(func(): my_avatar.set_boat(client.boating))
 	cam = CameraRig.new()
 	cam.name = "CameraRig"
 	add_child(cam)
@@ -988,7 +990,7 @@ func _process(delta: float) -> void:
 
 
 func can_fly() -> bool:
-	return client.creative and inside_id == 0 and client.mine_id == "" and mode == "life"
+	return client.creative and inside_id == 0 and client.mine_id == "" and mode == "life" and not client.boating
 
 
 ## دکمهٔ پرواز: اولین بار بلند می‌شود؛ بار بعد فرود می‌آید (فقط روی نقطهٔ قابل‌راه‌رفتن).
@@ -1058,14 +1060,32 @@ func _move_player(dt: float, input: Vector2) -> void:
 		_move_in_mine(dt, len, (cam.right_flat() * input.x + cam.forward_flat() * (-input.y)).normalized())
 		return
 	var dir: Vector3 = (cam.right_flat() * input.x + cam.forward_flat() * (-input.y)).normalized()
-	var step := dir * FWConst.PLAYER_SPEED * (FWConst.RACE_SPEED_MULT if client.race_active() else 1.0) * (FWConst.FLY_SPEED_MULT if my_alt > FWConst.FLY_MIN_ALT else 1.0) * len * dt
+	var speed_mult: float = FWConst.RACE_SPEED_MULT if client.race_active() else 1.0
+	if client.boating:
+		speed_mult = FWConst.BOAT_SPEED_MULT
+	var step := dir * FWConst.PLAYER_SPEED * speed_mult * (FWConst.FLY_SPEED_MULT if my_alt > FWConst.FLY_MIN_ALT else 1.0) * len * dt
 	var nx := my_pos.x + step.x
 	var nz := my_pos.z + step.z
 	var lo := -FWConst.WORLD_LIMIT
 	var hi := FWConst.CITY_SIZE + FWConst.WORLD_LIMIT
 	var mirror = client.mirror
 	var airborne: bool = my_alt > FWConst.FLY_MIN_ALT
-	if airborne:
+	if client.boating:
+		# قایق فقط روی آب می‌رود؛ لمس ساحل (بیرون از مسابقه) پیاده می‌کند (سرور تصمیم نهایی را می‌گیرد).
+		var can_beach: bool = not client.race_active()
+		var on_x: bool = Boat.is_water(mirror, nx, my_pos.z) or (can_beach and mirror.is_walkable(nx, my_pos.z, my_pos.y))
+		var on_z: bool = Boat.is_water(mirror, my_pos.x, nz) or (can_beach and mirror.is_walkable(my_pos.x, nz, my_pos.y))
+		if (Boat.is_water(mirror, nx, nz) or (can_beach and mirror.is_walkable(nx, nz, my_pos.y))) and nx > lo and nx < hi and nz > lo and nz < hi:
+			my_pos.x = nx
+			my_pos.z = nz
+		elif on_x:
+			my_pos.x = nx
+		elif on_z:
+			my_pos.z = nz
+		else:
+			return
+		my_pos.y = FWConst.SEA_LEVEL if Boat.is_water(mirror, my_pos.x, my_pos.z) else mirror.ground_height(my_pos.x, my_pos.z, my_pos.y)
+	elif airborne:
 		# در هوا فقط مرز جهان مانع است؛ ساختمان و آب را می‌شود رد کرد.
 		my_pos.x = clampf(nx, lo + 0.01, hi - 0.01)
 		my_pos.z = clampf(nz, lo + 0.01, hi - 0.01)
@@ -1078,7 +1098,8 @@ func _move_player(dt: float, input: Vector2) -> void:
 		my_pos.z = nz
 	else:
 		return
-	my_pos.y = client.mirror.ground_height(my_pos.x, my_pos.z, my_pos.y)
+	if not client.boating:
+		my_pos.y = client.mirror.ground_height(my_pos.x, my_pos.z, my_pos.y)
 	my_yaw = atan2(dir.x, dir.z)
 	my_avatar.position = my_pos + Vector3(0.0, my_alt, 0.0)
 	my_avatar.target = my_avatar.position
@@ -1305,7 +1326,7 @@ func _on_teleported(p: Vector2) -> void:
 		return
 	if inside_id > 0:
 		return
-	my_pos = Vector3(p.x, client.mirror.ground_height(p.x, p.y), p.y)
+	my_pos = Vector3(p.x, FWConst.SEA_LEVEL if client.boating else client.mirror.ground_height(p.x, p.y), p.y)
 	my_avatar.teleport_to(my_pos)
 	_last_sent = p
 
@@ -1478,7 +1499,7 @@ func _sync_race() -> void:
 		node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		var gx := float(pts[i][0])
 		var gz := float(pts[i][1])
-		node.position = Vector3(gx, world.height_at(gx, gz), gz)
+		node.position = Vector3(gx, FWConst.SEA_LEVEL if bool(client.race.get("boat", false)) else world.height_at(gx, gz), gz)
 		var prev: Vector2 = Vector2(float(pts[i - 1][0]), float(pts[i - 1][1])) if i > 0 else Vector2(my_pos.x, my_pos.z)
 		node.rotation.y = atan2(gx - prev.x, gz - prev.y)
 		add_child(node)
@@ -1545,6 +1566,7 @@ func _sync_remote(_dt: float) -> void:
 			av.teleport_to(rpos)
 		av.target = rpos + Vector3(0.0, float(data.get("alt", 0.0)), 0.0)
 		av.target_yaw = data["yaw"]
+		av.set_boat(bool(data.get("boat", false)))
 		av.visible = int(data.get("inside", 0)) == 0 and their_mine == client.mine_id
 	for pname in avatars.keys():
 		if not client.players.has(pname):

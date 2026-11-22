@@ -213,6 +213,18 @@ func s2c_race(data: Dictionary) -> void:
 
 
 @rpc("any_peer", "call_remote", "reliable")
+func c2s_boat() -> void:
+	if server:
+		server.on_boat(multiplayer.get_remote_sender_id())
+
+
+@rpc("authority", "call_remote", "reliable")
+func s2c_boat(on: bool) -> void:
+	if client:
+		client.on_boat(on)
+
+
+@rpc("any_peer", "call_remote", "reliable")
 func c2s_disaster(kind: String) -> void:
 	if server:
 		server.on_disaster(multiplayer.get_remote_sender_id(), kind)
