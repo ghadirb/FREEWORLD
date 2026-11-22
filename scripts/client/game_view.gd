@@ -22,6 +22,7 @@ signal npc_tapped(id: int)
 signal ghost_changed(error: String)
 signal mode_changed(new_mode: String)
 signal tool_changed
+signal fly_changed(on: bool)
 signal perspective_changed
 
 const HEIGHTS := {"house": 4.4, "shop": 4.0, "farm": 1.3, "road": 0.2, "well": 2.5, "bakery": 4.4, "coop": 2.6, "barn": 4.0}
@@ -58,6 +59,13 @@ var mode: String = "life"
 var my_pos: Vector3 = Vector3.ZERO
 var my_yaw: float = 0.0
 var joy: Vector2 = Vector2.ZERO
+# پرواز خلاقانه: my_alt ارتفاع بالای زمین است؛ my_pos همیشه روی زمین می‌ماند.
+var flying: bool = false
+var my_alt: float = 0.0
+var fly_vert: float = 0.0  # دکمه‌های HUD: +۱ بالا، −۱ پایین
+var _landing: bool = false
+var _alt_sent: float = 0.0
+var _alt_acc: float = 0.0
 var joy_active: bool = false
 var joy_origin: Vector2 = Vector2.ZERO
 var joy_zone: Rect2 = Rect2()
@@ -943,9 +951,10 @@ func _process(delta: float) -> void:
 			cam.yaw += dt * 1.8
 		if Input.is_key_pressed(KEY_E):
 			cam.yaw -= dt * 1.8
+	_update_fly(dt)
 	if mode == "life":
 		_move_player(dt, joy + kb)
-		cam.set_life_focus(my_pos)
+		cam.set_life_focus(my_pos + Vector3(0.0, my_alt, 0.0))
 	else:
 		if kb.length() > 0.0:
 			var speed: float = cam.world_distance * 0.9 * dt
@@ -970,6 +979,60 @@ func _process(delta: float) -> void:
 		_update_label_visibility()
 
 
+func can_fly() -> bool:
+	return client.creative and inside_id == 0 and client.mine_id == "" and mode == "life"
+
+
+## دکمهٔ پرواز: اولین بار بلند می‌شود؛ بار بعد فرود می‌آید (فقط روی نقطهٔ قابل‌راه‌رفتن).
+func toggle_flight() -> void:
+	if not flying:
+		if not can_fly():
+			return
+		flying = true
+		_landing = false
+		my_alt = maxf(my_alt, 1.5)
+		fly_changed.emit(true)
+	else:
+		_landing = not _landing
+
+
+func _update_fly(dt: float) -> void:
+	if flying and not can_fly():
+		flying = false
+		_landing = false
+		my_alt = 0.0
+		fly_changed.emit(false)
+		my_avatar.teleport_to(my_pos)
+		return
+	if not flying:
+		return
+	var v: float = fly_vert
+	if not (get_viewport().gui_get_focus_owner() is LineEdit):
+		if Input.is_key_pressed(KEY_SPACE):
+			v += 1.0
+		if Input.is_key_pressed(KEY_SHIFT):
+			v -= 1.0
+	if _landing:
+		v = -1.0
+	my_alt = clampf(my_alt + clampf(v, -1.0, 1.0) * FWConst.FLY_CLIMB_SPEED * dt, 0.0, FWConst.FLY_MAX_ALT)
+	if my_alt <= FWConst.FLY_MIN_ALT + 0.05 and v < 0.0:
+		if client.mirror.is_walkable(my_pos.x, my_pos.z, my_pos.y):
+			my_alt = 0.0
+			flying = false
+			_landing = false
+			fly_changed.emit(false)
+		else:
+			my_alt = 0.6  # بالای ساختمان یا آب فرود ممکن نیست؛ بالاتر بمان
+	my_pos.y = client.mirror.ground_height(my_pos.x, my_pos.z, my_pos.y)
+	my_avatar.position = my_pos + Vector3(0.0, my_alt, 0.0)
+	my_avatar.target = my_avatar.position
+	_alt_acc += dt
+	if _alt_acc >= 0.1 and absf(my_alt - _alt_sent) > 0.05:
+		_alt_acc = 0.0
+		_alt_sent = my_alt
+		client.send_move(my_pos.x, my_pos.z, my_yaw, my_alt)
+
+
 func _move_player(dt: float, input: Vector2) -> void:
 	var len := minf(input.length(), 1.0)
 	if len < 0.08:
@@ -987,13 +1050,18 @@ func _move_player(dt: float, input: Vector2) -> void:
 		_move_in_mine(dt, len, (cam.right_flat() * input.x + cam.forward_flat() * (-input.y)).normalized())
 		return
 	var dir: Vector3 = (cam.right_flat() * input.x + cam.forward_flat() * (-input.y)).normalized()
-	var step := dir * FWConst.PLAYER_SPEED * (FWConst.RACE_SPEED_MULT if client.race_active() else 1.0) * len * dt
+	var step := dir * FWConst.PLAYER_SPEED * (FWConst.RACE_SPEED_MULT if client.race_active() else 1.0) * (FWConst.FLY_SPEED_MULT if my_alt > FWConst.FLY_MIN_ALT else 1.0) * len * dt
 	var nx := my_pos.x + step.x
 	var nz := my_pos.z + step.z
 	var lo := -FWConst.WORLD_LIMIT
 	var hi := FWConst.CITY_SIZE + FWConst.WORLD_LIMIT
 	var mirror = client.mirror
-	if mirror.is_walkable(nx, nz, my_pos.y) and nx > lo and nx < hi and nz > lo and nz < hi:
+	var airborne: bool = my_alt > FWConst.FLY_MIN_ALT
+	if airborne:
+		# در هوا فقط مرز جهان مانع است؛ ساختمان و آب را می‌شود رد کرد.
+		my_pos.x = clampf(nx, lo + 0.01, hi - 0.01)
+		my_pos.z = clampf(nz, lo + 0.01, hi - 0.01)
+	elif mirror.is_walkable(nx, nz, my_pos.y) and nx > lo and nx < hi and nz > lo and nz < hi:
 		my_pos.x = nx
 		my_pos.z = nz
 	elif mirror.is_walkable(nx, my_pos.z, my_pos.y):
@@ -1004,8 +1072,8 @@ func _move_player(dt: float, input: Vector2) -> void:
 		return
 	my_pos.y = client.mirror.ground_height(my_pos.x, my_pos.z, my_pos.y)
 	my_yaw = atan2(dir.x, dir.z)
-	my_avatar.position = my_pos
-	my_avatar.target = my_pos
+	my_avatar.position = my_pos + Vector3(0.0, my_alt, 0.0)
+	my_avatar.target = my_avatar.position
 	my_avatar.target_yaw = my_yaw
 	_send_acc += dt
 	if _send_acc >= 0.05:
@@ -1013,7 +1081,8 @@ func _move_player(dt: float, input: Vector2) -> void:
 		var cur := Vector2(my_pos.x, my_pos.z)
 		if cur.distance_to(_last_sent) > 0.01:
 			_last_sent = cur
-			client.send_move(my_pos.x, my_pos.z, my_yaw)
+			_alt_sent = my_alt
+			client.send_move(my_pos.x, my_pos.z, my_yaw, my_alt)
 
 
 func _on_inside_changed(id: int) -> void:
@@ -1396,7 +1465,7 @@ func _sync_remote(_dt: float) -> void:
 		if str(av.get_meta("space", "")) != their_mine:
 			av.set_meta("space", their_mine)
 			av.teleport_to(rpos)
-		av.target = rpos
+		av.target = rpos + Vector3(0.0, float(data.get("alt", 0.0)), 0.0)
 		av.target_yaw = data["yaw"]
 		av.visible = int(data.get("inside", 0)) == 0 and their_mine == client.mine_id
 	for pname in avatars.keys():

@@ -1,7 +1,7 @@
 extends RefCounted
 ## ثابت‌های مشترک بین سرور و کلاینت.
 
-const PROTOCOL_VERSION := 20
+const PROTOCOL_VERSION := 21
 # ترافیک شبکه با DTLS رمز می‌شود (نسخهٔ ۴ به بعد). فقط برای عیب‌یابی خاموش شود.
 const USE_DTLS := true
 const DEFAULT_PORT := 7777
@@ -210,6 +210,11 @@ const RACE_TIME := 90.0
 const RACE_RADIUS := 22.0
 const RACE_GATE_RANGE := 3.0
 const RACE_SPEED_MULT := 1.6
+# پرواز (فقط حالت خلاقانه، پروتکل ۲۱): ارتفاع بالای زمین، سرعت صعود و ضریب سرعت افقی
+const FLY_MAX_ALT := 30.0
+const FLY_MIN_ALT := 0.3
+const FLY_CLIMB_SPEED := 8.0
+const FLY_SPEED_MULT := 1.6
 const RACE_REWARD := 30
 const RACE_REWARDED_RUNS := 3
 # ابزارهای خلقت (World Mode، فقط مدیران): درخت، سنگ و حیوانات آرام. وضعیتشان با شهر ذخیره می‌شود.

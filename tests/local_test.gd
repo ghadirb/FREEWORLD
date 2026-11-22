@@ -445,6 +445,34 @@ func _run() -> void:
 	c.queue_free()
 	await create_timer(0.3).timeout
 
+	print("== creative flight (protocol 21) ==")
+	for creative_world in [true, false]:
+		var fdir := OS.get_user_data_dir().path_join("local_test_fly_%d_%d" % [int(creative_world), Time.get_ticks_msec()])
+		server = ServerMain.launch(root, {"port": 0, "seed": 777, "data_dir": fdir, "admins": [["hosty", "secret-secret-1"]], "max_seconds": 0.0, "creative": creative_world})
+		c = _mk_client()
+		c.connect_local(server, "hosty", "secret-secret-1")
+		ok(await wait_until(func(): return c.is_logged_in, 3.0), "flight test login (creative=%s)" % creative_world)
+		var fp: Vector3 = server.peers[1]["pos"]
+		c.send_move(fp.x + 1.0, fp.z, 0.0, 10.0)
+		await create_timer(0.3).timeout
+		var got_alt: float = float(server.peers[1]["alt"])
+		if creative_world:
+			ok(absf(got_alt - 10.0) < 0.05, "creative: server accepts altitude")
+			ok(await wait_until(func(): return absf(float(c.players.get("hosty", {}).get("alt", 0.0)) - 10.0) < 0.2, 3.0), "altitude is broadcast to clients")
+			c.send_move(fp.x + 2.0, fp.z, 0.0, 999.0)
+			await create_timer(0.3).timeout
+			ok(float(server.peers[1]["alt"]) <= FWConst.FLY_MAX_ALT + 0.001, "altitude is capped")
+			c.send_move(fp.x + 2.0, fp.z, 0.0, 0.0)
+			await create_timer(0.3).timeout
+			ok(float(server.peers[1]["alt"]) == 0.0, "landing resets altitude")
+		else:
+			ok(got_alt == 0.0, "survival: altitude is ignored")
+		c.disconnect_from_server()
+		server.stop()
+		server.queue_free()
+		c.queue_free()
+		await create_timer(0.3).timeout
+
 	print("== host + remote guest ==")
 	var port := 17891
 	server = _start_server(port, dir)

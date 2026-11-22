@@ -433,7 +433,8 @@ func _players_public() -> Dictionary:
 		var mine: String = str(p.get("mine", ""))
 		var pos: Vector3 = p["mpos"] if mine != "" else p["pos"]   # داخل معدن: مختصات محلی معدن
 		out[p["name"]] = [snappedf(pos.x, 0.01), snappedf(pos.y, 0.01), snappedf(pos.z, 0.01),
-			snappedf(float(p["yaw"]), 0.01), cs.role_of(p["name"]), int(p.get("inside", 0)), mine]
+			snappedf(float(p["yaw"]), 0.01), cs.role_of(p["name"]), int(p.get("inside", 0)), mine,
+			snappedf(float(p.get("alt", 0.0)), 0.1)]
 	return out
 
 
@@ -478,7 +479,7 @@ func _on_peer_connected(pid: int) -> void:
 		"name": "", "auth": false, "connected_at": Time.get_ticks_msec(),
 		"bucket": 10.0, "bucket_t": Time.get_ticks_msec(),
 		"allow": 6.0, "last_move": Time.get_ticks_msec(), "last_tp": 0,
-		"pos": Vector3.ZERO, "yaw": 0.0, "failures": 0,
+		"pos": Vector3.ZERO, "yaw": 0.0, "alt": 0.0, "failures": 0,
 		"mine": "", "mpos": Vector3.ZERO,
 	}
 
@@ -560,7 +561,7 @@ func on_login(pid: int, player_name: String, token: String, proto: int) -> void:
 
 # ---------------- اقدامات بازیکن ----------------
 
-func on_move(pid: int, x: float, z: float, yaw: float) -> void:
+func on_move(pid: int, x: float, z: float, yaw: float, alt: float = 0.0) -> void:
 	var p := _player_of(pid)
 	if p.is_empty():
 		return
@@ -569,19 +570,24 @@ func on_move(pid: int, x: float, z: float, yaw: float) -> void:
 		return
 	if int(p.get("inside", 0)) > 0:
 		return  # داخل ساختمان موقعیت بیرونی تغییر نمی‌کند
-	if not (is_finite(x) and is_finite(z) and is_finite(yaw)):
+	if not (is_finite(x) and is_finite(z) and is_finite(yaw) and is_finite(alt)):
 		return
+	# پرواز فقط در جهان خلاقانه؛ در غیر این صورت ارتفاع نادیده گرفته می‌شود.
+	var flying: bool = cs.creative and alt > FWConst.FLY_MIN_ALT
 	var now := Time.get_ticks_msec()
 	var dt: float = clampf(float(now - int(p["last_move"])) / 1000.0, 0.0, 0.5)
 	p["last_move"] = now
 	var speed_mult: float = FWConst.RACE_SPEED_MULT if cs.race.is_running(str(p["name"])) else 1.0
+	if flying:
+		speed_mult *= FWConst.FLY_SPEED_MULT
 	p["allow"] = minf(float(p["allow"]) + FWConst.PLAYER_SPEED * 1.3 * speed_mult * dt, 6.0 * speed_mult)
 	var cur: Vector3 = p["pos"]
 	var d: float = Vector2(x, z).distance_to(Vector2(cur.x, cur.z))
 	var lo: float = -FWConst.WORLD_LIMIT
 	var hi: float = FWConst.CITY_SIZE + FWConst.WORLD_LIMIT
-	var valid: bool = d <= float(p["allow"]) + 0.05 and x >= lo and x <= hi and z >= lo and z <= hi and cs.is_walkable(x, z, cur.y)
+	var valid: bool = d <= float(p["allow"]) + 0.05 and x >= lo and x <= hi and z >= lo and z <= hi and (flying or cs.is_walkable(x, z, cur.y))
 	if valid:
+		p["alt"] = clampf(alt, 0.0, FWConst.FLY_MAX_ALT) if flying else 0.0
 		p["allow"] = float(p["allow"]) - d
 		p["pos"] = Vector3(x, cs.ground_height(x, z, cur.y), z)
 		p["yaw"] = yaw

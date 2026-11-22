@@ -15,9 +15,9 @@ func c2s_login(player_name: String, token: String, proto: int) -> void:
 
 
 @rpc("any_peer", "call_remote", "unreliable")
-func c2s_move(x: float, z: float, yaw: float) -> void:
+func c2s_move(x: float, z: float, yaw: float, alt: float) -> void:
 	if server:
-		server.on_move(multiplayer.get_remote_sender_id(), x, z, yaw)
+		server.on_move(multiplayer.get_remote_sender_id(), x, z, yaw, alt)
 
 
 @rpc("any_peer", "call_remote", "reliable")

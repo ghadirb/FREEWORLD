@@ -225,9 +225,9 @@ func _on_server_disconnected() -> void:
 
 # ---------------- درخواست‌ها ----------------
 
-func send_move(x: float, z: float, yaw: float) -> void:
+func send_move(x: float, z: float, yaw: float, alt: float = 0.0) -> void:
 	if is_logged_in:
-		_tx("c2s_move", [x, z, yaw])
+		_tx("c2s_move", [x, z, yaw, alt])
 
 
 func place(type: String, cx: int, cz: int) -> void:
@@ -581,6 +581,7 @@ func _apply_players(player_dict: Dictionary) -> void:
 		entry["role"] = str(a[4])
 		entry["inside"] = int(a[5]) if a.size() > 5 else 0
 		entry["mine"] = str(a[6]) if a.size() > 6 else ""
+		entry["alt"] = float(a[7]) if a.size() > 7 else 0.0
 		players[n] = entry
 	for n in players.keys():
 		if not player_dict.has(n):

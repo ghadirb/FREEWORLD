@@ -73,6 +73,8 @@ var _mg_best: Label
 var _mg_bar: Label
 var _was_disaster: bool = false
 var _race_btn: Button
+var _fly_btn: Button
+var _fly_pad: HBoxContainer
 var _race_panel: PanelContainer
 var _race_best: Label
 var _race_board: Label
@@ -276,7 +278,21 @@ func _build_side_buttons() -> void:
 	_mg_btn.pressed.connect(func(): Sfx.play(self, "click"); _mg_panel.visible = not _mg_panel.visible; _refresh_minigame())
 	_race_btn = UiTheme.button(Loc.t("race"), Vector2(180, 58))
 	_race_btn.pressed.connect(func(): Sfx.play(self, "click"); _race_panel.visible = not _race_panel.visible; _refresh_race())
-	for b in [_mode_btn, _view_btn, _build_btn, _tools_btn, _inv_btn, chat_btn, _admin_btn, _god_btn, _mg_btn, _race_btn, menu_btn]:
+	_fly_btn = UiTheme.button(Loc.t("fly"), Vector2(180, 58))
+	_fly_btn.pressed.connect(func(): Sfx.play(self, "click"); view.toggle_flight())
+	_fly_pad = HBoxContainer.new()
+	_fly_pad.add_theme_constant_override("separation", 12)
+	_fly_pad.visible = false
+	root.add_child(_fly_pad)
+	_place(_fly_pad, 1.0, 1.0, 12.0, 120.0)
+	for dirn in [1.0, -1.0]:
+		var ab := UiTheme.button("▲" if dirn > 0.0 else "▼", Vector2(96, 96))
+		ab.button_down.connect(func(): view.fly_vert = dirn)
+		ab.button_up.connect(func(): view.fly_vert = 0.0)
+		_fly_pad.add_child(ab)
+		_interactive.append(ab)
+	view.fly_changed.connect(func(on: bool): _fly_btn.text = Loc.t("land") if on else Loc.t("fly"); _fly_pad.visible = on)
+	for b in [_mode_btn, _view_btn, _build_btn, _tools_btn, _inv_btn, chat_btn, _admin_btn, _god_btn, _mg_btn, _race_btn, _fly_btn, menu_btn]:
 		v.add_child(b)
 		_interactive.append(b)
 	_update_mode_btn()
@@ -1266,6 +1282,7 @@ func _on_mode_changed(_m: String) -> void:
 	_tools_btn.visible = view.mode == "life"
 	_mg_btn.visible = view.mode == "life"
 	_race_btn.visible = view.mode == "life"
+	_fly_btn.visible = view.mode == "life" and client.creative
 	_refresh_role()
 	if view.mode == "world":
 		_set_tools_visible(false)
