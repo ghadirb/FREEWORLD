@@ -641,8 +641,12 @@ func _run() -> void:
 	await create_timer(0.3).timeout
 	ok(int(server.peers[1].get("inside", 0)) == 0, "cannot enter buildings in a car")
 	c.race_start()
+	ok(await wait_until(func(): return c.race_active() and bool(c.race.get("car", false)), 3.0), "a car race starts from the car")
+	ok(not bool(c.race.get("boat", false)) and int(c.race.get("pts", []).size()) == FWConst.RACE_GATES, "the car race has its own track")
+	c.toggle_car()
 	await create_timer(0.3).timeout
-	ok(not server.cs.race.is_running("hosty"), "cannot start a race in a car")
+	ok(c.driving, "cannot get out of the car during a race")
+	server.cs.race.runs.clear()
 	c.toggle_car()
 	ok(await wait_until(func(): return not c.driving, 3.0), "getting out of the car works")
 	c.disconnect_from_server()

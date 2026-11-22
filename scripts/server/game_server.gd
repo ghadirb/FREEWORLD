@@ -305,7 +305,7 @@ func _race_step(dt: float) -> void:
 		if ev["kind"] == "end":
 			if int(ev["reward"]) > 0:
 				_send(pid, "s2c_money", int(ev["money"]))
-			_notice(pid, "race_end", {"boat": ev.get("boat", false), "finished": ev["finished"], "time": ev["time"], "best": ev["best"], "new_best": ev["new_best"], "reward": ev["reward"]})
+			_notice(pid, "race_end", {"boat": ev.get("boat", false), "car": ev.get("car", false), "finished": ev["finished"], "time": ev["time"], "best": ev["best"], "new_best": ev["new_best"], "reward": ev["reward"]})
 			_dirty = true
 
 
@@ -318,11 +318,11 @@ func on_race_start(pid: int) -> void:
 		return
 	if _indoors(p):
 		return
-	if bool(p.get("horse", false)) or bool(p.get("car", false)):
+	if bool(p.get("horse", false)):
 		_notice(pid, "horse_busy")
 		return
 	var pos: Vector3 = p["pos"]
-	var res: Dictionary = cs.race_start(p["name"], Vector2(pos.x, pos.z), bool(p.get("boat", false)))
+	var res: Dictionary = cs.race_start(p["name"], Vector2(pos.x, pos.z), bool(p.get("boat", false)), bool(p.get("car", false)))
 	if not res["ok"]:
 		_notice(pid, str(res["error"]))
 		return
@@ -409,6 +409,9 @@ func on_car(pid: int) -> void:
 		return
 	var nm: String = p["name"]
 	if bool(p.get("car", false)):
+		if cs.race.is_running(nm):
+			_notice(pid, "car_busy")   # وسط مسابقه از ماشین پیاده نمی‌شود
+			return
 		p["car"] = false
 		_send(pid, "s2c_car", false)
 		_dirty = true

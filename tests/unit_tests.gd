@@ -50,6 +50,7 @@ func _init() -> void:
 	test_minigame()
 	test_disasters()
 	test_race()
+	test_car_race()
 	test_boat()
 	test_god_tools()
 	test_stairs_and_floors()
@@ -973,6 +974,54 @@ func _race_run(cs, who: String, order: Array, others: Dictionary = {}) -> Array:
 		pos[who] = g
 		evs.append_array(cs.race_step(0.2, pos))
 	return evs
+
+
+func test_car_race() -> void:
+	print("== Car race (protocol 28) ==")
+	var cs = CityState.new(4247)
+	_login(cs, "driver")
+	_login(cs, "walker")
+	var at := Vector2.ZERO
+	var found := false
+	for gx in range(30, 220, 6):
+		for gz in range(30, 220, 6):
+			var p := Vector2(gx, gz)
+			if cs.race.start(cs.world, cs.seed_value, "probe", p, false, true)["ok"]:
+				at = p
+				found = true
+				cs.race.runs.erase("probe")
+				break
+		if found:
+			break
+	check(found, "found open land for a car track")
+	if not found:
+		return
+	check(cs.race_start("driver", at, false, true)["ok"] and cs.race.is_car_race("driver") and not cs.race.is_boat_race("driver"), "a car race starts")
+	var st: Dictionary = cs.race.public_state("driver")
+	check(bool(st["car"]) and st["pts"].size() == FWConst.RACE_GATES and float(st["total"]) == FWConst.CAR_RACE_TIME, "car race state is flagged with its own time limit")
+	var gates: Array = []
+	for g in st["pts"]:
+		gates.append(Vector2(g[0], g[1]))
+	for i in range(1, gates.size()):
+		check(gates[i].distance_to(gates[i - 1]) > 30.0, "car gates are far apart")
+		break
+	var m0: int = int(cs.accounts["driver"]["money"])
+	var evs: Array = _race_run(cs, "driver", gates, {"walker": at})
+	var end_ev: Dictionary = {}
+	for ev in evs:
+		if ev["kind"] == "end":
+			end_ev = ev
+	check(not end_ev.is_empty() and end_ev["finished"] and bool(end_ev["car"]), "finishing the car race ends it")
+	check(int(end_ev["reward"]) == FWConst.CAR_RACE_REWARD and int(cs.accounts["driver"]["money"]) == m0 + FWConst.CAR_RACE_REWARD, "the car race pays its own reward")
+	check(cs.race.best_car.has("driver") and not cs.race.best.has("driver") and not cs.race.best_boat.has("driver"), "the car time goes to its own table")
+	check(cs.race.board(false, true)[0][0] == "driver" and cs.race.board().is_empty(), "car and walking boards are separate")
+	var back = CityState.from_dict(JSON.parse_string(JSON.stringify(cs.to_dict())))
+	check(back != null and back.race.best_car.has("driver"), "the car record survives save/load")
+	cs.creative = true
+	var mc: int = int(cs.accounts["driver"]["money"])
+	cs.race_start("driver", at, false, true)
+	_race_run(cs, "driver", gates, {})
+	check(int(cs.accounts["driver"]["money"]) == mc, "creative: a race adds no coins")
 
 
 func test_race() -> void:

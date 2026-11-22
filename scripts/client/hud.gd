@@ -922,13 +922,14 @@ func _refresh_race() -> void:
 		return
 	var r: Dictionary = client.race
 	var on_boat: bool = client.boating
-	_race_title.text = Loc.t("boat_race_title") if on_boat else Loc.t("race_title")
-	_race_start_btn.text = Loc.t("boat_race_start") if on_boat else Loc.t("race_start")
-	var b: int = int(r.get("boat_best" if on_boat else "best", 0))
+	var on_car: bool = client.driving and not on_boat
+	_race_title.text = Loc.t("boat_race_title") if on_boat else (Loc.t("car_race_title") if on_car else Loc.t("race_title"))
+	_race_start_btn.text = Loc.t("boat_race_start") if on_boat else (Loc.t("car_race_start") if on_car else Loc.t("race_start"))
+	var b: int = int(r.get("boat_best" if on_boat else ("car_best" if on_car else "best"), 0))
 	_race_best.text = Loc.fmt("race_best", [race_time_text(b)]) if b > 0 else Loc.t("race_none")
 	var lines: Array = []
 	var rank := 1
-	for row in r.get("boat_board" if on_boat else "board", []):
+	for row in r.get("boat_board" if on_boat else ("car_board" if on_car else "board"), []):
 		lines.append("%s. %s — %s" % [Loc.digits(str(rank)), str(row[0]), race_time_text(int(row[1]))])
 		rank += 1
 	_race_board.text = "\n".join(lines) if not lines.is_empty() else "—"
@@ -951,6 +952,7 @@ func _on_horse_changed() -> void:
 
 func _on_car_changed() -> void:
 	_car_btn.text = Loc.t("car_leave") if client.driving else Loc.t("car")
+	_refresh_race()
 	_fly_btn.visible = view.mode == "life" and client.creative and not client.boating and not client.mounted and not client.driving
 
 
@@ -1425,6 +1427,8 @@ func _on_notice(code: String, args: Dictionary) -> void:
 				rtxt = Loc.fmt("msg_race_end_reward", [tt, Loc.digits(str(args["reward"]))]) if int(args["reward"]) > 0 else Loc.fmt("msg_race_end", [tt])
 				if bool(args.get("boat", false)):
 					rtxt = Loc.t("msg_boat_prefix") + " " + rtxt
+				elif bool(args.get("car", false)):
+					rtxt = Loc.t("msg_car_prefix") + " " + rtxt
 				if bool(args["new_best"]):
 					rtxt += " " + Loc.t("msg_race_new_best")
 			else:
