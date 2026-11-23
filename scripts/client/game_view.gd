@@ -459,6 +459,31 @@ func _auto_place_ghost() -> void:
 		_set_ghost(best)
 
 
+## جابه‌جایی پیش‌نمایش یک خانه در جهت صفحه: dir.x راست، dir.y جلو (جهت نگاه دوربین)؛ همیشه یک سلول و روی محور غالب.
+func nudge_ghost(dir: Vector2) -> void:
+	if build_type == "":
+		return
+	if ghost_cell.x < 0:
+		_auto_place_ghost()
+		if ghost_cell.x < 0:
+			return
+	var look: Vector3 = -cam.camera.global_transform.basis.z
+	var right: Vector3 = cam.camera.global_transform.basis.x
+	var d := Vector2(right.x, right.z) * dir.x + Vector2(look.x, look.z) * dir.y
+	var step := Vector2i.ZERO
+	if absf(d.x) >= absf(d.y):
+		step.x = 1 if d.x > 0.0 else -1
+	else:
+		step.y = 1 if d.y > 0.0 else -1
+	_set_ghost(ghost_cell + step)
+
+
+## پیش‌نمایش را دوباره نزدیک بازیکن می‌گذارد.
+func ghost_to_front() -> void:
+	if build_type != "":
+		_auto_place_ghost()
+
+
 func _set_ghost(cell: Vector2i) -> void:
 	ghost_cell = cell
 	ghost_err = client.preview_error(build_type, cell.x, cell.y)
@@ -991,7 +1016,20 @@ func _check_long_press() -> void:
 
 ## نگه داشتن روی یک بلوک (با چکش، کلنگ یا قلم‌مو) آن را برمی‌دارد و موادش برمی‌گردد.
 func _long_press(pos: Vector2) -> void:
-	if mode != "life" or inside_id > 0 or client.mine_id != "" or not (tool == "hammer" or tool == "pickaxe" or tool == "brush"):
+	if inside_id > 0 or client.mine_id != "":
+		return
+	# نگه داشتن روی هر ساختمان (حتی وقتی منوی ساخت باز است) اطلاعاتش را با دکمهٔ «تخریب» باز می‌کند.
+	var bhit = ground_hit(pos)
+	var bt := 1.0e9
+	if bhit != null:
+		bt = cam.camera.global_position.distance_to(bhit)
+	var bid := _pick_building(pos, bt + 2.0)
+	if bid >= 0:
+		Input.vibrate_handheld(35)
+		Sfx.play(self, "click")
+		building_tapped.emit(bid)
+		return
+	if mode != "life" or not (tool == "hammer" or tool == "pickaxe" or tool == "brush" or tool == "hand"):
 		return
 	var hit: Dictionary = block_view.raycast(cam.camera.project_ray_origin(pos), cam.camera.project_ray_normal(pos))
 	if hit.get("kind", "") != "block":

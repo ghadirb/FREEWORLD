@@ -447,6 +447,27 @@ func _build_palette() -> void:
 		b.pressed.connect(func(): _select_type(t, true))
 		row.add_child(b)
 		_type_btns[t] = b
+	# جابه‌جایی دقیق پیش‌نمایش با لمس‌های مطمئن: چهار جهت (نسبت به دوربین) و «جلوی من».
+	var nrow := HBoxContainer.new()
+	nrow.add_theme_constant_override("separation", 6)
+	v.add_child(nrow)
+	for nd in [["◀", Vector2(-1, 0)], ["▲", Vector2(0, 1)], ["▼", Vector2(0, -1)], ["▶", Vector2(1, 0)]]:
+		var nb := UiTheme.button(str(nd[0]), Vector2(0, 56))
+		nb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		var nv: Vector2 = nd[1]
+		nb.pressed.connect(func():
+			Sfx.play(self, "click")
+			view.nudge_ghost(nv))
+		nrow.add_child(nb)
+	var here := UiTheme.button("📍 " + Loc.t("build_here"), Vector2(0, 52))
+	here.pressed.connect(func():
+		Sfx.play(self, "click")
+		view.ghost_to_front())
+	v.add_child(here)
+	var hold := _label(Loc.t("build_hold_hint"), 15, Color("aab6c8"))
+	hold.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	hold.custom_minimum_size = Vector2(340, 0)
+	v.add_child(hold)
 	var row2 := HBoxContainer.new()
 	row2.add_theme_constant_override("separation", 8)
 	v.add_child(row2)
