@@ -606,6 +606,15 @@ func set_world(actor: String, key: String, value: Variant) -> Dictionary:
 			weather = str(value)
 		"forest_growth":
 			forest_growth = bool(value)
+		"day_time":
+			# پرش مستقیم به روز (ظهر) یا شب (نیمه‌شب)؛ بدون تغییر شمارندهٔ روز.
+			match str(value):
+				"day":
+					world_time = 12.0 * 3600.0
+				"night":
+					world_time = 0.0
+				_:
+					return {"ok": false, "error": "bad_request"}
 		_:
 			return {"ok": false, "error": "bad_request"}
 	_log(actor, "set_world", {"key": key, "value": value})

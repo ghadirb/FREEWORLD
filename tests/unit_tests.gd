@@ -65,6 +65,7 @@ func _init() -> void:
 	test_terrain()
 	test_mines()
 	test_creative()
+	test_day_night_and_creative_switch()
 	test_world_rules()
 	test_batch_build()
 	test_blueprints()
@@ -2523,6 +2524,29 @@ func test_world_rules() -> void:
 	var back = CityState.from_dict(JSON.parse_string(JSON.stringify(gz.to_dict())))
 	check(back != null and back.forest_growth and back.god.size() == gz.god.size(), "law and trees survive save and load")
 	check(not CityState.from_dict(JSON.parse_string(JSON.stringify(cs.to_dict()))).forest_growth, "law defaults to off")
+
+
+func test_day_night_and_creative_switch() -> void:
+	print("== Day/night jump and creative switch ==")
+	var cs = CityState.new(5151)
+	_login(cs, "boss")
+	_login(cs, "pal")
+	cs.accounts["boss"]["role"] = FWConst.ROLE_WORLD_ADMIN
+	cs.accounts["pal"]["role"] = FWConst.ROLE_PLAYER
+	cs.world_time = 3.0 * 3600.0
+	check(not cs.set_world("pal", "day_time", "day")["ok"], "a normal player cannot change the time of day")
+	check(cs.set_world("boss", "day_time", "day")["ok"] and is_equal_approx(cs.world_time, 12.0 * 3600.0), "admin turns night into day")
+	check(cs.set_world("boss", "day_time", "night")["ok"] and is_equal_approx(cs.world_time, 0.0), "admin turns day into night")
+	check(not cs.set_world("boss", "day_time", "dusk")["ok"], "unknown time of day is refused")
+	# حالت خلاقانه روی جهان قدیمی: پس از بارگذاری با force_creative اعمال می‌شود.
+	var old = CityState.new(5152)
+	_login(old, "boss")
+	old.accounts["boss"]["money"] = 1
+	check(not old.creative and not old._can_pay(old.accounts["boss"], 500), "an old non-creative world charges coins")
+	var loaded = CityState.from_dict(old.to_dict())
+	loaded.creative = true   # همان کاری که game_server.start با force_creative می‌کند
+	check(loaded._can_pay(loaded.accounts["boss"], 500) and loaded._pay(loaded.accounts["boss"], 500) and int(loaded.accounts["boss"]["money"]) == 1, "switching an old world to creative makes everything free")
+	check(loaded.has_car(loaded.accounts["boss"]) and loaded.has_boat(loaded.accounts["boss"]), "vehicles are free in a world switched to creative")
 
 
 func test_creative() -> void:

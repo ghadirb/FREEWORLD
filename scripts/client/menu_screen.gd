@@ -180,6 +180,7 @@ func _build_world_picker(parent: Control) -> void:
 	_creative_check = CheckBox.new()
 	_creative_check.text = Loc.t("world_creative")
 	_creative_check.add_theme_font_size_override("font_size", 18)
+	_creative_check.toggled.connect(_on_creative_toggled)
 	parent.add_child(_creative_check)
 	_refresh_world_label()
 
@@ -198,6 +199,16 @@ func _refresh_world_label() -> void:
 		_world_label.text += " (%s)" % Loc.t("world_mode_creative")
 	_delete_btn.disabled = false
 	WorldSlots.set_current(str(_worlds[_world_idx]["id"]))
+	_creative_check.set_pressed_no_signal(bool(_worlds[_world_idx].get("creative", false)))
+
+
+## تیک «خلاقانه» روی جهان انتخاب‌شده اثر می‌کند (جهان‌های قدیمی هم) و برای جهان تازه همین مقدار استفاده می‌شود.
+func _on_creative_toggled(on: bool) -> void:
+	if _worlds.is_empty():
+		return
+	_worlds[_world_idx]["creative"] = on
+	WorldSlots.save_worlds(_worlds)
+	_refresh_world_label()
 
 
 func _select_world(i: int) -> void:

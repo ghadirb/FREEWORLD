@@ -30,6 +30,8 @@ var _palette: PanelContainer
 var _hint: Label
 var _type_btns: Dictionary = {}
 var _confirm_btn: Button
+var _palette_grid: GridContainer
+var _palette_more: Button
 var _info: PanelContainer
 var _info_title: Label
 var _info_body: Label
@@ -377,7 +379,12 @@ func _build_side_buttons() -> void:
 	_race_btn = UiTheme.button(Loc.t("race"), SIDE_BTN)
 	_race_btn.pressed.connect(func(): Sfx.play(self, "click"); _race_panel.visible = not _race_panel.visible; _refresh_race())
 	_fly_btn = UiTheme.button(Loc.t("fly"), SIDE_BTN)
-	_fly_btn.pressed.connect(func(): Sfx.play(self, "click"); view.toggle_flight())
+	_fly_btn.pressed.connect(func():
+		Sfx.play(self, "click")
+		if not view.flying and not view.can_fly():
+			toast(Loc.t("msg_fly_creative_only") if not client.creative else Loc.t("msg_fly_busy"))
+			return
+		view.toggle_flight())
 	_boat_btn = UiTheme.button(Loc.t("boat"), SIDE_BTN)
 	_boat_btn.pressed.connect(func(): Sfx.play(self, "click"); client.toggle_boat())
 	_horse_btn = UiTheme.button(Loc.t("horse"), SIDE_BTN)
@@ -419,7 +426,15 @@ func _build_palette() -> void:
 	_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_hint.custom_minimum_size = Vector2(340, 0)
 	v.add_child(_hint)
+	# بعد از انتخاب یک نوع، شبکهٔ انتخاب جمع می‌شود تا ساختمان پیش‌نمایش در صحنه پشت پنجره نماند.
+	_palette_more = UiTheme.button("▾ " + Loc.t("build_other_type"), Vector2(0, 52))
+	_palette_more.visible = false
+	_palette_more.pressed.connect(func():
+		_palette_grid.visible = true
+		_palette_more.visible = false)
+	v.add_child(_palette_more)
 	var row := GridContainer.new()
+	_palette_grid = row
 	row.columns = 3
 	row.add_theme_constant_override("h_separation", 8)
 	row.add_theme_constant_override("v_separation", 8)
@@ -429,7 +444,7 @@ func _build_palette() -> void:
 		var b := UiTheme.button("%s\n%s" % [Loc.t("type_" + t), Loc.digits(str(cost))], Vector2(108, 66))
 		b.add_theme_font_size_override("font_size", 20)
 		b.toggle_mode = true
-		b.pressed.connect(func(): _select_type(t))
+		b.pressed.connect(func(): _select_type(t, true))
 		row.add_child(b)
 		_type_btns[t] = b
 	var row2 := HBoxContainer.new()
@@ -1557,6 +1572,14 @@ func _build_admin_panel() -> void:
 		sb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		sb.pressed.connect(func(): client.set_world("time_speed", sp))
 		srow.add_child(sb)
+	var trow := HBoxContainer.new()
+	trow.add_theme_constant_override("separation", 8)
+	v.add_child(trow)
+	for dt_key in ["day", "night"]:
+		var tb2 := UiTheme.button(Loc.t("time_" + dt_key), Vector2(0, 56))
+		tb2.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		tb2.pressed.connect(func(): client.set_world("day_time", dt_key))
+		trow.add_child(tb2)
 	v.add_child(_label(Loc.t("weather"), 22, Color("c8f08a")))
 	var wrow := HBoxContainer.new()
 	wrow.add_theme_constant_override("separation", 8)
@@ -1865,8 +1888,14 @@ func _toggle_build() -> void:
 		view.set_build_type("")
 
 
-func _select_type(t: String) -> void:
+func _select_type(t: String, collapse: bool = false) -> void:
 	Sfx.play(self, "click")
+	if t != "" and collapse:
+		_palette_grid.visible = false
+		_palette_more.visible = true
+	elif not collapse:
+		_palette_grid.visible = true
+		_palette_more.visible = false
 	if t != "":
 		_god_panel.visible = false
 		view.set_god_kind("")

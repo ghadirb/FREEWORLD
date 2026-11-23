@@ -50,7 +50,7 @@ var _cert_sock := PacketPeerUDP.new()  # پاسخ به درخواست گواهی
 
 
 ## مقدار برگشتی: OK یا کد خطا.
-func start(port: int, seed_value: int, data_dir: String, admins: Array, tls_dir: String = "", creative: bool = false) -> int:
+func start(port: int, seed_value: int, data_dir: String, admins: Array, tls_dir: String = "", creative: bool = false, force_creative: bool = false) -> int:
 	_name_re.compile(NAME_PATTERN)
 	save_path = data_dir.path_join("city_1.json")
 	var loaded: Dictionary = Persistence.load_json(save_path)
@@ -66,6 +66,8 @@ func start(port: int, seed_value: int, data_dir: String, admins: Array, tls_dir:
 		if cs == null:
 			push_error("[server] save file is invalid; refusing to start to protect data")
 			return ERR_FILE_CORRUPT
+		if force_creative:
+			cs.creative = creative   # جهان محلی: انتخاب منو برای جهان‌های قدیمی هم اعمال می‌شود
 		print("[server] loaded city: %d accounts, %d buildings" % [cs.accounts.size(), cs.buildings.size()])
 	for a in admins:
 		cs.provision_admin(str(a[0]), str(a[1]))

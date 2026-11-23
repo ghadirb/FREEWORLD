@@ -447,8 +447,8 @@ func _auto_place_ghost() -> void:
 	var best := Vector2i(-1, -1)
 	var best_d := 1.0e9
 	var c0 := Vector2i(int(floor(base.x / FWConst.CELL_SIZE)), int(floor(base.y / FWConst.CELL_SIZE)))
-	for dz in range(-8, 9):
-		for dx in range(-8, 9):
+	for dz in range(-14, 15):
+		for dx in range(-14, 15):
 			var cx := c0.x + dx - ((int(size[0]) - 1) >> 1)
 			var cz := c0.y + dz - ((int(size[1]) - 1) >> 1)
 			var d := float(dx * dx + dz * dz)
