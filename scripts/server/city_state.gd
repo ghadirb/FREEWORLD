@@ -1707,6 +1707,15 @@ func gather(player_name: String, rx: int, rz: int, tool: String, pos: Vector2) -
 	var key := "%d,%d" % [rx, rz]
 	if depleted.has(key):
 		return {"ok": false, "error": "depleted"}
+	if tool == "remove":
+		# حذف دائمی با نگه‌داشتن (فقط مدیر): بدون مادهٔ برداشتی، دیگر نمی‌روید.
+		if not FWConst.is_admin(role_of(player_name)):
+			return {"ok": false, "error": "forbidden"}
+		if pos.distance_to(Vector2(float(node["x"]), float(node["z"]))) > FWConst.GATHER_RANGE:
+			return {"ok": false, "error": "too_far"}
+		depleted[key] = FWConst.CLEARED_FOREVER
+		_log(player_name, "resource_clear", {"rx": rx, "rz": rz, "kind": str(node["kind"])})
+		return {"ok": true, "cleared": true, "rx": rx, "rz": rz}
 	var def: Dictionary = FWConst.RESOURCES[str(node["kind"])]
 	if tool != str(def["tool"]):
 		return {"ok": false, "error": "wrong_tool", "tool": str(def["tool"])}

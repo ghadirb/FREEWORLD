@@ -302,6 +302,8 @@ const GOD_STATIC := ["tree", "rock"]
 const GOD_ANIMALS := {"sheep": 1.0, "deer": 2.2, "rabbit": 1.7}   # سرعت راه رفتن
 const GOD_MAX := 150
 const GOD_REMOVE_RANGE := 3.0
+## حذف دائمی منبع طبیعی (درخت/سنگ/معدن) با نگه‌داشتن: زمان رویش بی‌نهایت در لایهٔ depleted.
+const CLEARED_FOREVER := 1.0e12
 const GOD_MIN_HEIGHT := 0.3
 const TOOLS := ["hand", "axe", "pickaxe", "shovel", "fill", "hammer", "brush"]
 ## حالت‌های چکش: تک‌بلوک و ابزارهای دسته‌ای (دو گوشه → اجرا)

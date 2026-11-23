@@ -1029,18 +1029,54 @@ func _long_press(pos: Vector2) -> void:
 		Sfx.play(self, "click")
 		building_tapped.emit(bid)
 		return
-	if mode != "life" or not (tool == "hammer" or tool == "pickaxe" or tool == "brush" or tool == "hand"):
+	var ro: Vector3 = cam.camera.project_ray_origin(pos)
+	var rd: Vector3 = cam.camera.project_ray_normal(pos)
+	# بلوک (با ابزار دست/چکش/کلنگ/قلم‌مو، فقط در حالت زندگی)
+	if mode == "life" and (tool == "hammer" or tool == "pickaxe" or tool == "brush" or tool == "hand"):
+		var hit: Dictionary = block_view.raycast(ro, rd)
+		if hit.get("kind", "") == "block":
+			if not _in_reach(hit["hit"]):
+				Sfx.play(self, "error")
+				_feedback("too_far")
+				return
+			Input.vibrate_handheld(35)
+			Sfx.play(self, "click")
+			client.remove_block(hit["hit"])
+			return
+	# درخت/سنگ/حیوان گذاشته‌شده توسط مدیر یا روستا (مدیر؛ در هر دو حالت دید)
+	var god_id := -1
+	var god_t := 1.0e9
+	for gid in god_nodes:
+		var c: Vector3 = god_nodes[gid].position + Vector3(0, 0.9, 0)
+		var t := (c - ro).dot(rd)
+		if t > 0.0 and (c - (ro + rd * t)).length() <= 1.4 and t < god_t:
+			god_t = t
+			god_id = int(gid)
+	if god_id >= 0:
+		if not FWConst.is_admin(client.role):
+			Sfx.play(self, "error")
+			_feedback("forbidden")
+			return
+		var gp: Vector3 = god_nodes[god_id].position
+		Input.vibrate_handheld(35)
+		Sfx.play(self, "click")
+		client.god("remove", "", gp.x, gp.z)
 		return
-	var hit: Dictionary = block_view.raycast(cam.camera.project_ray_origin(pos), cam.camera.project_ray_normal(pos))
-	if hit.get("kind", "") != "block":
-		return
-	if not _in_reach(hit["hit"]):
-		Sfx.play(self, "error")
-		_feedback("too_far")
-		return
-	Input.vibrate_handheld(35)
-	Sfx.play(self, "click")
-	client.remove_block(hit["hit"])
+	# منبع طبیعی (درخت، سنگ، سنگ معدن، صندوق): حذف دائمی توسط مدیر، باید نزدیک باشید
+	if mode == "life":
+		var res := _pick_resource(ro, rd)
+		if not res.is_empty():
+			if not FWConst.is_admin(client.role):
+				Sfx.play(self, "error")
+				_feedback("forbidden")
+				return
+			if Vector2(my_pos.x, my_pos.z).distance_to(Vector2(res["x"], res["z"])) > FWConst.GATHER_RANGE:
+				Sfx.play(self, "error")
+				_feedback("too_far")
+				return
+			Input.vibrate_handheld(35)
+			Sfx.play(self, "click")
+			client.gather(res["rx"], res["rz"], "remove")
 
 
 ## نشانگر حلقه‌ای و ستون نور برای هر میدان ساخته‌شدهٔ بازیکنان (پروتکل ۳۱).

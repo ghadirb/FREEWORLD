@@ -1500,6 +1500,10 @@ func on_gather(pid: int, rx: int, rz: int, tool: String) -> void:
 		_notice(pid, str(res["error"]), {"tool": str(res.get("tool", ""))})
 		return
 	_broadcast("s2c_resource", PackedInt32Array([rx, rz, 0]))
+	if res.get("cleared", false):
+		_notice(pid, "cleared")
+		_dirty = true
+		return
 	if res.get("treasure", false):
 		_send(pid, "s2c_money", int(res["money"]))
 		_notice(pid, "treasure", {"reward": res["reward"]})

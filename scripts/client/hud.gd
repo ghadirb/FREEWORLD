@@ -1711,6 +1711,9 @@ func _on_notice(code: String, args: Dictionary) -> void:
 			toast(Loc.fmt("msg_wage", [Loc.digits(str(args["amount"]))]), Color("c8f08a"))
 		"employer_broke":
 			toast(Loc.fmt("msg_employer_broke", [args["employer"]]), Color("ff9a8a"))
+		"cleared":
+			Sfx.play(self, "click")
+			toast(Loc.t("msg_cleared"))
 		"gathered":
 			Sfx.play(self, "coin")
 			toast(Loc.fmt("msg_gathered", [Loc.digits(str(args["count"])), Loc.t("item_" + str(args["item"]))]), Color("c8f08a"))

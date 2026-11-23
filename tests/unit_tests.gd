@@ -66,6 +66,7 @@ func _init() -> void:
 	test_mines()
 	test_creative()
 	test_day_night_and_creative_switch()
+	test_clear_resource()
 	test_world_rules()
 	test_batch_build()
 	test_blueprints()
@@ -2547,6 +2548,37 @@ func test_day_night_and_creative_switch() -> void:
 	loaded.creative = true   # همان کاری که game_server.start با force_creative می‌کند
 	check(loaded._can_pay(loaded.accounts["boss"], 500) and loaded._pay(loaded.accounts["boss"], 500) and int(loaded.accounts["boss"]["money"]) == 1, "switching an old world to creative makes everything free")
 	check(loaded.has_car(loaded.accounts["boss"]) and loaded.has_boat(loaded.accounts["boss"]), "vehicles are free in a world switched to creative")
+
+
+func test_clear_resource() -> void:
+	print("== Hold-to-remove natural resources ==")
+	var cs = CityState.new(6161)
+	_login(cs, "boss")
+	_login(cs, "pal")
+	cs.accounts["boss"]["role"] = FWConst.ROLE_WORLD_ADMIN
+	cs.accounts["pal"]["role"] = FWConst.ROLE_PLAYER
+	var found := {}
+	for rz in range(0, 40):
+		for rx in range(0, 40):
+			var n: Dictionary = cs.world.resource_in_cell(rx, rz)
+			if not n.is_empty() and found.is_empty():
+				found = {"rx": rx, "rz": rz, "x": float(n["x"]), "z": float(n["z"])}
+	check(not found.is_empty(), "the test world has a natural resource")
+	if found.is_empty():
+		return
+	var at := Vector2(found["x"], found["z"])
+	var rx: int = found["rx"]
+	var rz: int = found["rz"]
+	check(cs.gather("pal", rx, rz, "remove", at)["error"] == "forbidden", "a normal player cannot remove resources")
+	check(cs.gather("boss", rx, rz, "remove", at + Vector2(50, 50))["error"] == "too_far", "removal needs the admin to be close")
+	var r: Dictionary = cs.gather("boss", rx, rz, "remove", at)
+	check(r["ok"] and r.get("cleared", false), "the admin removes a tree or rock by holding")
+	check(cs.depleted.has("%d,%d" % [rx, rz]), "the resource is marked gone for everyone")
+	cs.tick(100000.0)
+	check(cs.depleted.has("%d,%d" % [rx, rz]), "a removed resource never grows back")
+	check(cs.gather("boss", rx, rz, "remove", at)["error"] == "depleted", "removing it twice is refused")
+	var back = CityState.from_dict(cs.to_dict())
+	check(back.depleted.has("%d,%d" % [rx, rz]), "the removal survives a save and load")
 
 
 func test_creative() -> void:
