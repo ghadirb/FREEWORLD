@@ -12,6 +12,7 @@ const Blueprints = preload("res://scripts/server/blueprints.gd")
 const Arenas = preload("res://scripts/server/arenas.gd")
 const Mine = preload("res://scripts/shared/mine.gd")
 const RailNetwork = preload("res://scripts/shared/rail_network.gd")
+const Scenarios = preload("res://scripts/shared/scenarios.gd")
 
 const SAVE_VERSION := 1
 const MAX_REQUEST_MEMORY := 64
@@ -33,6 +34,9 @@ var creative: bool = false
 var undo_stacks: Dictionary = {}  # نام بازیکن -> پشتهٔ واگرد (فقط در حافظه)
 ## روستاها یک بار حیوان گرفته‌اند (برای جهان‌های قدیمی هم یک بار اجرا می‌شود).
 var villages_seeded: bool = false
+## جهان آماده (docs/SCENARIOS.md): شناسهٔ سناریو و اینکه سازه‌هایش ساخته شده‌اند. خالی = جهان معمولی.
+var scenario: String = ""
+var scenario_applied: bool = false
 var day_count: int = 0
 var god: Dictionary = {}
 var next_god_id: int = 1
@@ -122,7 +126,7 @@ func authenticate(player_name: String, token: String) -> Dictionary:
 	var t := new_token()
 	var sp := spawn_position()
 	accounts[player_name] = {
-		"money": FWConst.START_MONEY,
+		"money": Scenarios.start_money(scenario),
 		"role": FWConst.ROLE_PLAYER,
 		"token_hash": hash_token(t),
 		"pos": [sp.x, sp.y, sp.z],
@@ -131,7 +135,7 @@ func authenticate(player_name: String, token: String) -> Dictionary:
 		"job": 0,
 		"work_acc": 0.0,
 		"energy": FWConst.ENERGY_MAX,
-		"inv": FWConst.START_ITEMS.duplicate(),
+		"inv": Scenarios.start_items(scenario),
 	}
 	_log(player_name, "account_created", {})
 	return {"ok": true, "token": t}
@@ -145,7 +149,7 @@ func provision_admin(player_name: String, secret: String, role: String = FWConst
 		accounts[player_name]["token_hash"] = hash_token(secret)
 		return
 	accounts[player_name] = {
-		"money": FWConst.START_MONEY,
+		"money": Scenarios.start_money(scenario),
 		"role": role,
 		"token_hash": hash_token(secret),
 		"pos": [sp.x, sp.y, sp.z],
@@ -154,7 +158,7 @@ func provision_admin(player_name: String, secret: String, role: String = FWConst
 		"job": 0,
 		"work_acc": 0.0,
 		"energy": FWConst.ENERGY_MAX,
-		"inv": FWConst.START_ITEMS.duplicate(),
+		"inv": Scenarios.start_items(scenario),
 	}
 
 
@@ -2307,6 +2311,8 @@ func to_dict() -> Dictionary:
 		"time_speed": time_speed,
 		"creative": creative,
 		"villages_seeded": villages_seeded,
+		"scenario": scenario,
+		"scenario_applied": scenario_applied,
 		"weather": weather,
 		"forest_growth": forest_growth,
 		"bread_price": bread_price,
@@ -2416,6 +2422,8 @@ static func from_dict(d: Dictionary):
 	cs.day_count = int(d.get("day_count", 0))
 	cs.creative = bool(d.get("creative", false))
 	cs.villages_seeded = bool(d.get("villages_seeded", false))
+	cs.scenario = str(d.get("scenario", ""))
+	cs.scenario_applied = bool(d.get("scenario_applied", false))
 	cs.next_god_id = maxi(1, int(d.get("next_god_id", 1)))
 	var gl = d.get("god", [])
 	if gl is Array:

@@ -15,6 +15,10 @@ const NpcNav = preload("res://scripts/server/npc_nav.gd")
 const Mine = preload("res://scripts/shared/mine.gd")
 const Boat = preload("res://scripts/shared/boat.gd")
 const RailNetwork = preload("res://scripts/shared/rail_network.gd")
+const Scenarios = preload("res://scripts/shared/scenarios.gd")
+const ScenarioApply = preload("res://scripts/server/scenario_apply.gd")
+const Entitlements = preload("res://scripts/client/entitlements.gd")
+const Loc = preload("res://scripts/client/loc.gd")
 
 var _fail := 0
 var _pass := 0
@@ -72,6 +76,7 @@ func _init() -> void:
 	test_blueprints()
 	test_terrain_shapes()
 	test_villages()
+	test_scenarios()
 	test_tls_pinning()
 	print("\nRESULT: %d passed, %d failed" % [_pass, _fail])
 	quit(1 if _fail > 0 else 0)
@@ -2880,3 +2885,62 @@ func test_villages() -> void:
 	for i in range(1, 8):
 		var r := w.resource_in_cell(int(float(vs[0]["x"]) / FWConst.RESOURCE_CELL) + i % 3, int(float(vs[0]["z"]) / FWConst.RESOURCE_CELL) + i / 3)
 		check(r.is_empty(), "no wild resources inside the village")
+
+
+func test_scenarios() -> void:
+	print("[scenarios]")
+	check(Scenarios.ids().size() == 6, "six ready-made worlds")
+	var free := 0
+	var premium := 0
+	for id in Scenarios.ids():
+		if Scenarios.is_premium(id):
+			premium += 1
+		else:
+			free += 1
+	check(free >= 3 and premium >= 3, "free and premium worlds both exist (%d/%d)" % [free, premium])
+	var names_ok := true
+	for lang in ["fa", "en"]:
+		Loc.lang = lang
+		for id in Scenarios.ids():
+			if Loc.t("scen_" + id) == "scen_" + id or Loc.t("scen_%s_desc" % id) == "scen_%s_desc" % id:
+				names_ok = false
+	Loc.lang = "fa"
+	check(names_ok, "every world has a Persian and English name and description")
+	for id in Scenarios.ids():
+		var d: Dictionary = Scenarios.def(id)
+		var cs = CityState.new(int(d["seed"]))
+		var n: int = ScenarioApply.apply(cs, id)
+		check(n > 20, "%s builds structures (%d blocks)" % [id, n])
+		check(cs.scenario == id and cs.scenario_applied, "%s remembers its scenario" % id)
+		check(ScenarioApply.apply(cs, id) == -1, "%s is applied only once" % id)
+		check(cs.npcs.size() >= FWConst.NPC_COUNT, "%s has citizens" % id)
+		check(cs.creative == bool(d["creative"]), "%s creative flag follows the definition" % id)
+		var bad := 0
+		for v in cs.blocks:
+			if cs.blocks[v][2] != ScenarioApply.OWNER or not FWConst.BLOCK_TYPES.has(str(cs.blocks[v][0])):
+				bad += 1
+		check(bad == 0, "%s blocks are valid and owned by the world" % id)
+		# تعیین‌گرا: دو بار ساخت همان نتیجه را می‌دهد
+		var cs2 = CityState.new(int(d["seed"]))
+		ScenarioApply.apply(cs2, id)
+		check(cs2.blocks.size() == cs.blocks.size() and cs2.god.size() == cs.god.size(), "%s is deterministic" % id)
+		# حساب تازه سرمایهٔ سناریو را می‌گیرد؛ ذخیره و بارگذاری سناریو را حفظ می‌کند
+		var r: Dictionary = cs.authenticate("newbie", "x")
+		check(r["ok"] and int(cs.accounts["newbie"]["money"]) == int(d["money"]), "%s start money" % id)
+		check(cs.accounts["newbie"]["inv"] == Scenarios.start_items(id), "%s start items" % id)
+		var back = CityState.from_dict(JSON.parse_string(JSON.stringify(cs.to_dict())))
+		check(back != null and back.scenario == id and back.scenario_applied and back.blocks.size() == cs.blocks.size(), "%s survives save and load" % id)
+		check(ScenarioApply.apply(back, id) == -1, "%s is not re-applied after load" % id)
+	# ناشناخته و جهان معمولی
+	var plain = CityState.new(5)
+	check(ScenarioApply.apply(plain, "nope") == -1 and plain.scenario == "", "unknown world is ignored")
+	plain.authenticate("p", "x")
+	check(int(plain.accounts["p"]["money"]) == FWConst.START_MONEY and plain.accounts["p"]["inv"] == FWConst.START_ITEMS, "plain world keeps the default start")
+	# ساخت جهان در منو
+	var ws: Array = []
+	var ok: Dictionary = WorldSlots.add_world(ws, "x1", 1, false, "merchant_city")
+	check(ok["ok"] and int(ws[0]["seed"]) == int(Scenarios.def("merchant_city")["seed"]) and ws[0]["scenario"] == "merchant_city", "menu world uses the scenario seed")
+	var ok2: Dictionary = WorldSlots.add_world(ws, "x2", 1, false, "builder_playground")
+	check(ok2["ok"] and ws[1]["creative"], "creative scenario makes a creative world")
+	check(not WorldSlots.add_world(ws, "x3", 1, false, "nope")["ok"], "unknown scenario is rejected")
+	check(Entitlements.is_unlocked("medieval_fort") and Entitlements.is_unlocked("green_valley"), "worlds are open until payments are connected")

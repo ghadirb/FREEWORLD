@@ -3,6 +3,8 @@ extends RefCounted
 ## منطق خالص (روی Array) تا بدون UI قابل آزمایش باشد؛ ذخیره‌ی فهرست در Settings انجام می‌شود.
 
 const Settings = preload("res://scripts/client/settings.gd")
+const Scenarios = preload("res://scripts/shared/scenarios.gd")
+const Entitlements = preload("res://scripts/client/entitlements.gd")
 
 const BASE_DIR := "user://worlds"
 const LEGACY_DIR := "user://offline_world"
@@ -19,7 +21,7 @@ static func clean_name(raw: String) -> String:
 
 
 ## جهان جدید به فهرست اضافه می‌شود. خروجی: {ok, id} یا {ok:false, error}.
-static func add_world(worlds: Array, raw_name: String, seed_value: int, creative: bool = false) -> Dictionary:
+static func add_world(worlds: Array, raw_name: String, seed_value: int, creative: bool = false, scenario: String = "") -> Dictionary:
 	var n := clean_name(raw_name)
 	if n.length() < NAME_MIN:
 		return {"ok": false, "error": "bad_world_name"}
@@ -28,8 +30,19 @@ static func add_world(worlds: Array, raw_name: String, seed_value: int, creative
 	for w in worlds:
 		if str(w["name"]).to_lower() == n.to_lower():
 			return {"ok": false, "error": "world_name_taken"}
+	if scenario != "":
+		if not Scenarios.has(scenario):
+			return {"ok": false, "error": "bad_world_name"}
+		if not Entitlements.is_unlocked(scenario):
+			return {"ok": false, "error": "locked_world"}
+		# جهان آماده: Seed و حالت از تعریف سناریو می‌آید (حالت خلاقانه را تیک کاربر هم می‌تواند روشن کند).
+		seed_value = int(Scenarios.def(scenario)["seed"])
+		creative = creative or bool(Scenarios.def(scenario)["creative"])
 	var id := _new_id(worlds)
-	worlds.append({"id": id, "name": n, "seed": seed_value, "creative": creative})
+	var w := {"id": id, "name": n, "seed": seed_value, "creative": creative}
+	if scenario != "":
+		w["scenario"] = scenario
+	worlds.append(w)
 	return {"ok": true, "id": id}
 
 
@@ -51,6 +64,13 @@ static func _new_id(worlds: Array) -> String:
 static func find(worlds: Array, id: String) -> Dictionary:
 	for w in worlds:
 		if str(w["id"]) == id:
+			return w
+	return {}
+
+
+static func find_by_name(worlds: Array, name: String) -> Dictionary:
+	for w in worlds:
+		if str(w["name"]).to_lower() == name.to_lower():
 			return w
 	return {}
 

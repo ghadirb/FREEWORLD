@@ -7,6 +7,7 @@ const FWConst = preload("res://scripts/core/const.gd")
 const CityState = preload("res://scripts/server/city_state.gd")
 const Persistence = preload("res://scripts/server/persistence.gd")
 const NpcSim = preload("res://scripts/server/npc_sim.gd")
+const ScenarioApply = preload("res://scripts/server/scenario_apply.gd")
 const TlsSetup = preload("res://scripts/networking/tls_setup.gd")
 const Mine = preload("res://scripts/shared/mine.gd")
 
@@ -50,7 +51,7 @@ var _cert_sock := PacketPeerUDP.new()  # پاسخ به درخواست گواهی
 
 
 ## مقدار برگشتی: OK یا کد خطا.
-func start(port: int, seed_value: int, data_dir: String, admins: Array, tls_dir: String = "", creative: bool = false, force_creative: bool = false) -> int:
+func start(port: int, seed_value: int, data_dir: String, admins: Array, tls_dir: String = "", creative: bool = false, force_creative: bool = false, scenario: String = "") -> int:
 	_name_re.compile(NAME_PATTERN)
 	save_path = data_dir.path_join("city_1.json")
 	var loaded: Dictionary = Persistence.load_json(save_path)
@@ -60,6 +61,9 @@ func start(port: int, seed_value: int, data_dir: String, admins: Array, tls_dir:
 	if loaded.is_empty():
 		cs = CityState.new(seed_value)
 		cs.creative = creative
+		if scenario != "":
+			var n: int = ScenarioApply.apply(cs, scenario)
+			print("[server] scenario %s: %d blocks" % [scenario, n])
 		print("[server] new city, seed=%d%s" % [seed_value, " (creative)" if creative else ""])
 	else:
 		cs = CityState.from_dict(loaded)
