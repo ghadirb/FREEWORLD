@@ -19,6 +19,10 @@ const Scenarios = preload("res://scripts/shared/scenarios.gd")
 const ScenarioApply = preload("res://scripts/server/scenario_apply.gd")
 const Entitlements = preload("res://scripts/client/entitlements.gd")
 const Loc = preload("res://scripts/client/loc.gd")
+const Story = preload("res://scripts/shared/story.gd")
+const Book = preload("res://scripts/server/book.gd")
+const Packs = preload("res://scripts/shared/blueprint_packs.gd")
+const Blueprints = preload("res://scripts/server/blueprints.gd")
 
 var _fail := 0
 var _pass := 0
@@ -77,6 +81,9 @@ func _init() -> void:
 	test_terrain_shapes()
 	test_villages()
 	test_scenarios()
+	test_climates()
+	test_story_book()
+	test_blueprint_packs()
 	test_tls_pinning()
 	print("\nRESULT: %d passed, %d failed" % [_pass, _fail])
 	quit(1 if _fail > 0 else 0)
@@ -2889,7 +2896,7 @@ func test_villages() -> void:
 
 func test_scenarios() -> void:
 	print("[scenarios]")
-	check(Scenarios.ids().size() == 6, "six ready-made worlds")
+	check(Scenarios.ids().size() == 8, "eight ready-made worlds")
 	var free := 0
 	var premium := 0
 	for id in Scenarios.ids():
@@ -2944,3 +2951,313 @@ func test_scenarios() -> void:
 	check(ok2["ok"] and ws[1]["creative"], "creative scenario makes a creative world")
 	check(not WorldSlots.add_world(ws, "x3", 1, false, "nope")["ok"], "unknown scenario is rejected")
 	check(Entitlements.is_unlocked("medieval_fort") and Entitlements.is_unlocked("green_valley"), "worlds are open until payments are connected")
+
+
+func test_climates() -> void:
+	print("[climates]")
+	var WG = load("res://scripts/world/world_generator.gd")
+	var base = WG.new(297)
+	var win = WG.new(297)
+	win.climate = "winter"
+	var des = WG.new(326)
+	des.climate = "desert"
+	var des_base = WG.new(326)
+	var seen_w := {}
+	var seen_d := {}
+	var seen_t := {}
+	var same_h := true
+	for iz in range(0, 640, 16):
+		for ix in range(0, 640, 16):
+			seen_w[win.biome_at(float(ix), float(iz))] = true
+			seen_d[des.biome_at(float(ix), float(iz))] = true
+			seen_t[base.biome_at(float(ix), float(iz))] = true
+			if absf(win.height_at(float(ix), float(iz)) - base.height_at(float(ix), float(iz))) > 0.0001:
+				same_h = false
+			if absf(des.height_at(float(ix), float(iz)) - des_base.height_at(float(ix), float(iz))) > 0.0001:
+				same_h = false
+	check(same_h, "climate never changes terrain height (only appearance and resources)")
+	var ok_t := true
+	for b in seen_t:
+		if not ["water", "beach", "mountain", "forest", "plain"].has(b):
+			ok_t = false
+	check(ok_t, "temperate keeps the original biome names")
+	var ok_w := true
+	for b in seen_w:
+		if not ["water", "beach", "mountain", "snow", "snow_forest"].has(b):
+			ok_w = false
+	check(ok_w and seen_w.has("snow") and seen_w.has("snow_forest"), "winter has snow and snow forest only (%s)" % str(seen_w.keys()))
+	var ok_d := true
+	for b in seen_d:
+		if not ["water", "beach", "mesa", "desert", "oasis"].has(b):
+			ok_d = false
+	check(ok_d and seen_d.has("desert"), "desert has sand, oasis and mesa only (%s)" % str(seen_d.keys()))
+	check(WG.is_wooded("snow_forest") and WG.is_wooded("oasis") and WG.is_wooded("forest") and not WG.is_wooded("desert"), "wooded biome helper")
+	check(WG.is_rocky("mesa") and WG.is_rocky("mountain") and not WG.is_rocky("snow"), "rocky biome helper")
+	for b in ["snow", "snow_forest", "desert", "oasis", "mesa"]:
+		check(WG.biome_color(b) != WG.biome_color("plain"), "%s has its own colour" % b)
+	# منابع: درخت و صخره در هر اقلیم پیدا می‌شود، قطعی است و صحرا خاک رس دارد
+	var kinds_w := {}
+	var kinds_d := {}
+	for rz in range(0, 160):
+		for rx in range(0, 160):
+			var a: Dictionary = win.resource_in_cell(rx, rz)
+			if not a.is_empty():
+				kinds_w[a["kind"]] = true
+			var d: Dictionary = des.resource_in_cell(rx, rz)
+			if not d.is_empty():
+				kinds_d[d["kind"]] = true
+	check(kinds_w.has("tree") and kinds_w.has("rock"), "winter has trees and rocks (%s)" % str(kinds_w.keys()))
+	check(kinds_d.has("clay") and kinds_d.has("tree") and kinds_d.has("rock"), "desert has palms, rocks and clay (%s)" % str(kinds_d.keys()))
+	var win2 = WG.new(297)
+	win2.climate = "winter"
+	var same := true
+	for rz in range(0, 40):
+		for rx in range(0, 40):
+			if str(win.resource_in_cell(rx, rz)) != str(win2.resource_in_cell(rx, rz)):
+				same = false
+	check(same, "resources are deterministic per seed and climate")
+	# سناریوها و ذخیره
+	check(Scenarios.climate("frozen_north") == "winter" and Scenarios.climate("desert_caravan") == "desert", "scenario climates")
+	check(Scenarios.climate("green_valley") == "temperate" and Scenarios.climate("nope") == "temperate", "default climate is temperate")
+	var cs = CityState.new(int(Scenarios.def("frozen_north")["seed"]))
+	check(cs.world.climate == "temperate", "a fresh city is temperate")
+	ScenarioApply.apply(cs, "frozen_north")
+	check(cs.world.climate == "winter", "applying a winter world sets the climate")
+	var back = CityState.from_dict(JSON.parse_string(JSON.stringify(cs.to_dict())))
+	check(back != null and back.world.climate == "winter", "climate survives save and load")
+	cs.set_climate("lava")
+	check(cs.world.climate == "temperate", "unknown climate falls back to temperate")
+
+
+func test_story_book() -> void:
+	print("[story and adventure book]")
+	check(FWConst.PROTOCOL_VERSION >= 34, "protocol bumped for the book message and the climate in login info")
+	# --- یکپارچگی داده و متن‌ها ---
+	var ids := {}
+	var dup := false
+	var bad_role := false
+	var kinds := ["dist", "in_village", "in_mine", "biome", "height", "owns", "blocks", "blocks_of", "tool_any", "friends", "stat", "flag", "money"]
+	var bad_kind := false
+	for e in Story.ENTRIES:
+		if ids.has(e["id"]):
+			dup = true
+		ids[e["id"]] = true
+		if not Story.ROLES.has(str(e["giver"])):
+			bad_role = true
+		if not kinds.has(str(e["kind"])) or not ["", "winter", "desert"].has(str(e["climate"])) or int(e["reward"]) < 0 or int(e["reward"]) > 100:
+			bad_kind = true
+	check(not dup and not bad_role and not bad_kind, "book entries have unique ids, known roles and kinds, small rewards (%d entries)" % Story.ENTRIES.size())
+	var texts_ok := true
+	var missing := ""
+	for lang in ["fa", "en"]:
+		Loc.lang = lang
+		for e in Story.ENTRIES:
+			for k in ["book_" + str(e["id"]), "book_%s_d" % str(e["id"])]:
+				if Loc.t(k) == k:
+					texts_ok = false
+					missing = k
+		for r in Story.ROLES:
+			for k in ["role_" + r, Story.line_key(r, 0), Story.line_key(r, 1), Story.line_key(r, 2), Story.hint_key(r), Story.done_key(r)]:
+				if Loc.t(k) == k:
+					texts_ok = false
+					missing = k
+		for k in ["book", "book_title", "book_hint", "book_progress", "msg_book_unlock", "msg_book_reward"]:
+			if Loc.t(k) == k:
+				texts_ok = false
+				missing = k
+	Loc.lang = "fa"
+	check(texts_ok, "every entry, role and dialogue line has Persian and English text (%s)" % missing)
+	# --- شخصیت‌ها ---
+	check(Story.role_of("", 1) == "farmer" and Story.role_of("", 3) == "guide" and Story.role_of("", 4) == "villager", "default cast by NPC order")
+	check(Story.role_of("frozen_north", 1) == "hunter" and Story.role_of("desert_caravan", 1) == "nomad", "scenario casts differ")
+	check(Story.role_of("green_valley", 2) == "baker", "scenarios without their own cast use the default one")
+	var wcs = CityState.new(int(Scenarios.def("frozen_north")["seed"]))
+	ScenarioApply.apply(wcs, "frozen_north")
+	check(str(wcs.npcs[0]["name"]) == "بهمن" and str(wcs.npcs[1]["name"]) == "شیرین", "a ready-made world names its cast")
+	# --- ارزیابی دستاوردها ---
+	var cs = CityState.new(12345)
+	_login(cs, "hero")
+	load("res://scripts/server/npc_sim.gd").ensure_npcs(cs)
+	var acc: Dictionary = cs.accounts["hero"]
+	var half := FWConst.CITY_SIZE * 0.5
+	var near := {"pos": Vector3(half, 2.0, half), "mine": ""}
+	check(Book.evaluate(cs, "hero", near).is_empty(), "standing in the plaza unlocks nothing")
+	var m0: int = int(acc["money"])
+	var far := {"pos": Vector3(half + 70.0, 2.0, half), "mine": ""}
+	var got: Array = Book.evaluate(cs, "hero", far)
+	var got_ids: Array = []
+	for g in got:
+		got_ids.append(g["id"])
+	check(got_ids.has("explorer_60") and not got_ids.has("explorer_200"), "walking 70 m out unlocks the 60 m entry only (%s)" % str(got_ids))
+	var gained := 0
+	for g in got:
+		gained += int(g["reward"])
+	check(int(acc["money"]) == m0 + gained and gained >= 15, "the small reward is paid")
+	check(Book.evaluate(cs, "hero", far).is_empty() and int(acc["money"]) == m0 + gained, "an entry unlocks and pays only once")
+	check(not Book.evaluate(cs, "hero", {"pos": Vector3(half + 210.0, 2.0, half), "mine": ""}).is_empty(), "a farther walk unlocks the next entry")
+	check(Book.evaluate(cs, "nobody", far).is_empty(), "unknown players are ignored")
+	# مایل‌استون‌های مبتنی بر وضعیت حساب
+	for i in range(50):
+		cs._add_block(Vector3i(i, 0, 300), "stone", 0, "hero")
+	check(Book.evaluate(cs, "hero", near).any(func(g): return g["id"] == "builder_50"), "50 own blocks unlock the builder entry")
+	check(not Book.evaluate(cs, "hero", near).any(func(g): return g["id"] == "builder_300"), "300 blocks are not reached")
+	cs.buildings[9001] = {"id": 9001, "type": "house", "owner": "hero", "cx": 5, "cz": 5, "stock": 0.0, "prog": 0.0, "furn": []}
+	check(Book.evaluate(cs, "hero", near).any(func(g): return g["id"] == "first_house"), "owning a house unlocks the homeowner entry")
+	acc["friends"] = {"1": 30}
+	check(Book.evaluate(cs, "hero", near).any(func(g): return g["id"] == "friend_first"), "a friend-level NPC unlocks the friendship entry")
+	check(not Book.evaluate(cs, "hero", near).any(func(g): return g["id"] == "friend_three"), "three friends are not reached")
+	acc["stats"] = {"talks": 10, "gifts": 0}
+	check(Book.evaluate(cs, "hero", near).any(func(g): return g["id"] == "chatterbox"), "talk counter unlocks chatterbox")
+	check(Book.evaluate(cs, "hero", {"pos": Vector3(half, 2.0, half), "mine": "5,5"}).any(func(g): return g["id"] == "miner"), "being in a mine unlocks the miner entry")
+	acc["boat"] = true
+	check(Book.evaluate(cs, "hero", near).any(func(g): return g["id"] == "sailor"), "owning a boat unlocks the sailor entry")
+	acc["money"] = 12000
+	check(Book.evaluate(cs, "hero", near).any(func(g): return g["id"] == "rich"), "enough coins unlock the wealthy entry")
+	# --- وضعیت عمومی ---
+	var st: Dictionary = Book.public_state(cs, "hero")
+	check(int(st["total"]) == Story.entries_for("temperate", false).size() and st["rows"].size() == int(st["total"]), "public state lists this world's entries")
+	var done_rows := 0
+	for row in st["rows"]:
+		if int(row[1]) > 0:
+			done_rows += 1
+	check(done_rows == int(st["done"]) and done_rows >= 8, "done count matches unlocked rows (%d)" % done_rows)
+	check(str(st["roles"]["1"]) == "farmer" and str(st["roles"]["4"]) == "villager", "public state tells each NPC's role")
+	# --- ذخیره و بارگذاری ---
+	var back = CityState.from_dict(JSON.parse_string(JSON.stringify(cs.to_dict())))
+	check(back != null and back.accounts["hero"]["book"].size() == acc["book"].size() and int(back.accounts["hero"]["stats"]["talks"]) == 10, "book and stats survive save and load")
+	var raw: Dictionary = JSON.parse_string(JSON.stringify(cs.to_dict()))
+	raw["accounts"]["hero"]["book"]["nonsense_entry"] = 3
+	var back2 = CityState.from_dict(raw)
+	check(back2 != null and not back2.accounts["hero"]["book"].has("nonsense_entry"), "unknown book ids are dropped on load")
+	var old: Dictionary = JSON.parse_string(JSON.stringify(cs.to_dict()))
+	old["accounts"]["hero"].erase("book")
+	old["accounts"]["hero"].erase("stats")
+	var back3 = CityState.from_dict(old)
+	check(back3 != null and back3.accounts["hero"]["book"].is_empty() and back3.accounts["hero"]["stats"].is_empty(), "old saves without a book load with an empty one")
+	# --- گفت‌وگو ---
+	var cs2 = CityState.new(777)
+	_login(cs2, "talker")
+	var NpcSim = load("res://scripts/server/npc_sim.gd")
+	NpcSim.ensure_npcs(cs2)
+	var farmer: Dictionary = cs2.npcs[0]
+	var at := Vector2(float(farmer["x"]), float(farmer["z"]))
+	var r: Dictionary = cs2.npc_interact("talker", int(farmer["id"]), "", at)
+	check(r["ok"] and r["role"] == "farmer" and r["line"] == "dlg_farmer_0" and r["hint"] == "dlg_farmer_hint" and r["entry"] == "first_house", "the farmer greets and hints at his first entry")
+	check(int(cs2.accounts["talker"]["stats"]["talks"]) == 1, "talking is counted")
+	var gr: Dictionary = cs2.npc_interact("talker", int(farmer["id"]), "wood", at)
+	check(gr["ok"] and gr["line"] == "" and int(cs2.accounts["talker"]["stats"]["gifts"]) == 1, "gifts are counted and carry no speech")
+	cs2.accounts["talker"]["book"]["first_house"] = 0
+	cs2.accounts["talker"]["book"]["wheat_farm"] = 0
+	var d: Dictionary = Book.dialogue(cs2, "talker", "farmer", 1)
+	check(d["line"] == "dlg_farmer_1" and d["hint"] == "dlg_farmer_done" and d["entry"] == "", "after finishing his entries the farmer thanks you")
+	check(Book.dialogue(cs2, "talker", "villager", 0)["hint"] == "", "villagers only greet")
+	# --- خلاقانه و اقلیم ---
+	var cc = CityState.new(321)
+	cc.creative = true
+	_login(cc, "maker")
+	check(Story.entries_for("temperate", true).size() == Story.entries_for("temperate", false).size() - 1, "creative worlds hide the coin entry")
+	var cm: int = int(cc.accounts["maker"]["money"])
+	cc.accounts["maker"]["money"] = cm + 5000
+	var cgot: Array = Book.evaluate(cc, "maker", {"pos": Vector3(half + 70.0, 2.0, half), "mine": ""})
+	check(not cgot.is_empty() and int(cc.accounts["maker"]["money"]) == cm + 5000, "creative worlds unlock entries but never pay coins")
+	check(not cgot.any(func(g): return g["id"] == "rich"), "the wealth entry never unlocks in creative")
+	var wnames := []
+	for e in Story.entries_for("winter", false):
+		wnames.append(e["id"])
+	var dnames := []
+	for e in Story.entries_for("desert", false):
+		dnames.append(e["id"])
+	check(wnames.has("snow_walker") and not wnames.has("oasis_find") and dnames.has("oasis_find") and not dnames.has("snow_walker"), "climate-specific entries only appear in their climate")
+	var wc = CityState.new(297)
+	wc.set_climate("winter")
+	_login(wc, "skier")
+	var snow_pos := Vector3.ZERO
+	var found := false
+	for iz in range(0, 640, 8):
+		for ix in range(0, 640, 8):
+			var b: String = wc.world.biome_at(float(ix), float(iz))
+			if b == "snow" or b == "snow_forest":
+				snow_pos = Vector3(float(ix), wc.world.height_at(float(ix), float(iz)), float(iz))
+				found = true
+				break
+		if found:
+			break
+	check(found and Book.evaluate(wc, "skier", {"pos": snow_pos, "mine": ""}).any(func(g): return g["id"] == "snow_walker"), "walking on snow unlocks the winter entry")
+
+
+func test_blueprint_packs() -> void:
+	print("[blueprint packs]")
+	check(Packs.ids() == ["castle", "village", "town"], "three packs: castle, village, town")
+	var seen := {}
+	var all_ok := true
+	var detail := ""
+	var texts_ok := true
+	var missing := ""
+	for item in Packs.item_ids():
+		if seen.has(item):
+			all_ok = false
+			detail = "duplicate " + str(item)
+		seen[item] = true
+		var d: PackedInt32Array = Packs.build(str(item))
+		var n := d.size() / 5
+		var ext: Vector3i = Blueprints.extent(d)
+		if Blueprints.clean_data(d).is_empty():
+			all_ok = false
+			detail = "%s is not a valid blueprint" % item
+		elif n < 20 or n > FWConst.REGION_MAX_VOLUME or maxi(ext.x, maxi(ext.y, ext.z)) > FWConst.REGION_MAX_SIDE:
+			all_ok = false
+			detail = "%s has %d blocks, extent %s" % [item, n, str(ext)]
+		# هر طرح دست‌کم یک در و یک پنجره یا چراغ دارد (خانه‌ها قابل ورود و دیده‌شدنی‌اند) و روی زمین شروع می‌شود
+		var types := {}
+		var lowest := 99
+		var i := 0
+		while i < d.size():
+			types[str(FWConst.BLOCK_ORDER[d[i + 3]])] = true
+			lowest = mini(lowest, d[i + 1])
+			i += 5
+		if lowest != 0:
+			all_ok = false
+			detail = "%s floats above the ground" % item
+		if (str(item).begins_with("castle_") and str(item) != "castle_wall") or str(item).begins_with("village_house") or str(item) == "village_cottage" or str(item) == "town_hall" or str(item) == "town_shop_row" or str(item) == "village_barn":
+			if not types.has("door"):
+				all_ok = false
+				detail = "%s has no door" % item
+		for lang in ["fa", "en"]:
+			Loc.lang = lang
+			if Loc.t("bpk_" + str(item)) == "bpk_" + str(item):
+				texts_ok = false
+				missing = str(item)
+	Loc.lang = "fa"
+	check(all_ok, "all %d designs are valid, fit 16x16x16 and 512 blocks, start on the ground (%s)" % [Packs.item_ids().size(), detail])
+	check(texts_ok, "every design has Persian and English names (%s)" % missing)
+	var pk_texts := true
+	for pid in Packs.ids():
+		for lang in ["fa", "en"]:
+			Loc.lang = lang
+			if Loc.t("pack_" + str(pid)) == "pack_" + str(pid) or Loc.t("pack_%s_d" % pid) == "pack_%s_d" % pid:
+				pk_texts = false
+	for k in ["bp_packs", "bp_packs_hint", "msg_pack_locked", "msg_pack_used"]:
+		for lang in ["fa", "en"]:
+			Loc.lang = lang
+			if Loc.t(k) == k:
+				pk_texts = false
+	Loc.lang = "fa"
+	check(pk_texts, "pack titles, descriptions and UI texts exist in both languages")
+	check(Packs.build("nope").is_empty() and Packs.pack("nope").is_empty(), "unknown designs and packs are empty")
+	check(Packs.build("castle_keep") == Packs.build("castle_keep"), "designs are deterministic")
+	# چرخش چهار بار = همان طرح؛ تعداد بلوک عوض نمی‌شود
+	var base: PackedInt32Array = Packs.build("village_house")
+	var r := base
+	for k in range(4):
+		r = Blueprints.rotate_y(r)
+	var set_a := {}
+	var set_b := {}
+	var j := 0
+	while j < base.size():
+		set_a[str([base[j], base[j + 1], base[j + 2], base[j + 3], base[j + 4]])] = true
+		set_b[str([r[j], r[j + 1], r[j + 2], r[j + 3], r[j + 4]])] = true
+		j += 5
+	check(base.size() == r.size() and set_a == set_b, "four rotations bring a design back to itself")
+	check(Entitlements.pack_unlocked("castle") and Entitlements.pack_unlocked("village") and Entitlements.pack_unlocked("town") and Entitlements.pack_unlocked("nope"), "packs are open while payments are disabled")
+	check(Packs.is_premium("castle") and not Packs.is_premium("nope"), "packs are marked as sellable content")
+

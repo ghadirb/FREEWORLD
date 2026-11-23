@@ -1,6 +1,8 @@
 extends CanvasLayer
 ## رابط درون‌بازی: نوار بالا، دکمه‌ها، پالت ساخت، پنل ساختمان، چت، پنل مدیر، منو و جوی‌استیک.
 
+const Entitlements = preload("res://scripts/client/entitlements.gd")
+const Packs = preload("res://scripts/shared/blueprint_packs.gd")
 const FWConst = preload("res://scripts/core/const.gd")
 const Loc = preload("res://scripts/client/loc.gd")
 const Sfx = preload("res://scripts/client/sfx.gd")
@@ -82,6 +84,11 @@ var _mg_best: Label
 var _mg_bar: Label
 var _was_disaster: bool = false
 var _race_btn: Button
+var _book_btn: Button
+var _pack_rows: VBoxContainer
+var _book_panel: PanelContainer
+var _book_progress: Label
+var _book_rows: VBoxContainer
 var _fly_btn: Button
 var _boat_btn: Button
 var _fish_btn: Button
@@ -102,6 +109,7 @@ var _god_btns: Dictionary = {}
 var _npc_panel: PanelContainer
 var _npc_title: Label
 var _npc_body: Label
+var _npc_speech: Label
 var _npc_item: OptionButton
 var _npc_id: int = -1
 var _offer_panel: PanelContainer
@@ -158,6 +166,7 @@ func setup(game_client, game_view) -> void:
 	_build_npc_panel()
 	_build_furn_panel()
 	_build_bp_panel()
+	_build_book_panel()
 	_build_arena_panel()
 	_build_god_panel()
 	_build_minigame()
@@ -167,7 +176,7 @@ func setup(game_client, game_view) -> void:
 	_build_chat()
 	_build_admin_panel()
 	_build_menu_panel()
-	for dp in [_palette, _tools_panel, _inv_panel, _offer_panel, _npc_panel, _furn_panel, _bp_panel, _arena_panel, _god_panel, _mg_panel, _race_panel, _admin_panel, _menu_panel]:
+	for dp in [_palette, _tools_panel, _inv_panel, _offer_panel, _npc_panel, _furn_panel, _bp_panel, _book_panel, _arena_panel, _god_panel, _mg_panel, _race_panel, _admin_panel, _menu_panel]:
 		_dock(dp)
 	view.is_over_ui = Callable(self, "is_over_ui")
 	view.building_tapped.connect(_on_building_tapped)
@@ -185,6 +194,8 @@ func setup(game_client, game_view) -> void:
 	client.money_changed.connect(func(_m): _refresh_stats())
 	client.notice.connect(_on_notice)
 	client.blueprints_changed.connect(_fill_bp_list)
+	client.book_changed.connect(_fill_book)
+	client.book_changed.connect(_fill_npc)
 	client.arenas_changed.connect(_fill_arena_list)
 	client.blueprint_loaded.connect(_on_bp_loaded)
 	client.inside_changed.connect(_on_inside_changed)
@@ -393,6 +404,12 @@ func _build_side_buttons() -> void:
 	_car_btn = UiTheme.button(Loc.t("car"), SIDE_BTN)
 	_car_btn.pressed.connect(func(): Sfx.play(self, "click"); client.toggle_car())
 	client.car_changed.connect(_on_car_changed)
+	_book_btn = UiTheme.button(Loc.t("book"), SIDE_BTN)
+	_book_btn.pressed.connect(func():
+		Sfx.play(self, "click")
+		_book_panel.visible = not _book_panel.visible
+		if _book_panel.visible:
+			client.request_book())
 	_fish_btn = UiTheme.button(Loc.t("fish"), SIDE_BTN)
 	_fish_btn.pressed.connect(func(): client.fish())
 	client.boat_changed.connect(_on_boat_changed)
@@ -408,7 +425,7 @@ func _build_side_buttons() -> void:
 		_fly_pad.add_child(ab)
 		_interactive.append(ab)
 	view.fly_changed.connect(func(on: bool): _fly_btn.text = Loc.t("land") if on else Loc.t("fly"); _fly_pad.visible = on)
-	for b in [_mode_btn, _view_btn, _build_btn, _tools_btn, _inv_btn, chat_btn, _admin_btn, _god_btn, _mg_btn, _arena_btn, _race_btn, _boat_btn, _horse_btn, _car_btn, _fish_btn, _fly_btn, menu_btn]:
+	for b in [_mode_btn, _view_btn, _build_btn, _tools_btn, _inv_btn, chat_btn, _admin_btn, _god_btn, _mg_btn, _arena_btn, _race_btn, _book_btn, _boat_btn, _horse_btn, _car_btn, _fish_btn, _fly_btn, menu_btn]:
 		b.add_theme_font_size_override("font_size", 19)
 		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		v.add_child(b)
@@ -1075,8 +1092,13 @@ func _build_npc_panel() -> void:
 	_npc_panel.add_child(v)
 	_npc_title = _label("", 28, Color("ffd24a"))
 	_npc_body = _label("", 22)
+	_npc_speech = _label("", 20, Color("ffe9a6"))
+	_npc_speech.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_npc_speech.custom_minimum_size = Vector2(520, 0)
+	_npc_speech.visible = false
 	v.add_child(_npc_title)
 	v.add_child(_npc_body)
+	v.add_child(_npc_speech)
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 8)
 	v.add_child(row)
@@ -1123,9 +1145,71 @@ func _build_npc_panel() -> void:
 
 func _on_npc_tapped(id: int) -> void:
 	_npc_id = id
+	_npc_speech.visible = false
 	_info.visible = false
 	_fill_npc()
 	_npc_panel.visible = true
+
+
+## گفت‌وگوی NPC: سلام بر اساس سطح دوستی و (اگر هست) پیشنهاد یک ماجراجویی یا تشکر. متن‌ها همه در Loc‌اند.
+func _show_npc_speech(args: Dictionary) -> void:
+	if _npc_speech == null or str(args.get("line", "")) == "":
+		return
+	var txt: String = Loc.t(str(args["line"]))
+	var hint := str(args.get("hint", ""))
+	if hint != "":
+		var entry := str(args.get("entry", ""))
+		txt += "\n" + (Loc.fmt(hint, [Loc.t("book_" + entry)]) if entry != "" else Loc.t(hint))
+	_npc_speech.text = txt
+	_npc_speech.visible = true
+
+
+func _build_book_panel() -> void:
+	_book_panel = _panel(0.5, 1.0)
+	_book_panel.visible = false
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 8)
+	v.custom_minimum_size = Vector2(560, 0)
+	_book_panel.add_child(v)
+	v.add_child(_label(Loc.t("book_title"), 28, Color("ffd24a")))
+	var hint := _label(Loc.t("book_hint"), 17, Color("d6e4ff"))
+	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	hint.custom_minimum_size = Vector2(540, 0)
+	v.add_child(hint)
+	_book_progress = _label("", 22, Color("c8f08a"))
+	v.add_child(_book_progress)
+	var close := UiTheme.button("✕", Vector2(64, 56))
+	close.pressed.connect(func(): _book_panel.visible = false)
+	v.add_child(close)
+	var sc := ScrollContainer.new()
+	sc.custom_minimum_size = Vector2(0, 300)
+	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	v.add_child(sc)
+	_book_rows = VBoxContainer.new()
+	_book_rows.add_theme_constant_override("separation", 8)
+	_book_rows.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	sc.add_child(_book_rows)
+
+
+func _fill_book() -> void:
+	if _book_rows == null:
+		return
+	for c in _book_rows.get_children():
+		c.queue_free()
+	_book_progress.text = Loc.fmt("book_progress", [Loc.digits(str(int(client.book.get("done", 0)))), Loc.digits(str(int(client.book.get("total", 0))))])
+	for row in client.book.get("rows", []):
+		var id := str(row[0])
+		var done: bool = int(row[1]) > 0
+		var box := VBoxContainer.new()
+		_book_rows.add_child(box)
+		var title := "%s  %s" % ["✅" if done else "⬜", Loc.t("book_" + id)]
+		if not done and int(row[2]) > 0:
+			title += "   🪙 " + Loc.digits(str(int(row[2])))
+		box.add_child(_label(title, 21, Color("ffd24a") if not done else Color("8fd6a0")))
+		var d := _label(Loc.t("book_%s_d" % id), 16, Color("aab6c8"))
+		d.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		d.custom_minimum_size = Vector2(520, 0)
+		box.add_child(d)
 
 
 func _fill_npc() -> void:
@@ -1135,7 +1219,8 @@ func _fill_npc() -> void:
 	for n in client.npcs:
 		if int(n[0]) == _npc_id:
 			nm = str(n[4])
-	_npc_title.text = nm
+	var role: String = client.npc_role(_npc_id)
+	_npc_title.text = nm if role == "villager" else "%s — %s" % [nm, Loc.t("role_" + role)]
 	var pts: int = int(client.friends.get(str(_npc_id), 0))
 	var lv := 0
 	for t in FWConst.FRIEND_LEVELS:
@@ -1250,6 +1335,20 @@ func _build_bp_panel() -> void:
 	_bp_rows.add_theme_constant_override("separation", 6)
 	_bp_rows.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	sc.add_child(_bp_rows)
+	v.add_child(_label(Loc.t("bp_packs"), 24, Color("ffd24a")))
+	var phint := _label(Loc.t("bp_packs_hint"), 16, Color("d6e4ff"))
+	phint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	phint.custom_minimum_size = Vector2(540, 0)
+	v.add_child(phint)
+	var psc := ScrollContainer.new()
+	psc.custom_minimum_size = Vector2(0, 220)
+	psc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	v.add_child(psc)
+	_pack_rows = VBoxContainer.new()
+	_pack_rows.add_theme_constant_override("separation", 6)
+	_pack_rows.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	psc.add_child(_pack_rows)
+	_fill_packs()
 
 
 func _fill_bp_list() -> void:
@@ -1422,6 +1521,46 @@ func _fill_arena_list() -> void:
 				Sfx.play(self, "click")
 				client.arena_op("delete", id))
 			r.add_child(del)
+
+
+## بستهٔ طرح‌ها: هر بسته یک عنوان (قفل‌دار اگر هنوز خریداری نشده) و یک دکمه برای هر طرح.
+func _fill_packs() -> void:
+	for pk in Packs.PACKS:
+		var pid := str(pk["id"])
+		var open: bool = Entitlements.pack_unlocked(pid)
+		_pack_rows.add_child(_label(("" if open else "🔒 ") + Loc.t("pack_" + pid), 21, Color("c8f08a") if open else Color("ff9a8a")))
+		var d := _label(Loc.t("pack_%s_d" % pid), 15, Color("aab6c8"))
+		d.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		d.custom_minimum_size = Vector2(520, 0)
+		_pack_rows.add_child(d)
+		var grid := GridContainer.new()
+		grid.columns = 2
+		grid.add_theme_constant_override("h_separation", 6)
+		grid.add_theme_constant_override("v_separation", 6)
+		_pack_rows.add_child(grid)
+		for it in pk["items"]:
+			var item := str(it)
+			var b := UiTheme.button(Loc.t("bpk_" + item), Vector2(0, 52))
+			b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			b.add_theme_font_size_override("font_size", 18)
+			b.disabled = not open
+			b.pressed.connect(func(): _use_pack_item(pid, item))
+			grid.add_child(b)
+
+
+func _use_pack_item(pid: String, item: String) -> void:
+	if not Entitlements.pack_unlocked(pid):
+		Sfx.play(self, "error")
+		toast(Loc.t("msg_pack_locked"), Color("ff9a8a"))
+		return
+	var data: PackedInt32Array = Packs.build(item)
+	if data.is_empty():
+		return
+	view.clipboard = data
+	view.set_build_mode("paste")
+	_bp_panel.visible = false
+	Sfx.play(self, "click")
+	toast(Loc.fmt("msg_pack_used", [Loc.t("bpk_" + item), Loc.digits(str(data.size() / 5))]), Color("c8f08a"))
 
 
 func _on_bp_loaded(_id: int, data: PackedInt32Array) -> void:
@@ -1720,7 +1859,14 @@ func _on_notice(code: String, args: Dictionary) -> void:
 		"filled":
 			Sfx.play(self, "click")
 			toast(Loc.fmt("msg_filled", [Loc.digits(str(args["count"])), Loc.t("item_" + str(args["item"]))]), Color("c8f08a"))
+		"book_unlock":
+			Sfx.play(self, "coin" if int(args["reward"]) > 0 else "notify")
+			var bmsg := Loc.fmt("msg_book_unlock", [Loc.t("book_" + str(args["id"]))])
+			if int(args["reward"]) > 0:
+				bmsg += "  " + Loc.fmt("msg_book_reward", [Loc.digits(str(args["reward"]))])
+			toast(bmsg, Color("ffd24a"))
 		"npc_talk":
+			_show_npc_speech(args)
 			Sfx.play(self, "coin" if int(args["reward"]) > 0 else "click")
 			toast(Loc.fmt("msg_npc_talk", [str(args["npc"]), Loc.digits(str(args["reward"]))]) if int(args["reward"]) > 0 else Loc.fmt("msg_npc_talk0", [str(args["npc"])]), Color("c8f08a"))
 		"npc_sold":

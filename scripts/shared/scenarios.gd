@@ -8,7 +8,7 @@ const FWConst = preload("res://scripts/core/const.gd")
 ## مرکز شهر (سلول‌های میدان مرکزی دور آن‌اند؛ سازه‌ها بیرون از میدان ساخته می‌شوند).
 const CENTER := 64
 
-const ORDER := ["green_valley", "builder_playground", "god_sandbox", "island_castaway", "medieval_fort", "merchant_city"]
+const ORDER := ["green_valley", "builder_playground", "god_sandbox", "island_castaway", "medieval_fort", "merchant_city", "frozen_north", "desert_caravan"]
 
 const DEFS := {
 	"green_valley": {
@@ -53,6 +53,21 @@ const DEFS := {
 		"structures": ["market_street", "lamp_street"],
 		"trees": 6, "animals": {"sheep": 6},
 	},
+	# اقلیم‌های تازه: فقط ظاهر زمین و منابع عوض می‌شود (برف و کاج / شن و نخل)؛ بقیهٔ قوانین همان است.
+	"frozen_north": {
+		"seed": 297, "premium": true, "creative": false, "climate": "winter",
+		"money": 400, "items": {"wood": 80, "stone": 30, "iron": 6, "brick": 6, "glass": 4},
+		"hour": 15.0, "weather": "fog", "time_speed": 1.0, "forest_growth": false, "npcs": 4,
+		"structures": ["lodge", "campfire", "watch_tower"],
+		"trees": 14, "animals": {"deer": 8, "rabbit": 6},
+	},
+	"desert_caravan": {
+		"seed": 326, "premium": true, "creative": false, "climate": "desert",
+		"money": 900, "items": {"clay": 30, "stone": 40, "wood": 30, "glass": 6, "brick": 12},
+		"hour": 11.0, "weather": "clear", "time_speed": 1.0, "forest_growth": false, "npcs": 5,
+		"structures": ["oasis_camp", "pyramid", "market_street"],
+		"trees": 10, "animals": {"sheep": 6, "rabbit": 8},
+	},
 }
 
 
@@ -66,6 +81,12 @@ static func has(id: String) -> bool:
 
 static func def(id: String) -> Dictionary:
 	return DEFS.get(id, {})
+
+
+## اقلیم جهان آماده (temperate اگر ذکر نشده باشد یا شناسه ناشناخته باشد).
+static func climate(id: String) -> String:
+	var c := str(DEFS.get(id, {}).get("climate", "temperate"))
+	return c if FWConst.CLIMATES.has(c) else "temperate"
 
 
 static func is_premium(id: String) -> bool:
@@ -228,6 +249,52 @@ static func structure(kind: String, rng: RandomNumberGenerator) -> Array:
 					_col(out, sx + 2, z + dz, 0, 2, "wood")
 					for dxx in range(0, 3):
 						_col(out, sx + dxx, z + dz, 2, 1, "roof")
+		"lodge":
+			# کلبهٔ بزرگ چوبی ۹×۷ با پنجره، در و دودکش سنگی بیرون دیوار (جهان زمستانی)
+			var cx := CENTER + 14
+			var cz := CENTER - 22
+			for dx in range(-4, 5):
+				for dz in range(-3, 4):
+					if absi(dx) == 4 or absi(dz) == 3:
+						if dx == 0 and dz == 3:
+							_col(out, cx + dx, cz + dz, 0, 1, "door")
+							_col(out, cx + dx, cz + dz, 1, 1, "door")
+							_col(out, cx + dx, cz + dz, 2, 1, "wood")
+						elif dz == -3 and absi(dx) % 2 == 0:
+							_col(out, cx + dx, cz + dz, 0, 1, "wood")
+							_col(out, cx + dx, cz + dz, 1, 1, "window")
+							_col(out, cx + dx, cz + dz, 2, 1, "wood")
+						else:
+							_col(out, cx + dx, cz + dz, 0, 3, "wood")
+					_col(out, cx + dx, cz + dz, 3, 1, "roof")
+			_col(out, cx + 5, cz - 1, 0, 6, "stone")
+			_col(out, cx, cz + 4, 0, 1, "lamp")
+		"oasis_camp":
+			# سه چادر (چهار تیرک و سقف ۳×۳) دور آتش اردوگاه (جهان صحرا)
+			var cx := CENTER - 22
+			var cz := CENTER + 16
+			for t in range(3):
+				var tx := cx + (t - 1) * 6
+				var tz := cz + (2 if t == 1 else 0)
+				for dx in [-1, 1]:
+					for dz in [-1, 1]:
+						_col(out, tx + dx, tz + dz, 0, 2, "fence")
+				for dx in range(-1, 2):
+					for dz in range(-1, 2):
+						_col(out, tx + dx, tz + dz, 2, 1, "roof")
+			for dx in range(-1, 2):
+				for dz in range(-1, 2):
+					if maxi(absi(dx), absi(dz)) == 1:
+						_col(out, cx + dx, cz + 6 + dz, 0, 1, "stone")
+			_col(out, cx, cz + 6, 0, 1, "lamp")
+		"pyramid":
+			# هرم پله‌ای ۱۳×۱۳ از آجر؛ ارتفاع هر ستون از کناره به مرکز بیشتر می‌شود (جهان صحرا)
+			var cx := CENTER + 22
+			var cz := CENTER - 32
+			for dx in range(-6, 7):
+				for dz in range(-6, 7):
+					_col(out, cx + dx, cz + dz, 0, 7 - maxi(absi(dx), absi(dz)), "brick")
+			_col(out, cx, cz, 7, 1, "lamp")
 	return out
 
 

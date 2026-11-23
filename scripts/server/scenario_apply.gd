@@ -5,6 +5,7 @@ extends RefCounted
 const FWConst = preload("res://scripts/core/const.gd")
 const Scenarios = preload("res://scripts/shared/scenarios.gd")
 const NpcSim = preload("res://scripts/server/npc_sim.gd")
+const Story = preload("res://scripts/shared/story.gd")
 
 const OWNER := "world"
 
@@ -16,15 +17,26 @@ static func apply(cs, id: String) -> int:
 	var d: Dictionary = Scenarios.def(id)
 	cs.scenario = id
 	cs.scenario_applied = true
+	cs.set_climate(Scenarios.climate(id))
 	cs.creative = cs.creative or bool(d["creative"])
 	cs.world_time = float(d["hour"]) * 3600.0
 	cs.weather = str(d["weather"])
 	cs.time_speed = float(d["time_speed"])
 	cs.forest_growth = bool(d["forest_growth"])
 	NpcSim.ensure_npcs(cs, clampi(int(d["npcs"]), FWConst.NPC_COUNT, FWConst.NPC_NAMES.size()))
+	_name_cast(cs, id)
 	var placed := _place_columns(cs, Scenarios.columns(id))
 	_scatter_god(cs, id, d)
 	return placed
+
+
+## شخصیت‌های نام‌دار جهان (اگر فهرست مخصوص دارد) نام خود را می‌گیرند؛ دوستی‌ها به شناسه بسته است و دست نمی‌خورد.
+static func _name_cast(cs, id: String) -> void:
+	if not Story.CASTS.has(id):
+		return
+	var cast: Array = Story.cast_for(id)
+	for i in range(mini(cast.size(), cs.npcs.size())):
+		cs.npcs[i]["name"] = str(cast[i][0])
 
 
 static func _ground_level(cs, x: int, z: int) -> int:

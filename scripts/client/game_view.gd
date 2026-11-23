@@ -235,21 +235,23 @@ func _weather_light() -> float:
 func _update_rain() -> void:
 	if _rain == null:
 		_rain = CPUParticles3D.new()
-		_rain.amount = 350 if quality >= 1 else 160
-		_rain.lifetime = 1.1
+		var snowy: bool = str(client.mirror.world.climate) == "winter"
+		_rain.amount = (700 if quality >= 1 else 320) if snowy else (350 if quality >= 1 else 160)
+		_rain.lifetime = 5.0 if snowy else 1.1
 		_rain.preprocess = 1.0
 		_rain.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
 		_rain.emission_box_extents = Vector3(24, 0.5, 24)
 		_rain.direction = Vector3(0.1, -1, 0)
-		_rain.spread = 2.0
-		_rain.gravity = Vector3(0, -25, 0)
-		_rain.initial_velocity_min = 14.0
-		_rain.initial_velocity_max = 18.0
+		_rain.spread = 14.0 if snowy else 2.0
+		_rain.gravity = Vector3(0, -2.5, 0) if snowy else Vector3(0, -25, 0)
+		_rain.initial_velocity_min = 1.5 if snowy else 14.0
+		_rain.initial_velocity_max = 3.0 if snowy else 18.0
 		var qm := QuadMesh.new()
-		qm.size = Vector2(0.03, 0.7)
+		# در اقلیم زمستانی باران به برف تبدیل می‌شود: دانه‌های سفید درشت و آهسته
+		qm.size = Vector2(0.12, 0.12) if snowy else Vector2(0.03, 0.7)
 		var mat := StandardMaterial3D.new()
 		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-		mat.albedo_color = Color(0.75, 0.85, 1.0, 0.55)
+		mat.albedo_color = Color(0.97, 0.98, 1.0, 0.85) if snowy else Color(0.75, 0.85, 1.0, 0.55)
 		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 		mat.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
 		qm.material = mat

@@ -5,6 +5,9 @@ extends RefCounted
 const FWConst = preload("res://scripts/core/const.gd")
 
 var seed_value: int
+## اقلیم: temperate (پیش‌فرض، بدون تغییر نسبت به نسخه‌های قبل)، winter (برف و کاج)، desert (شن و نخل).
+## فقط برچسب زیست‌بوم و منابع را عوض می‌کند؛ ارتفاع، آب، روستا و معدن همان Seed است.
+var climate: String = "temperate"
 var _base := FastNoiseLite.new()
 var _detail := FastNoiseLite.new()
 var _moist := FastNoiseLite.new()
@@ -113,10 +116,30 @@ func biome_from(h: float, moisture: float) -> String:
 	if h < 0.9:
 		return "beach"
 	if h > 14.0:
-		return "mountain"
+		return "mesa" if climate == "desert" else "mountain"
 	if moisture > 0.15:
+		match climate:
+			"winter":
+				return "snow_forest"
+			"desert":
+				return "oasis"
 		return "forest"
+	match climate:
+		"winter":
+			return "snow"
+		"desert":
+			return "desert"
 	return "plain"
+
+
+## آیا این زیست‌بوم درخت‌زار است؟ (جنگل معمولی، جنگل برفی، واحه)
+static func is_wooded(biome: String) -> bool:
+	return biome == "forest" or biome == "snow_forest" or biome == "oasis"
+
+
+## آیا این زیست‌بوم کوهستانی است؟ (کوه معمولی و صخره‌های صحرا)
+static func is_rocky(biome: String) -> bool:
+	return biome == "mountain" or biome == "mesa"
 
 
 func biome_at(x: float, z: float) -> String:
@@ -153,17 +176,29 @@ func resource_in_cell(rx: int, rz: int) -> Dictionary:
 	var roll := _h01(rx, rz, 3)
 	var kind := ""
 	match biome:
-		"forest":
+		"forest", "snow_forest":
 			if roll < 0.30:
 				kind = "tree"
 			elif roll < 0.33:
 				kind = "rock"
-		"plain":
+		"oasis":
+			if roll < 0.24:
+				kind = "tree"
+			elif roll < 0.29:
+				kind = "clay"
+		"plain", "snow":
 			if roll < 0.05:
 				kind = "tree"
 			elif roll < 0.08:
 				kind = "rock"
-		"mountain":
+		"desert":
+			if roll < 0.012:
+				kind = "tree"
+			elif roll < 0.06:
+				kind = "rock"
+			elif roll < 0.10:
+				kind = "clay"
+		"mountain", "mesa":
 			if roll < 0.22:
 				kind = "rock"
 			elif roll < 0.255:
@@ -437,5 +472,15 @@ static func biome_color(biome: String) -> Color:
 			return Color("8a8a8a")
 		"forest":
 			return Color("3f8f4f")
+		"snow":
+			return Color("eef3f8")
+		"snow_forest":
+			return Color("cfe0e4")
+		"desert":
+			return Color("e3c06a")
+		"oasis":
+			return Color("8fae52")
+		"mesa":
+			return Color("b9693f")
 		_:
 			return Color("7fbf5a")

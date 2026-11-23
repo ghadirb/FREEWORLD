@@ -7,6 +7,7 @@ const FWConst = preload("res://scripts/core/const.gd")
 const CityState = preload("res://scripts/server/city_state.gd")
 const Persistence = preload("res://scripts/server/persistence.gd")
 const NpcSim = preload("res://scripts/server/npc_sim.gd")
+const Book = preload("res://scripts/server/book.gd")
 const ScenarioApply = preload("res://scripts/server/scenario_apply.gd")
 const TlsSetup = preload("res://scripts/networking/tls_setup.gd")
 const Mine = preload("res://scripts/shared/mine.gd")
@@ -16,6 +17,8 @@ const AUTH_TIMEOUT_MSEC := 10000
 const MAX_LOGIN_FAILURES := 5
 const TICK_INTERVAL := 0.1
 const STOCK_INTERVAL := 2.0
+## هر چند ثانیه دستاوردهای کتاب برای همهٔ بازیکنان آنلاین سنجیده می‌شود (ارزان: فقط شمارش و مقایسه).
+const BOOK_INTERVAL := 4.0
 const AUTOSAVE_INTERVAL := 10.0  # SIGTERM بدون ذخیره می‌میرد؛ ضرر احتمالی ≤ ۱۰ ثانیه
 const SAVE_DEBOUNCE_MSEC := 1000
 ## شناسهٔ بازیکن میزبان (همان گوشی). در ENet شناسهٔ ۱ همیشه خود سرور است و به هیچ کلاینت راه دوری داده نمی‌شود.
@@ -24,7 +27,7 @@ const LOCAL_METHODS := [
 	"c2s_login", "c2s_move", "c2s_place", "c2s_remove", "c2s_collect",
 	"c2s_chat", "c2s_set_role", "c2s_get_audit", "c2s_job", "c2s_set_world", "c2s_enter", "c2s_leave",
 	"c2s_place_block", "c2s_remove_block", "c2s_paint_block", "c2s_build_region", "c2s_paste", "c2s_bp_save", "c2s_bp_op", "c2s_arena_create", "c2s_arena_edit", "c2s_arena_op", "c2s_undo", "c2s_gather", "c2s_dig", "c2s_fill", "c2s_craft", "c2s_trade", "c2s_offer", "c2s_offer_answer", "c2s_npc", "c2s_npc_sell", "c2s_npc_buy", "c2s_furn_place", "c2s_furn_remove", "c2s_minigame_start", "c2s_race_start", "c2s_grace", "c2s_boat", "c2s_horse", "c2s_car", "c2s_fish", "c2s_disaster", "c2s_god",
-	"c2s_mine_enter", "c2s_mine_leave", "c2s_mine_gather",
+	"c2s_mine_enter", "c2s_mine_leave", "c2s_mine_gather", "c2s_book",
 ]
 
 var net: Node
@@ -43,6 +46,7 @@ var _tick_acc: float = 0.0
 var _train_acc: float = FWConst.TRAIN_CLOCK_INTERVAL   # بلافاصله بعد از شروع یک بار می‌فرستد
 var _god_acc: float = 0.0
 var _stock_acc: float = 0.0
+var _book_acc: float = 0.0
 var _autosave_acc: float = 0.0
 var _last_stocks: Dictionary = {}
 var _last_market: Dictionary = {}
@@ -252,6 +256,11 @@ func _process(delta: float) -> void:
 	if _train_acc >= FWConst.TRAIN_CLOCK_INTERVAL:
 		_train_acc = 0.0
 		_broadcast("s2c_trains", snappedf(cs.train_clock, 0.01))
+	_book_acc += dt
+	if _book_acc >= BOOK_INTERVAL:
+		_book_acc = 0.0
+		for bpid in _auth_peers():
+			_check_book(bpid)
 	_stock_acc += dt
 	if _stock_acc >= STOCK_INTERVAL:
 		_stock_acc = 0.0
@@ -841,6 +850,7 @@ func on_login(pid: int, player_name: String, token: String, proto: int) -> void:
 		"role": acc["role"], "money": acc["money"], "pos": [pos.x, pos.z],
 		"time": cs.world_time, "price": cs.wheat_price, "market": cs.market_public(),
 		"job": cs.job_of(player_name), "world": cs.world_public(),
+		"climate": cs.world.climate,
 	}
 	_send(pid, "s2c_login_result", true, "", info)
 	_send(pid, "s2c_snapshot", cs.all_buildings_public(), NpcSim.public_list(cs), _players_public())
@@ -854,6 +864,7 @@ func on_login(pid: int, player_name: String, token: String, proto: int) -> void:
 	_send(pid, "s2c_arenas", cs.arenas_public())
 	_send(pid, "s2c_disaster", cs.disaster_public())
 	_send(pid, "s2c_race", cs.race.public_state(player_name))
+	_send(pid, "s2c_book", Book.public_state(cs, player_name))
 	p["last_inv"] = cs.inv_public(player_name)
 	_send(pid, "s2c_inv", p["last_inv"])
 	_broadcast("s2c_player_joined", player_name, acc["role"], pid)
@@ -1641,8 +1652,38 @@ func on_npc(pid: int, npc_id: int, item: String) -> void:
 	if int(res["reward"]) > 0:
 		_send(pid, "s2c_money", int(res["money"]))
 	_notice(pid, "npc_talk" if res["kind"] == "talk" else "npc_gift",
-		{"npc": res["npc"], "points": res["points"], "level": res["level"], "reward": res["reward"], "item": res["item"]})
+		{"npc": res["npc"], "points": res["points"], "level": res["level"], "reward": res["reward"], "item": res["item"],
+		"role": res["role"], "line": res["line"], "hint": res["hint"], "entry": res["entry"]})
+	_check_book(pid)
 	_dirty = true
+
+
+## دستاوردهای تازه را می‌سنجد و برای هر کدام جایزه، اعلان و وضعیت تازهٔ کتاب می‌فرستد.
+func _check_book(pid: int) -> void:
+	var p := _player_of(pid)
+	if p.is_empty() or _indoors(p):
+		return
+	var ctx := {"pos": p["pos"], "mine": str(p.get("mine", ""))}
+	var got: Array = Book.evaluate(cs, p["name"], ctx)
+	if got.is_empty():
+		return
+	for g in got:
+		_notice(pid, "book_unlock", {"id": g["id"], "reward": g["reward"]})
+	_send(pid, "s2c_money", cs.money_of(p["name"]))
+	_send(pid, "s2c_book", Book.public_state(cs, p["name"]))
+	_dirty = true
+
+
+## درخواست دیدن کتاب ماجراجویی (فقط خواندن؛ نرخ‌محدود مثل بقیهٔ درخواست‌ها).
+func on_book(pid: int) -> void:
+	var p := _player_of(pid)
+	if p.is_empty():
+		return
+	if not _allow_action(p):
+		_notice(pid, "rate_limited")
+		return
+	_check_book(pid)
+	_send(pid, "s2c_book", Book.public_state(cs, p["name"]))
 
 
 func on_npc_sell(pid: int, npc_id: int, item: String, n: int) -> void:

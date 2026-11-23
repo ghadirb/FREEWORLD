@@ -195,6 +195,12 @@ func c2s_npc(npc_id: int, item: String) -> void:
 
 
 @rpc("any_peer", "call_remote", "reliable")
+func c2s_book() -> void:
+	if server:
+		server.on_book(multiplayer.get_remote_sender_id())
+
+
+@rpc("any_peer", "call_remote", "reliable")
 func c2s_npc_sell(npc_id: int, item: String, n: int) -> void:
 	if server:
 		server.on_npc_sell(multiplayer.get_remote_sender_id(), npc_id, item, n)
@@ -446,6 +452,12 @@ func s2c_notice(code: String, args: Dictionary) -> void:
 func s2c_arenas(list: Array) -> void:
 	if client:
 		client.on_arenas(list)
+
+
+@rpc("authority", "call_remote", "reliable")
+func s2c_book(state: Dictionary) -> void:
+	if client:
+		client.on_book(state)
 
 
 @rpc("authority", "call_remote", "reliable")

@@ -42,6 +42,7 @@ signal horse_changed
 signal car_changed
 signal inventory_changed
 signal blueprints_changed
+signal book_changed
 signal arenas_changed
 signal blueprint_loaded(id: int, data: PackedInt32Array)
 signal offer_received(data: Dictionary)
@@ -356,6 +357,8 @@ func on_arenas(list: Array) -> void:
 
 ## کتابخانهٔ سازه‌ها
 var blueprints: Array = []   # خلاصه‌ها: {id, name, author, shared, n, size}
+## کتاب ماجراجویی: rows = [[id, روز بازشدن (۰ = باز نشده), جایزه, نقش راوی]]، done، total و roles (شناسهٔ NPC ← نقش)
+var book: Dictionary = {"rows": [], "done": 0, "total": 0, "roles": {}}
 
 
 func bp_save(bp_name: String, data: PackedInt32Array, shared: bool) -> void:
@@ -366,6 +369,21 @@ func bp_save(bp_name: String, data: PackedInt32Array, shared: bool) -> void:
 func bp_op(op: String, id: int = 0) -> void:
 	if is_logged_in:
 		_tx("c2s_bp_op", [op, id])
+
+
+func request_book() -> void:
+	if is_logged_in:
+		_tx("c2s_book", [])
+
+
+func on_book(state: Dictionary) -> void:
+	book = state
+	book_changed.emit()
+
+
+## نقش یک NPC (villager اگر نامشخص).
+func npc_role(npc_id: int) -> String:
+	return str(book.get("roles", {}).get(str(npc_id), "villager"))
 
 
 func on_bp_list(list: Array) -> void:
@@ -707,6 +725,7 @@ func on_login_result(ok: bool, error: String, info: Dictionary) -> void:
 	job_id = int(info.get("job", 0))
 	spawn = Vector2(info["pos"][0], info["pos"][1])
 	mirror = CityState.new(int(info["seed"]), str(info["city_id"]))
+	mirror.set_climate(str(info.get("climate", "temperate")))
 	mirror.track_nav = false
 	is_logged_in = true
 	logged_in.emit()

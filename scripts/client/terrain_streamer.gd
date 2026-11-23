@@ -32,9 +32,23 @@ func setup(world_gen, view_radius: int) -> void:
 	_terrain_mat = MeshBuilder.material()
 	_tree_mat = MeshBuilder.material()
 	var mb := MeshBuilder.new()
-	mb.add_cylinder(Vector3.ZERO, 0.2, 0.14, 1.3, 5, Color("6b4a2d"))
-	mb.add_cylinder(Vector3(0, 0.9, 0), 1.25, 0.0, 2.2, 7, Color("2f7a3f"))
-	mb.add_cylinder(Vector3(0, 1.9, 0), 0.95, 0.0, 1.8, 7, Color("3a8f4a"))
+	match str(world.climate):
+		"winter":
+			# کاج برفی: سه طبقهٔ مخروطی تیره با کلاه سفید
+			mb.add_cylinder(Vector3.ZERO, 0.2, 0.14, 1.1, 5, Color("5a4030"))
+			mb.add_cylinder(Vector3(0, 0.7, 0), 1.2, 0.0, 1.7, 7, Color("2d5f48"))
+			mb.add_cylinder(Vector3(0, 1.5, 0), 0.95, 0.0, 1.5, 7, Color("34705a"))
+			mb.add_cylinder(Vector3(0, 2.3, 0), 0.65, 0.0, 1.3, 7, Color("3c8068"))
+			mb.add_cylinder(Vector3(0, 3.0, 0), 0.3, 0.0, 0.6, 7, Color("f4f8fb"))
+		"desert":
+			# نخل: تنهٔ بلند و باریک با تاج پهن
+			mb.add_cylinder(Vector3.ZERO, 0.17, 0.1, 3.3, 5, Color("9a7248"))
+			mb.add_cylinder(Vector3(0, 3.0, 0), 1.5, 0.15, 0.45, 8, Color("4f8f3a"))
+			mb.add_cylinder(Vector3(0, 3.3, 0), 0.9, 0.0, 0.5, 8, Color("68a748"))
+		_:
+			mb.add_cylinder(Vector3.ZERO, 0.2, 0.14, 1.3, 5, Color("6b4a2d"))
+			mb.add_cylinder(Vector3(0, 0.9, 0), 1.25, 0.0, 2.2, 7, Color("2f7a3f"))
+			mb.add_cylinder(Vector3(0, 1.9, 0), 0.95, 0.0, 1.8, 7, Color("3a8f4a"))
 	_tree_mesh = mb.build()
 	var rb := MeshBuilder.new()
 	rb.add_cylinder(Vector3.ZERO, 0.95, 0.55, 0.9, 6, Color("8f9298"))
@@ -136,6 +150,7 @@ func _build_chunk(c: Vector2i) -> Node3D:
 			var col: Color = WorldGen.biome_color(biome)
 			if biome == "water":
 				col = Color("c8b88a")
+			col = _climate_tint(col, biome, avg)
 			var jitter := float(absi(((i * 73856093) ^ (j * 19349663) ^ (c.x * 83492791) ^ (c.y * 2654435761)) % 100)) / 100.0
 			col = col.darkened(0.06 * jitter).lightened(0.04 * (1.0 - jitter))
 			for p in [a, b, cc]:
@@ -152,6 +167,22 @@ func _build_chunk(c: Vector2i) -> Node3D:
 	root.add_child(mi)
 	_add_resources(root, c)
 	return root
+
+
+## رنگ زمین بر اساس اقلیم: قلهٔ برفی و ساحل یخ‌زده در زمستان، ساحل روشن‌تر در صحرا.
+func _climate_tint(col: Color, biome: String, h: float) -> Color:
+	match str(world.climate):
+		"winter":
+			if biome == "mountain":
+				return col.lerp(Color("f4f8fb"), smoothstep(14.0, 20.0, h))
+			if biome == "beach":
+				return col.lerp(Color("d4dde4"), 0.7)
+			if biome == "water":
+				return Color("9fb0b8")
+		"desert":
+			if biome == "beach":
+				return col.lerp(Color("eed9a0"), 0.5)
+	return col
 
 
 ## منابع قابل برداشت این چانک (درخت، سنگ، خاک رس). برداشت‌شده‌ها کشیده نمی‌شوند.

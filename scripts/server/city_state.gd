@@ -13,6 +13,8 @@ const Arenas = preload("res://scripts/server/arenas.gd")
 const Mine = preload("res://scripts/shared/mine.gd")
 const RailNetwork = preload("res://scripts/shared/rail_network.gd")
 const Scenarios = preload("res://scripts/shared/scenarios.gd")
+const Story = preload("res://scripts/shared/story.gd")
+const Book = preload("res://scripts/server/book.gd")
 
 const SAVE_VERSION := 1
 const MAX_REQUEST_MEMORY := 64
@@ -100,6 +102,11 @@ func _init(s: int = 12345, id: String = "city_1") -> void:
 	nav = NpcNav.new(self)
 
 
+## اقلیم زمین را می‌گذارد (ناشناخته = temperate). فقط ظاهر زیست‌بوم و منابع را عوض می‌کند.
+func set_climate(c: String) -> void:
+	world.climate = c if FWConst.CLIMATES.has(c) else "temperate"
+
+
 static func hash_token(token: String) -> String:
 	return token.sha256_text()
 
@@ -136,6 +143,8 @@ func authenticate(player_name: String, token: String) -> Dictionary:
 		"work_acc": 0.0,
 		"energy": FWConst.ENERGY_MAX,
 		"inv": Scenarios.start_items(scenario),
+		"book": {},
+		"stats": {},
 	}
 	_log(player_name, "account_created", {})
 	return {"ok": true, "token": t}
@@ -159,6 +168,8 @@ func provision_admin(player_name: String, secret: String, role: String = FWConst
 		"work_acc": 0.0,
 		"energy": FWConst.ENERGY_MAX,
 		"inv": Scenarios.start_items(scenario),
+		"book": {},
+		"stats": {},
 	}
 
 
@@ -1417,8 +1428,15 @@ func npc_interact(player_name: String, npc_id: int, item: String, pos: Vector2) 
 	acc["npc_day"][dkey] = day_count
 	var np: int = mini(FWConst.FRIEND_MAX, pts + gain)
 	acc["friends"][str(npc_id)] = np
+	if not (acc.get("stats") is Dictionary):
+		acc["stats"] = {}
+	var stat_key := "talks" if kind == "talk" else "gifts"
+	acc["stats"][stat_key] = int(acc["stats"].get(stat_key, 0)) + 1
+	var role := Story.role_of(scenario, npc_id)
+	var dlg: Dictionary = Book.dialogue(self, player_name, role, friend_level(np)) if kind == "talk" else {"line": "", "hint": "", "entry": ""}
 	return {"ok": true, "kind": kind, "npc": str(npc["name"]), "npc_id": npc_id, "points": np, "level": friend_level(np),
-		"reward": reward, "item": item, "money": int(acc["money"])}
+		"reward": reward, "item": item, "money": int(acc["money"]),
+		"role": role, "line": dlg["line"], "hint": dlg["hint"], "entry": dlg["entry"]}
 
 
 ## فروش n واحد کالا به NPC نزدیک. قیمت هر واحد = قیمت فعلی بازار + پاداش دوستی؛ پول از کیف خود NPC می‌رود،
@@ -2344,6 +2362,25 @@ static func _load_friends(v) -> Dictionary:
 	return out
 
 
+## دستاوردهای بازشده: شناسهٔ معتبر ← روز بازشدن. شناسهٔ ناشناخته دور ریخته می‌شود.
+static func _load_book(v) -> Dictionary:
+	var out: Dictionary = {}
+	if v is Dictionary:
+		for k in v:
+			if not Story.entry(str(k)).is_empty():
+				out[str(k)] = maxi(0, int(v[k]))
+	return out
+
+
+## شمارنده‌های ساده برای دستاوردها (فقط کلیدهای شناخته‌شده).
+static func _load_stats(v) -> Dictionary:
+	var out: Dictionary = {}
+	if v is Dictionary:
+		for k in ["talks", "gifts"]:
+			out[k] = clampi(int(v.get(k, 0)), 0, 1000000)
+	return out
+
+
 static func _load_npc_day(v) -> Dictionary:
 	var out: Dictionary = {}
 	if v is Dictionary:
@@ -2424,6 +2461,7 @@ static func from_dict(d: Dictionary):
 	cs.villages_seeded = bool(d.get("villages_seeded", false))
 	cs.scenario = str(d.get("scenario", ""))
 	cs.scenario_applied = bool(d.get("scenario_applied", false))
+	cs.set_climate(Scenarios.climate(cs.scenario))
 	cs.next_god_id = maxi(1, int(d.get("next_god_id", 1)))
 	var gl = d.get("god", [])
 	if gl is Array:
@@ -2481,6 +2519,8 @@ static func from_dict(d: Dictionary):
 			"car": bool(a.get("car", false)),
 			"friends": _load_friends(a.get("friends", null)),
 			"npc_day": _load_npc_day(a.get("npc_day", null)),
+			"book": _load_book(a.get("book", null)),
+			"stats": _load_stats(a.get("stats", null)),
 		}
 	for b in d["buildings"]:
 		if not (b.has("id") and b.has("type") and b.has("owner") and b.has("cx") and b.has("cz")):

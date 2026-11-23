@@ -2,6 +2,7 @@ extends SceneTree
 ## بات تست یکپارچه. با tests/integration.sh اجرا می‌شود.
 ## godot --headless --path . --script res://tests/bot.gd -- --scenario builder --name alice --port 17777
 
+const Story = preload("res://scripts/shared/story.gd")
 const FWConst = preload("res://scripts/core/const.gd")
 const NetScript = preload("res://scripts/networking/net.gd")
 const GameClient = preload("res://scripts/networking/game_client.gd")
@@ -228,7 +229,9 @@ func _observer() -> void:
 
 
 func _persist() -> void:
-	expect(client.money == FWConst.START_MONEY - 300, "money persisted across restart (money=%d)" % client.money)
+	# خانه ۳۰۰ سکه خرج دارد و دستاورد اختیاری «صاحب‌خانه» در کتاب ماجراجویی یک‌بار جایزه می‌دهد.
+	var house_reward: int = int(Story.entry("first_house")["reward"])
+	expect(client.money == FWConst.START_MONEY - 300 + house_reward, "money persisted across restart (money=%d)" % client.money)
 	var mine := 0
 	for id in client.mirror.buildings:
 		if client.mirror.buildings[id]["owner"] == client.my_name:
