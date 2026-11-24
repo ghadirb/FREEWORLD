@@ -5,6 +5,8 @@ extends RefCounted
 
 const FWConst = preload("res://scripts/core/const.gd")
 const Story = preload("res://scripts/shared/story.gd")
+const Scenarios = preload("res://scripts/shared/scenarios.gd")
+const Boat = preload("res://scripts/shared/boat.gd")
 
 
 ## دستاوردهای تازه‌بازشده برای بازیکن: [{id, reward}]. ctx: {pos: Vector3, mine: String}.
@@ -17,7 +19,7 @@ static func evaluate(cs, player: String, ctx: Dictionary) -> Array:
 		acc["book"] = {}
 	var type_counts: Dictionary = {}
 	var type_counts_ready := false
-	for e in Story.entries_for(cs.world.climate, cs.creative):
+	for e in Story.entries_for(cs.world.climate, cs.creative, cs.scenario):
 		var id := str(e["id"])
 		if acc["book"].has(id):
 			continue
@@ -95,7 +97,45 @@ static func _met(cs, acc: Dictionary, player: String, e: Dictionary, ctx: Dictio
 			return full >= int(e["a"])
 		"money":
 			return int(acc["money"]) >= int(e["a"])
+		"legend":
+			# مرحله‌ها به ترتیب‌اند: مرحلهٔ قبل باید باز شده باشد.
+			if int(e["a"]) > 0 and not (acc["book"] as Dictionary).has("lg_%s_%d" % [str(e["scenario"]), int(e["a"])]):
+				return false
+			var spot: Vector2 = legend_spot(cs, e)
+			return Vector2(pos.x, pos.z).distance_to(spot) <= float(e["r"])
 	return false
+
+
+## جای واقعی یک مرحلهٔ افسانه: نزدیک نقطهٔ نامی (فاصله از مرکز)، اولین خشکیِ قابل‌ایستادن در حلقه‌های بزرگ‌شونده.
+## قطعی است (فقط از Seed و دادهٔ ثابت)، پس سرور و نشانگر ساخته‌شده همیشه یک جا را نشان می‌دهند.
+static func legend_spot(cs, e: Dictionary) -> Vector2:
+	var cx: float = float(Scenarios.CENTER) + float(e["dx"])
+	var cz: float = float(Scenarios.CENTER) + float(e["dz"])
+	for ring in range(0, 13):
+		var rad := float(ring) * 4.0
+		var n := 1 if ring == 0 else 16
+		for k in range(n):
+			var a := TAU * float(k) / float(n)
+			var x := cx + cos(a) * rad
+			var z := cz + sin(a) * rad
+			if cs.world.height_at(x, z) < 0.5 or Boat.is_water(cs, x, z):
+				continue
+			if cs.world.near_mine_entrance(x, z, FWConst.MINE_NO_BUILD_RADIUS) or cs.world.village_solid_at(x, z, 3.0):
+				continue
+			return Vector2(floorf(x) + 0.5, floorf(z) + 0.5)
+	return Vector2(cx, cz)
+
+
+## مرحلهٔ بعدی افسانه برای بازیکن (خالی اگر جهان افسانه ندارد یا همه تمام شده): {id, x, z}.
+static func next_legend(cs, player: String) -> Dictionary:
+	if not cs.accounts.has(player):
+		return {}
+	var book: Variant = cs.accounts[player].get("book", {})
+	for e in Story.legend_entries(cs.scenario):
+		if not (book is Dictionary and (book as Dictionary).has(str(e["id"]))):
+			var sp: Vector2 = legend_spot(cs, e)
+			return {"id": str(e["id"]), "x": sp.x, "z": sp.y}
+	return {}
 
 
 ## وضعیت کتاب برای کلاینت: ورودی‌های این جهان به ترتیب، با روز بازشدن (۰ = هنوز باز نشده) و نقش NPCها.
@@ -105,7 +145,7 @@ static func public_state(cs, player: String) -> Dictionary:
 	var book: Dictionary = {}
 	if cs.accounts.has(player) and cs.accounts[player].get("book") is Dictionary:
 		book = cs.accounts[player]["book"]
-	for e in Story.entries_for(cs.world.climate, cs.creative):
+	for e in Story.entries_for(cs.world.climate, cs.creative, cs.scenario):
 		var id := str(e["id"])
 		var d := int(book.get(id, -1)) + 1 if book.has(id) else 0
 		if d > 0:
@@ -117,7 +157,7 @@ static func public_state(cs, player: String) -> Dictionary:
 	var quests: Dictionary = {}
 	if cs.accounts.has(player) and cs.accounts[player].get("quests") is Dictionary:
 		quests = cs.accounts[player]["quests"].duplicate()
-	return {"rows": rows, "done": done, "total": rows.size(), "roles": roles, "quests": quests}
+	return {"rows": rows, "done": done, "total": rows.size(), "roles": roles, "quests": quests, "legend": next_legend(cs, player)}
 
 
 ## خط‌های گفت‌وگو برای نقش: {line, hint, entry}. hint خالی یعنی «همه‌چیز انجام شده» (از done_key استفاده می‌شود).
@@ -134,7 +174,7 @@ static func dialogue(cs, player: String, role: String, level: int) -> Dictionary
 		out["entry"] = ""
 		return out
 	var mine: Array = []
-	for e in Story.entries_for(cs.world.climate, cs.creative):
+	for e in Story.entries_for(cs.world.climate, cs.creative, cs.scenario):
 		if str(e["giver"]) == role:
 			mine.append(e)
 	if mine.is_empty():

@@ -56,6 +56,7 @@ func _init() -> void:
 	test_npc_sell()
 	test_npc_buy()
 	test_furniture()
+	test_legends()
 	test_minigame()
 	test_arenas()
 	test_arena_edit()
@@ -1831,6 +1832,85 @@ func test_furniture() -> void:
 	cs.furn_remove("home", hid, 0)
 	cs.furn_place("home", hid, "sofa", 0.0, -3.0, 0)
 	check(int(cs.accounts["home"]["money"]) == mc, "creative mode is free")
+
+
+func test_legends() -> void:
+	print("[legends]")
+	var ids := {}
+	var data_ok := true
+	var texts_ok := true
+	var missing := ""
+	for sc in Story.LEGENDS:
+		var cast_roles: Array = []
+		for c in Story.cast_for(str(sc)):
+			cast_roles.append(str(c[1]))
+		if not Scenarios.has(str(sc)):
+			data_ok = false
+		for e in Story.legend_entries(str(sc)):
+			if ids.has(e["id"]) or Story.entry(str(e["id"])).is_empty() or not cast_roles.has(str(e["giver"])):
+				data_ok = false
+			ids[e["id"]] = true
+			if int(e["reward"]) < 0 or int(e["reward"]) > 100:
+				data_ok = false
+			for lang in ["fa", "en"]:
+				Loc.lang = lang
+				for k in ["book_" + str(e["id"]), "book_%s_d" % str(e["id"])]:
+					if Loc.t(k) == k:
+						texts_ok = false
+						missing = k
+	for lang in ["fa", "en"]:
+		Loc.lang = lang
+		for k in ["book_legend"] + range(8).map(func(i): return "legend_dir_%d" % i):
+			if Loc.t(k) == k:
+				texts_ok = false
+				missing = k
+	Loc.lang = "fa"
+	check(data_ok, "legend steps have unique ids, known worlds, cast givers and small rewards (%d steps)" % ids.size())
+	check(texts_ok, "every legend step and direction has Persian and English text (%s)" % missing)
+	check(Story.legend_entries("").is_empty() and Story.entries_for("temperate", false, "").size() == Story.entries_for("temperate", false).size(), "worlds without a legend are unchanged")
+	var cs = CityState.new(int(Scenarios.def("medieval_fort")["seed"]))
+	ScenarioApply.apply(cs, "medieval_fort")
+	_login(cs, "hero")
+	var steps: Array = Story.legend_entries("medieval_fort")
+	var spots: Array = []
+	var dry := true
+	var marked := true
+	for e in steps:
+		var sp: Vector2 = Book.legend_spot(cs, e)
+		spots.append(sp)
+		if Boat.is_water(cs, sp.x, sp.y):
+			dry = false
+		var found := false
+		for y in range(0, 24):
+			if cs.blocks.has(Vector3i(int(floor(sp.x)), y, int(floor(sp.y)))):
+				found = true
+				break
+		if not found:
+			marked = false
+	check(dry, "every legend stop is on dry land")
+	check(marked, "every legend stop has a built marker")
+	check(Book.legend_spot(cs, steps[0]) == spots[0], "legend stops are deterministic")
+	var acc: Dictionary = cs.accounts["hero"]
+	var m0: int = int(acc["money"])
+	var at2 := {"pos": Vector3(spots[1].x, 2.0, spots[1].y), "mine": ""}
+	var got2: Array = Book.evaluate(cs, "hero", at2)
+	check(not got2.any(func(g): return str(g["id"]).begins_with("lg_")), "a later stop does not unlock before the earlier ones")
+	var at1 := {"pos": Vector3(spots[0].x, 2.0, spots[0].y), "mine": ""}
+	var got1: Array = Book.evaluate(cs, "hero", at1)
+	check(got1.any(func(g): return g["id"] == "lg_medieval_fort_1") and not got1.any(func(g): return g["id"] == "lg_medieval_fort_2"), "reaching the first stop unlocks only the first step")
+	check(int(acc["money"]) >= m0 + int(steps[0]["reward"]), "the legend reward is paid")
+	check(Book.evaluate(cs, "hero", at1).is_empty() or not Book.evaluate(cs, "hero", at1).any(func(g): return str(g["id"]).begins_with("lg_")), "a step unlocks only once")
+	check(Book.evaluate(cs, "hero", at2).any(func(g): return g["id"] == "lg_medieval_fort_2"), "the second stop unlocks after the first")
+	var nxt: Dictionary = Book.public_state(cs, "hero")["legend"]
+	check(str(nxt.get("id", "")) == "lg_medieval_fort_3", "the book points at the next stop")
+	var cs2 = CityState.from_dict(cs.to_dict())
+	check(cs2 != null and (cs2.accounts["hero"]["book"] as Dictionary).has("lg_medieval_fort_2"), "legend progress survives save/load")
+	var c2 = CityState.new(int(Scenarios.def("frozen_north")["seed"]))
+	ScenarioApply.apply(c2, "frozen_north")
+	_login(c2, "kid")
+	var f1: Dictionary = Story.legend_entries("frozen_north")[0]
+	var fs: Vector2 = Book.legend_spot(c2, f1)
+	check(Book.evaluate(c2, "kid", {"pos": Vector3(fs.x, 2.0, fs.y), "mine": ""}).any(func(g): return g["id"] == "lg_frozen_north_1"), "winter world legend also works")
 
 
 func test_npc_friendship() -> void:

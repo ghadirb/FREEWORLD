@@ -1207,6 +1207,20 @@ func _fill_book() -> void:
 	for c in _book_rows.get_children():
 		c.queue_free()
 	_book_progress.text = Loc.fmt("book_progress", [Loc.digits(str(int(client.book.get("done", 0)))), Loc.digits(str(int(client.book.get("total", 0))))])
+	var lg: Variant = client.book.get("legend", {})
+	if lg is Dictionary and not (lg as Dictionary).is_empty():
+		var tx: float = float(lg["x"]) - view.my_pos.x
+		var tz: float = float(lg["z"]) - view.my_pos.z
+		var fwd := Vector2(sin(view.my_yaw), cos(view.my_yaw))
+		var right := Vector2(-fwd.y, fwd.x)
+		var tv := Vector2(tx, tz)
+		var sector := int(round(atan2(tv.dot(right), tv.dot(fwd)) / (PI / 4.0))) % 8
+		if sector < 0:
+			sector += 8
+		var lgl := _label(Loc.fmt("book_legend", [Loc.t("book_" + str(lg["id"])), Loc.digits(str(int(round(tv.length())))), Loc.t("legend_dir_%d" % sector)]), 18, Color("ffd24a"))
+		lgl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		lgl.custom_minimum_size = Vector2(520, 0)
+		_book_rows.add_child(lgl)
 	for row in client.book.get("rows", []):
 		var id := str(row[0])
 		var done: bool = int(row[1]) > 0

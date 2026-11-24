@@ -103,6 +103,43 @@ const ENTRIES := [
 	{"id": "sand_city", "kind": "blocks_of", "a": "brick", "b": 40, "reward": 40, "giver": "innkeeper", "climate": "desert"},
 ]
 
+## «افسانه»: زنجیرهٔ اختیاری مقصدهای واقعی روی نقشهٔ هر جهان آماده (پروتکل ۳۶). هر مرحله باید به ترتیب انجام شود؛
+## دو متن book_<id> و book_<id>_d در Loc دارد. dx و dz فاصله از مرکز شهر (متر)؛ مکان نهایی را سرور روی خشکی می‌گذارد.
+## giver = نقشی که دربارهٔ مرحله حرف می‌زند؛ r = شعاع رسیدن (متر)؛ reward = سکهٔ کوچک (در جهان خلاقانه صفر).
+const LEGENDS := {
+	"medieval_fort": [
+		{"dx": -60, "dz": -30, "reward": 25, "giver": "elder"},
+		{"dx": 40, "dz": -90, "reward": 35, "giver": "guide"},
+		{"dx": 110, "dz": 20, "reward": 45, "giver": "smith"},
+		{"dx": 70, "dz": 110, "reward": 55, "giver": "farmer"},
+		{"dx": -90, "dz": 90, "reward": 90, "giver": "elder"},
+	],
+	"frozen_north": [
+		{"dx": 50, "dz": -70, "reward": 25, "giver": "hunter"},
+		{"dx": -80, "dz": -20, "reward": 40, "giver": "innkeeper"},
+		{"dx": -40, "dz": 100, "reward": 55, "giver": "hunter"},
+		{"dx": 100, "dz": 80, "reward": 90, "giver": "elder"},
+	],
+	"desert_caravan": [
+		{"dx": -70, "dz": 40, "reward": 25, "giver": "nomad"},
+		{"dx": 20, "dz": -100, "reward": 40, "giver": "innkeeper"},
+		{"dx": 110, "dz": -30, "reward": 55, "giver": "smith"},
+		{"dx": 60, "dz": 100, "reward": 90, "giver": "nomad"},
+	],
+}
+const LEGEND_RADIUS := 8.0
+
+
+## مرحله‌های افسانهٔ یک جهان به شکل ورودی کتاب (kind = legend). a = شمارهٔ مرحله (۰-پایه).
+static func legend_entries(scenario: String) -> Array:
+	var out: Array = []
+	var steps: Array = LEGENDS.get(scenario, [])
+	for i in range(steps.size()):
+		var st: Dictionary = steps[i]
+		out.append({"id": "lg_%s_%d" % [scenario, i + 1], "kind": "legend", "a": i, "b": 0, "reward": int(st["reward"]),
+			"giver": str(st["giver"]), "climate": "", "scenario": scenario, "dx": int(st["dx"]), "dz": int(st["dz"]), "r": LEGEND_RADIUS})
+	return out
+
 
 ## فهرست شخصیت‌های یک جهان (سناریوی ناشناخته یا خالی ← فهرست پیش‌فرض).
 static func cast_for(scenario: String) -> Array:
@@ -119,7 +156,7 @@ static func role_of(scenario: String, npc_id: int) -> String:
 
 
 ## دستاوردهای قابل‌دیدن این اقلیم؛ در جهان خلاقانه دستاوردهای سکه‌ای (پول) حذف می‌شوند.
-static func entries_for(climate: String, creative: bool) -> Array:
+static func entries_for(climate: String, creative: bool, scenario: String = "") -> Array:
 	var out: Array = []
 	for e in ENTRIES:
 		if str(e["climate"]) != "" and str(e["climate"]) != climate:
@@ -127,6 +164,7 @@ static func entries_for(climate: String, creative: bool) -> Array:
 		if creative and str(e["kind"]) == "money":
 			continue
 		out.append(e)
+	out.append_array(legend_entries(scenario))
 	return out
 
 
@@ -134,6 +172,11 @@ static func entry(id: String) -> Dictionary:
 	for e in ENTRIES:
 		if str(e["id"]) == id:
 			return e
+	if id.begins_with("lg_"):
+		for sc in LEGENDS:
+			for e in legend_entries(str(sc)):
+				if str(e["id"]) == id:
+					return e
 	return {}
 
 

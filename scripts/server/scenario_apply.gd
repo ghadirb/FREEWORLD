@@ -6,6 +6,7 @@ const FWConst = preload("res://scripts/core/const.gd")
 const Scenarios = preload("res://scripts/shared/scenarios.gd")
 const NpcSim = preload("res://scripts/server/npc_sim.gd")
 const Story = preload("res://scripts/shared/story.gd")
+const Book = preload("res://scripts/server/book.gd")
 
 const OWNER := "world"
 
@@ -26,6 +27,7 @@ static func apply(cs, id: String) -> int:
 	NpcSim.ensure_npcs(cs, clampi(int(d["npcs"]), FWConst.NPC_COUNT, FWConst.NPC_NAMES.size()))
 	_name_cast(cs, id)
 	var placed := _place_columns(cs, Scenarios.columns(id))
+	placed += _place_legend_markers(cs, id)
 	_scatter_god(cs, id, d)
 	return placed
 
@@ -60,6 +62,22 @@ static func _place_columns(cs, cols: Array) -> int:
 			cs._add_block(Vector3i(x, y, z), type, 0, OWNER)
 			placed += 1
 	return placed
+
+
+## نشانگر هر مرحلهٔ افسانه: ستون سنگی با چراغ بالایش و حلقهٔ آجری پایش، تا در نقشه دیده شود (قطعی و فقط یک بار).
+static func _place_legend_markers(cs, id: String) -> int:
+	var cols: Array = []
+	for e in Story.legend_entries(id):
+		var sp: Vector2 = Book.legend_spot(cs, e)
+		var x := int(floor(sp.x))
+		var z := int(floor(sp.y))
+		for dx in range(-1, 2):
+			for dz in range(-1, 2):
+				if dx != 0 or dz != 0:
+					cols.append([x + dx, z + dz, 0, 1, "brick"])
+		cols.append([x, z, 0, 4, "stone"])
+		cols.append([x, z, 4, 1, "lamp"])
+	return _place_columns(cs, cols)
 
 
 ## درخت و حیوان‌های آرام دور میدان، قطعی از Seed جهان (جدا از rng سازه‌ها).
