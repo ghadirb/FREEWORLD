@@ -85,6 +85,14 @@ static func _met(cs, acc: Dictionary, player: String, e: Dictionary, ctx: Dictio
 			return st is Dictionary and int(st.get(str(e["a"]), 0)) >= int(e["b"])
 		"flag":
 			return bool(acc.get(str(e["a"]), false))
+		"chains":
+			var full := 0
+			var q: Variant = acc.get("quests", {})
+			if q is Dictionary:
+				for role in q:
+					if int(q[role]) >= Story.quest_total(str(role)):
+						full += 1
+			return full >= int(e["a"])
 		"money":
 			return int(acc["money"]) >= int(e["a"])
 	return false
@@ -106,7 +114,10 @@ static func public_state(cs, player: String) -> Dictionary:
 	var roles: Dictionary = {}
 	for n in cs.npcs:
 		roles[str(int(n["id"]))] = Story.role_of(cs.scenario, int(n["id"]))
-	return {"rows": rows, "done": done, "total": rows.size(), "roles": roles}
+	var quests: Dictionary = {}
+	if cs.accounts.has(player) and cs.accounts[player].get("quests") is Dictionary:
+		quests = cs.accounts[player]["quests"].duplicate()
+	return {"rows": rows, "done": done, "total": rows.size(), "roles": roles, "quests": quests}
 
 
 ## خط‌های گفت‌وگو برای نقش: {line, hint, entry}. hint خالی یعنی «همه‌چیز انجام شده» (از done_key استفاده می‌شود).
@@ -115,6 +126,13 @@ static func dialogue(cs, player: String, role: String, level: int) -> Dictionary
 	var book: Dictionary = {}
 	if cs.accounts.has(player) and cs.accounts[player].get("book") is Dictionary:
 		book = cs.accounts[player]["book"]
+	var qdone := 0
+	if cs.accounts.has(player) and cs.accounts[player].get("quests") is Dictionary:
+		qdone = int(cs.accounts[player]["quests"].get(role, 0))
+	if not Story.quest_step(role, qdone).is_empty():
+		out["hint"] = "dlg_quest_hint"
+		out["entry"] = ""
+		return out
 	var mine: Array = []
 	for e in Story.entries_for(cs.world.climate, cs.creative):
 		if str(e["giver"]) == role:

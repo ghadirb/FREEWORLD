@@ -145,6 +145,7 @@ func authenticate(player_name: String, token: String) -> Dictionary:
 		"inv": Scenarios.start_items(scenario),
 		"book": {},
 		"stats": {},
+		"quests": {},
 	}
 	_log(player_name, "account_created", {})
 	return {"ok": true, "token": t}
@@ -170,6 +171,7 @@ func provision_admin(player_name: String, secret: String, role: String = FWConst
 		"inv": Scenarios.start_items(scenario),
 		"book": {},
 		"stats": {},
+		"quests": {},
 	}
 
 
@@ -1472,6 +1474,59 @@ func npc_sell(player_name: String, npc_id: int, item: String, n: int, pos: Vecto
 	return {"ok": true, "npc": str(npc["name"]), "item": item, "count": count, "total": total, "money": int(acc["money"])}
 
 
+## تحویل مرحلهٔ بعدی مأموریت به NPC نزدیک. همه‌چیز را سرور می‌سنجد: فاصله، سطح دوستی، موجودی.
+## جهان خلاقانه: کالا کم نمی‌شود و سکه‌ای داده نمی‌شود، ولی پیشرفت و دوستی ثبت می‌شود.
+func quest_turn_in(player_name: String, npc_id: int, pos: Vector2) -> Dictionary:
+	if not accounts.has(player_name):
+		return {"ok": false, "error": "no_account"}
+	var npc: Dictionary = {}
+	for nn in npcs:
+		if int(nn["id"]) == npc_id:
+			npc = nn
+			break
+	if npc.is_empty():
+		return {"ok": false, "error": "no_npc"}
+	if pos.distance_to(Vector2(float(npc["x"]), float(npc["z"]))) > FWConst.NPC_TALK_RANGE:
+		return {"ok": false, "error": "too_far"}
+	var role := Story.role_of(scenario, npc_id)
+	var acc: Dictionary = accounts[player_name]
+	if not (acc.get("quests") is Dictionary):
+		acc["quests"] = {}
+	var done := int(acc["quests"].get(role, 0))
+	var step: Dictionary = Story.quest_step(role, done)
+	if step.is_empty():
+		return {"ok": false, "error": "quest_none"}
+	var pts := friendship_of(acc, npc_id)
+	if friend_level(pts) < int(step["need"]):
+		return {"ok": false, "error": "quest_friend"}
+	var item := str(step["item"])
+	var n := int(step["n"])
+	if not creative and int(acc["inv"].get(item, 0)) < n:
+		return {"ok": false, "error": "no_items"}
+	if not creative:
+		acc["inv"][item] = int(acc["inv"][item]) - n
+	var reward := 0 if creative else int(step["reward"])
+	_gain(acc, reward)
+	var bonus_item := ""
+	var bonus_n := 0
+	if step.has("bonus") and done + 1 >= Story.quest_total(role):
+		bonus_item = str(step["bonus"][0])
+		bonus_n = int(step["bonus"][1])
+		if not creative:
+			acc["inv"][bonus_item] = int(acc["inv"].get(bonus_item, 0)) + bonus_n
+	acc["quests"][role] = done + 1
+	if not (acc.get("stats") is Dictionary):
+		acc["stats"] = {}
+	acc["stats"]["quests"] = int(acc["stats"].get("quests", 0)) + 1
+	if not (acc.get("friends") is Dictionary):
+		acc["friends"] = {}
+	acc["friends"][str(npc_id)] = mini(FWConst.FRIEND_MAX, pts + Story.QUEST_FRIEND_POINTS)
+	_log(player_name, "quest", {"npc": npc_id, "role": role, "step": done + 1, "reward": reward})
+	return {"ok": true, "npc": str(npc["name"]), "role": role, "step": done + 1, "total": Story.quest_total(role),
+		"reward": reward, "item": item, "n": n, "bonus_item": bonus_item, "bonus_n": bonus_n if not creative else 0,
+		"money": int(acc["money"])}
+
+
 ## سهمیهٔ باقی‌ماندهٔ فروش روزانهٔ یک NPC برای کالا (روز تازه ← سهمیه از نو).
 func _npc_stock_left(npc: Dictionary, item: String) -> int:
 	if int(npc.get("stock_day", -1)) != day_count:
@@ -2373,10 +2428,20 @@ static func _load_book(v) -> Dictionary:
 
 
 ## شمارنده‌های ساده برای دستاوردها (فقط کلیدهای شناخته‌شده).
+## پیشرفت مأموریت‌ها: نقش معتبر ← تعداد مرحله‌های تمام‌شده (۰ تا طول زنجیره).
+static func _load_quests(v) -> Dictionary:
+	var out: Dictionary = {}
+	if v is Dictionary:
+		for k in v:
+			if Story.QUESTS.has(str(k)):
+				out[str(k)] = clampi(int(v[k]), 0, Story.quest_total(str(k)))
+	return out
+
+
 static func _load_stats(v) -> Dictionary:
 	var out: Dictionary = {}
 	if v is Dictionary:
-		for k in ["talks", "gifts"]:
+		for k in ["talks", "gifts", "quests"]:
 			out[k] = clampi(int(v.get(k, 0)), 0, 1000000)
 	return out
 
@@ -2521,6 +2586,7 @@ static func from_dict(d: Dictionary):
 			"npc_day": _load_npc_day(a.get("npc_day", null)),
 			"book": _load_book(a.get("book", null)),
 			"stats": _load_stats(a.get("stats", null)),
+			"quests": _load_quests(a.get("quests", null)),
 		}
 	for b in d["buildings"]:
 		if not (b.has("id") and b.has("type") and b.has("owner") and b.has("cx") and b.has("cz")):

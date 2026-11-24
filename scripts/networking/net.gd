@@ -201,6 +201,12 @@ func c2s_book() -> void:
 
 
 @rpc("any_peer", "call_remote", "reliable")
+func c2s_quest(npc_id: int) -> void:
+	if server:
+		server.on_quest(multiplayer.get_remote_sender_id(), npc_id)
+
+
+@rpc("any_peer", "call_remote", "reliable")
 func c2s_npc_sell(npc_id: int, item: String, n: int) -> void:
 	if server:
 		server.on_npc_sell(multiplayer.get_remote_sender_id(), npc_id, item, n)

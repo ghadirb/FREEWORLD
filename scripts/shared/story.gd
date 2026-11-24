@@ -17,6 +17,53 @@ const CASTS := {
 	"desert_caravan": [["کاوه", "nomad"], ["گلنار", "innkeeper"], ["مهرداد", "smith"]],
 }
 
+## مأموریت‌های چندمرحلهٔ هر نقش (زنجیره‌ای، به ترتیب): تحویل کالا به همان NPC.
+## need = حداقل سطح دوستی لازم (۰ آشنا، ۱ دوست، ۲ دوست صمیمی)؛ reward = سکه؛ bonus = [کالا، تعداد] فقط در مرحلهٔ آخر.
+## هر مرحله ۱۲ امتیاز دوستی هم می‌دهد. در جهان خلاقانه کالا گرفته نمی‌شود و سکه‌ای داده نمی‌شود، ولی پیشرفت ثبت می‌شود.
+const QUESTS := {
+	"farmer": [
+		{"item": "wood", "n": 20, "need": 0, "reward": 30},
+		{"item": "stone", "n": 25, "need": 1, "reward": 60},
+		{"item": "brick", "n": 15, "need": 2, "reward": 120, "bonus": ["gem", 1]},
+	],
+	"baker": [
+		{"item": "wood", "n": 15, "need": 0, "reward": 25},
+		{"item": "fish", "n": 6, "need": 1, "reward": 50},
+		{"item": "glass", "n": 8, "need": 2, "reward": 110, "bonus": ["gold", 1]},
+	],
+	"guide": [
+		{"item": "stone", "n": 20, "need": 0, "reward": 30},
+		{"item": "brick", "n": 10, "need": 1, "reward": 60},
+		{"item": "iron", "n": 6, "need": 2, "reward": 130, "bonus": ["gem", 1]},
+	],
+	"hunter": [
+		{"item": "fish", "n": 8, "need": 0, "reward": 30},
+		{"item": "coal", "n": 10, "need": 1, "reward": 60},
+		{"item": "iron", "n": 8, "need": 2, "reward": 140, "bonus": ["gold", 1]},
+	],
+	"innkeeper": [
+		{"item": "wood", "n": 30, "need": 0, "reward": 35},
+		{"item": "fish", "n": 10, "need": 1, "reward": 60},
+		{"item": "glass", "n": 10, "need": 2, "reward": 120, "bonus": ["gold", 1]},
+	],
+	"nomad": [
+		{"item": "clay", "n": 20, "need": 0, "reward": 30},
+		{"item": "sand", "n": 25, "need": 1, "reward": 60},
+		{"item": "gold", "n": 2, "need": 2, "reward": 150, "bonus": ["gem", 1]},
+	],
+	"smith": [
+		{"item": "coal", "n": 10, "need": 0, "reward": 35},
+		{"item": "iron", "n": 5, "need": 1, "reward": 70},
+		{"item": "gold", "n": 2, "need": 2, "reward": 160, "bonus": ["gem", 1]},
+	],
+	"elder": [
+		{"item": "fish", "n": 5, "need": 0, "reward": 25},
+		{"item": "brick", "n": 12, "need": 1, "reward": 60},
+		{"item": "gem", "n": 1, "need": 2, "reward": 150, "bonus": ["gold", 2]},
+	],
+}
+const QUEST_FRIEND_POINTS := 12
+
 ## دستاوردها به ترتیب نمایش. kind و پارامترهای a، b را book.gd معنا می‌کند.
 ## climate خالی = همهٔ جهان‌ها. giver = نقشی که دربارهٔ آن حرف می‌زند.
 const ENTRIES := [
@@ -43,6 +90,9 @@ const ENTRIES := [
 	{"id": "sailor", "kind": "flag", "a": "boat", "b": 0, "reward": 40, "giver": "hunter", "climate": ""},
 	{"id": "summit", "kind": "height", "a": 16, "b": 0, "reward": 30, "giver": "hunter", "climate": ""},
 	{"id": "rider", "kind": "flag", "a": "horse", "b": 0, "reward": 40, "giver": "nomad", "climate": ""},
+	{"id": "quest_first", "kind": "stat", "a": "quests", "b": 1, "reward": 20, "giver": "elder", "climate": ""},
+	{"id": "quest_five", "kind": "stat", "a": "quests", "b": 5, "reward": 50, "giver": "elder", "climate": ""},
+	{"id": "quest_chain", "kind": "chains", "a": 1, "b": 0, "reward": 80, "giver": "elder", "climate": ""},
 	# زمستان
 	{"id": "snow_walker", "kind": "biome", "a": ["snow", "snow_forest"], "b": 0, "reward": 15, "giver": "hunter", "climate": "winter"},
 	{"id": "frost_summit", "kind": "biome", "a": ["mountain"], "b": 20, "reward": 40, "giver": "hunter", "climate": "winter"},
@@ -85,6 +135,18 @@ static func entry(id: String) -> Dictionary:
 		if str(e["id"]) == id:
 			return e
 	return {}
+
+
+## مرحلهٔ بعدی مأموریت نقش (۰-پایه)؛ خالی اگر نقش مأموریت ندارد یا زنجیره تمام شده.
+static func quest_step(role: String, done: int) -> Dictionary:
+	var chain: Array = QUESTS.get(role, [])
+	if done < 0 or done >= chain.size():
+		return {}
+	return chain[done]
+
+
+static func quest_total(role: String) -> int:
+	return (QUESTS.get(role, []) as Array).size()
 
 
 static func line_key(role: String, level: int) -> String:

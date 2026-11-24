@@ -27,7 +27,7 @@ const LOCAL_METHODS := [
 	"c2s_login", "c2s_move", "c2s_place", "c2s_remove", "c2s_collect",
 	"c2s_chat", "c2s_set_role", "c2s_get_audit", "c2s_job", "c2s_set_world", "c2s_enter", "c2s_leave",
 	"c2s_place_block", "c2s_remove_block", "c2s_paint_block", "c2s_build_region", "c2s_paste", "c2s_bp_save", "c2s_bp_op", "c2s_arena_create", "c2s_arena_edit", "c2s_arena_op", "c2s_undo", "c2s_gather", "c2s_dig", "c2s_fill", "c2s_craft", "c2s_trade", "c2s_offer", "c2s_offer_answer", "c2s_npc", "c2s_npc_sell", "c2s_npc_buy", "c2s_furn_place", "c2s_furn_remove", "c2s_minigame_start", "c2s_race_start", "c2s_grace", "c2s_boat", "c2s_horse", "c2s_car", "c2s_fish", "c2s_disaster", "c2s_god",
-	"c2s_mine_enter", "c2s_mine_leave", "c2s_mine_gather", "c2s_book",
+	"c2s_mine_enter", "c2s_mine_leave", "c2s_mine_gather", "c2s_book", "c2s_quest",
 ]
 
 var net: Node
@@ -1703,6 +1703,29 @@ func on_npc_sell(pid: int, npc_id: int, item: String, n: int) -> void:
 	_send(pid, "s2c_money", int(res["money"]))
 	_push_inv(pid, p["name"])
 	_notice(pid, "npc_bought", {"npc": res["npc"], "item": res["item"], "count": res["count"], "total": res["total"]})
+	_dirty = true
+
+
+func on_quest(pid: int, npc_id: int) -> void:
+	var p := _player_of(pid)
+	if p.is_empty():
+		return
+	if not _allow_action(p):
+		_notice(pid, "rate_limited")
+		return
+	if _indoors(p):
+		return
+	var pos: Vector3 = p["pos"]
+	var res: Dictionary = cs.quest_turn_in(p["name"], npc_id, Vector2(pos.x, pos.z))
+	if not res["ok"]:
+		_notice(pid, str(res["error"]))
+		return
+	_send(pid, "s2c_money", int(res["money"]))
+	_push_inv(pid, p["name"])
+	_notice(pid, "quest_done", {"npc": res["npc"], "step": res["step"], "total": res["total"], "reward": res["reward"],
+		"item": res["item"], "n": res["n"], "bonus_item": res["bonus_item"], "bonus_n": res["bonus_n"]})
+	_check_book(pid)
+	_send(pid, "s2c_book", Book.public_state(cs, p["name"]))
 	_dirty = true
 
 

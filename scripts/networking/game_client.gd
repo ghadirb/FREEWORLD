@@ -358,7 +358,7 @@ func on_arenas(list: Array) -> void:
 ## کتابخانهٔ سازه‌ها
 var blueprints: Array = []   # خلاصه‌ها: {id, name, author, shared, n, size}
 ## کتاب ماجراجویی: rows = [[id, روز بازشدن (۰ = باز نشده), جایزه, نقش راوی]]، done، total و roles (شناسهٔ NPC ← نقش)
-var book: Dictionary = {"rows": [], "done": 0, "total": 0, "roles": {}}
+var book: Dictionary = {"rows": [], "done": 0, "total": 0, "roles": {}, "quests": {}}
 
 
 func bp_save(bp_name: String, data: PackedInt32Array, shared: bool) -> void:
@@ -578,6 +578,16 @@ func minigame_time_left() -> float:
 func npc_interact(npc_id: int, item: String = "") -> void:
 	if is_logged_in:
 		_tx("c2s_npc", [npc_id, item])
+
+
+func quest_turn_in(npc_id: int) -> void:
+	if is_logged_in:
+		_tx("c2s_quest", [npc_id])
+
+
+## تعداد مرحله‌های تمام‌شدهٔ مأموریت این نقش.
+func quest_done(role: String) -> int:
+	return int(book.get("quests", {}).get(role, 0))
 
 
 func npc_sell(npc_id: int, item: String, n: int) -> void:

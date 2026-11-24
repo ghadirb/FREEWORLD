@@ -84,6 +84,7 @@ func _init() -> void:
 	test_climates()
 	test_story_book()
 	test_blueprint_packs()
+	test_quests()
 	test_tls_pinning()
 	print("\nRESULT: %d passed, %d failed" % [_pass, _fail])
 	quit(1 if _fail > 0 else 0)
@@ -3036,7 +3037,7 @@ func test_story_book() -> void:
 	var ids := {}
 	var dup := false
 	var bad_role := false
-	var kinds := ["dist", "in_village", "in_mine", "biome", "height", "owns", "blocks", "blocks_of", "tool_any", "friends", "stat", "flag", "money"]
+	var kinds := ["dist", "in_village", "in_mine", "biome", "height", "owns", "blocks", "blocks_of", "tool_any", "friends", "stat", "flag", "money", "chains"]
 	var bad_kind := false
 	for e in Story.ENTRIES:
 		if ids.has(e["id"]):
@@ -3061,7 +3062,7 @@ func test_story_book() -> void:
 				if Loc.t(k) == k:
 					texts_ok = false
 					missing = k
-		for k in ["book", "book_title", "book_hint", "book_progress", "msg_book_unlock", "msg_book_reward"]:
+		for k in ["book", "book_title", "book_hint", "book_progress", "msg_book_unlock", "msg_book_reward", "dlg_quest_hint"]:
 			if Loc.t(k) == k:
 				texts_ok = false
 				missing = k
@@ -3142,14 +3143,21 @@ func test_story_book() -> void:
 	var farmer: Dictionary = cs2.npcs[0]
 	var at := Vector2(float(farmer["x"]), float(farmer["z"]))
 	var r: Dictionary = cs2.npc_interact("talker", int(farmer["id"]), "", at)
-	check(r["ok"] and r["role"] == "farmer" and r["line"] == "dlg_farmer_0" and r["hint"] == "dlg_farmer_hint" and r["entry"] == "first_house", "the farmer greets and hints at his first entry")
+	check(r["ok"] and r["role"] == "farmer" and r["line"] == "dlg_farmer_0" and r["hint"] == "dlg_quest_hint" and r["entry"] == "", "the farmer greets and points to his quest first")
 	check(int(cs2.accounts["talker"]["stats"]["talks"]) == 1, "talking is counted")
 	var gr: Dictionary = cs2.npc_interact("talker", int(farmer["id"]), "wood", at)
 	check(gr["ok"] and gr["line"] == "" and int(cs2.accounts["talker"]["stats"]["gifts"]) == 1, "gifts are counted and carry no speech")
 	cs2.accounts["talker"]["book"]["first_house"] = 0
 	cs2.accounts["talker"]["book"]["wheat_farm"] = 0
+	var d0: Dictionary = Book.dialogue(cs2, "talker", "farmer", 1)
+	check(d0["hint"] == "dlg_farmer_hint" and d0["entry"] == "wheat_farm" or d0["hint"] == "dlg_quest_hint", "quest first, then book entries")
+	cs2.accounts["talker"]["quests"]["farmer"] = 3
+	cs2.accounts["talker"]["book"]["friend_first"] = 0
+	var d1: Dictionary = Book.dialogue(cs2, "talker", "farmer", 1)
+	check(d1["hint"] == "dlg_farmer_hint" and d1["entry"] == "wheat_farm" or d1["hint"] == "dlg_farmer_done", "after the quest chain the farmer talks about his book entries")
+	cs2.accounts["talker"]["book"]["wheat_farm"] = 0
 	var d: Dictionary = Book.dialogue(cs2, "talker", "farmer", 1)
-	check(d["line"] == "dlg_farmer_1" and d["hint"] == "dlg_farmer_done" and d["entry"] == "", "after finishing his entries the farmer thanks you")
+	check(d["line"] == "dlg_farmer_1" and d["hint"] == "dlg_farmer_done" and d["entry"] == "", "after finishing quests and entries the farmer thanks you")
 	check(Book.dialogue(cs2, "talker", "villager", 0)["hint"] == "", "villagers only greet")
 	# --- خلاقانه و اقلیم ---
 	var cc = CityState.new(321)
@@ -3260,4 +3268,111 @@ func test_blueprint_packs() -> void:
 	check(base.size() == r.size() and set_a == set_b, "four rotations bring a design back to itself")
 	check(Entitlements.pack_unlocked("castle") and Entitlements.pack_unlocked("village") and Entitlements.pack_unlocked("town") and Entitlements.pack_unlocked("nope"), "packs are open while payments are disabled")
 	check(Packs.is_premium("castle") and not Packs.is_premium("nope"), "packs are marked as sellable content")
+
+
+func test_quests() -> void:
+	print("[npc quests]")
+	check(FWConst.PROTOCOL_VERSION >= 35, "protocol bumped for the quest message")
+	# --- یکپارچگی داده ---
+	var bad := ""
+	for role in Story.QUESTS:
+		if not Story.ROLES.has(str(role)):
+			bad = "unknown role " + str(role)
+		var chain: Array = Story.QUESTS[role]
+		var prev_need := 0
+		for i in range(chain.size()):
+			var st: Dictionary = chain[i]
+			if not FWConst.ITEMS.has(str(st["item"])) or int(st["n"]) < 1 or int(st["n"]) > FWConst.NPC_TRADE_MAX:
+				bad = "%s step %d has a bad item or amount" % [role, i]
+			if int(st["need"]) < prev_need or int(st["need"]) > FWConst.FRIEND_LEVELS.size():
+				bad = "%s step %d friendship need goes down or is too high" % [role, i]
+			prev_need = int(st["need"])
+			if int(st["reward"]) < 1 or int(st["reward"]) > 200:
+				bad = "%s step %d reward out of range" % [role, i]
+			if st.has("bonus") and (i != chain.size() - 1 or not FWConst.ITEMS.has(str(st["bonus"][0]))):
+				bad = "%s bonus must be on the last step with a real item" % role
+		if chain.size() != 3:
+			bad = "%s has %d steps" % [role, chain.size()]
+	check(bad == "", "every quest chain is valid: roles, items, rising friendship, last-step bonus (%s)" % bad)
+	check(Story.quest_total("farmer") == 3 and Story.quest_total("villager") == 0 and Story.quest_step("farmer", 3).is_empty() and Story.quest_step("farmer", 0)["item"] == "wood", "quest helpers")
+	var texts := true
+	var miss := ""
+	for lang in ["fa", "en"]:
+		Loc.lang = lang
+		for k in ["quest_turn_in", "quest_step", "quest_reward", "quest_bonus", "quest_need_friend", "quest_have", "quest_all_done", "quest_creative", "msg_quest_done", "err_quest_none", "err_quest_friend", "book_quest_first", "book_quest_first_d", "book_quest_five", "book_quest_chain_d"]:
+			if Loc.t(k) == k and Loc.err(k.trim_prefix("err_")) == k.trim_prefix("err_"):
+				texts = false
+				miss = k
+	Loc.lang = "fa"
+	check(texts, "quest texts exist in both languages (%s)" % miss)
+	# --- جریان تحویل ---
+	var NpcSim = load("res://scripts/server/npc_sim.gd")
+	var cs = CityState.new(4242)
+	_login(cs, "q")
+	NpcSim.ensure_npcs(cs)
+	var farmer: Dictionary = cs.npcs[0]
+	var at := Vector2(float(farmer["x"]), float(farmer["z"]))
+	var acc: Dictionary = cs.accounts["q"]
+	acc["inv"] = {}   # کیف آغازین حساب تازه کالا دارد؛ این‌جا از صفر شروع می‌کنیم
+	check(not cs.quest_turn_in("nobody", int(farmer["id"]), at)["ok"], "unknown player cannot hand in")
+	check(cs.quest_turn_in("q", 999, at)["error"] == "no_npc", "unknown NPC")
+	check(cs.quest_turn_in("q", int(farmer["id"]), at + Vector2(60, 0))["error"] == "too_far", "too far from the NPC")
+	check(cs.quest_turn_in("q", int(cs.npcs[3]["id"]), Vector2(float(cs.npcs[3]["x"]), float(cs.npcs[3]["z"])))["error"] == "quest_none", "a plain villager has no quest")
+	check(cs.quest_turn_in("q", int(farmer["id"]), at)["error"] == "no_items", "not enough materials")
+	acc["inv"]["wood"] = 25
+	var m0: int = int(acc["money"])
+	var r1: Dictionary = cs.quest_turn_in("q", int(farmer["id"]), at)
+	check(r1["ok"] and r1["step"] == 1 and r1["reward"] == 30 and int(acc["inv"]["wood"]) == 5 and int(acc["money"]) == m0 + 30, "step 1: materials taken, coins paid")
+	check(int(acc["friends"][str(farmer["id"])]) == Story.QUEST_FRIEND_POINTS and int(acc["stats"]["quests"]) == 1, "a step adds friendship and counts")
+	acc["inv"]["stone"] = 30
+	check(cs.quest_turn_in("q", int(farmer["id"]), at)["error"] == "quest_friend", "step 2 needs friendship level (even with the materials)")
+	check(int(acc["inv"]["stone"]) == 30 and int(acc["quests"]["farmer"]) == 1, "a refused hand-in takes nothing")
+	acc["friends"][str(farmer["id"])] = FWConst.FRIEND_LEVELS[0]
+	var r2: Dictionary = cs.quest_turn_in("q", int(farmer["id"]), at)
+	check(r2["ok"] and r2["step"] == 2 and int(acc["inv"]["stone"]) == 5, "step 2 after becoming friends")
+	acc["inv"]["brick"] = 20
+	acc["friends"][str(farmer["id"])] = FWConst.FRIEND_LEVELS[1]
+	var gem0: int = int(acc["inv"].get("gem", 0))
+	var r3: Dictionary = cs.quest_turn_in("q", int(farmer["id"]), at)
+	check(r3["ok"] and r3["step"] == 3 and r3["bonus_item"] == "gem" and int(acc["inv"]["gem"]) == gem0 + 1 and int(acc["inv"]["brick"]) == 5, "final step pays the bonus gift")
+	check(cs.quest_turn_in("q", int(farmer["id"]), at)["error"] == "quest_none", "a finished chain cannot be repeated")
+	# دستاوردهای مأموریت
+	var got: Array = Book.evaluate(cs, "q", {"pos": Vector3(FWConst.CITY_SIZE * 0.5, 2.0, FWConst.CITY_SIZE * 0.5), "mine": ""})
+	var ids: Array = []
+	for g in got:
+		ids.append(g["id"])
+	check(ids.has("quest_first") and ids.has("quest_chain") and not ids.has("quest_five"), "quest entries unlock (%s)" % str(ids))
+	var st: Dictionary = Book.public_state(cs, "q")
+	check(int(st["quests"]["farmer"]) == 3, "public state carries quest progress")
+	# ذخیره و بارگذاری و ورودی خراب
+	var raw: Dictionary = JSON.parse_string(JSON.stringify(cs.to_dict()))
+	var back = CityState.from_dict(raw)
+	check(back != null and int(back.accounts["q"]["quests"]["farmer"]) == 3 and int(back.accounts["q"]["stats"]["quests"]) == 3, "quest progress survives save and load")
+	raw["accounts"]["q"]["quests"] = {"farmer": 99, "ghost": 2, "baker": -4}
+	var back2 = CityState.from_dict(raw)
+	check(back2 != null and int(back2.accounts["q"]["quests"]["farmer"]) == 3 and not back2.accounts["q"]["quests"].has("ghost") and int(back2.accounts["q"]["quests"]["baker"]) == 0, "corrupt quest data is clamped or dropped")
+	var old: Dictionary = JSON.parse_string(JSON.stringify(cs.to_dict()))
+	old["accounts"]["q"].erase("quests")
+	var back3 = CityState.from_dict(old)
+	check(back3 != null and back3.accounts["q"]["quests"].is_empty(), "old saves without quests load empty")
+	# --- خلاقانه ---
+	var cc = CityState.new(4243)
+	cc.creative = true
+	_login(cc, "maker")
+	NpcSim.ensure_npcs(cc)
+	var cf: Dictionary = cc.npcs[0]
+	var cat := Vector2(float(cf["x"]), float(cf["z"]))
+	cc.accounts["maker"]["inv"] = {}
+	var cm: int = int(cc.accounts["maker"]["money"])
+	var cr: Dictionary = cc.quest_turn_in("maker", int(cf["id"]), cat)
+	check(cr["ok"] and cr["reward"] == 0 and int(cc.accounts["maker"]["money"]) == cm and int(cc.accounts["maker"]["inv"].get("wood", 0)) == 0, "creative: no materials needed, no coins")
+	check(int(cc.accounts["maker"]["quests"]["farmer"]) == 1, "creative still records progress")
+	# --- کاروان صحرا: نقش‌های مخصوص جهان ---
+	var dcs = CityState.new(int(Scenarios.def("desert_caravan")["seed"]))
+	_login(dcs, "d")
+	ScenarioApply.apply(dcs, "desert_caravan")
+	var nomad: Dictionary = dcs.npcs[0]
+	dcs.accounts["d"]["inv"] = {"clay": 20}
+	var dr: Dictionary = dcs.quest_turn_in("d", int(nomad["id"]), Vector2(float(nomad["x"]), float(nomad["z"])))
+	check(dr["ok"] and dr["role"] == "nomad" and int(dcs.accounts["d"]["quests"]["nomad"]) == 1, "scenario casts have their own quests (nomad in the desert)")
 

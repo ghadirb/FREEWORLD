@@ -1,6 +1,7 @@
 extends CanvasLayer
 ## رابط درون‌بازی: نوار بالا، دکمه‌ها، پالت ساخت، پنل ساختمان، چت، پنل مدیر، منو و جوی‌استیک.
 
+const Story = preload("res://scripts/shared/story.gd")
 const Entitlements = preload("res://scripts/client/entitlements.gd")
 const Packs = preload("res://scripts/shared/blueprint_packs.gd")
 const FWConst = preload("res://scripts/core/const.gd")
@@ -110,6 +111,8 @@ var _npc_panel: PanelContainer
 var _npc_title: Label
 var _npc_body: Label
 var _npc_speech: Label
+var _quest_label: Label
+var _quest_btn: Button
 var _npc_item: OptionButton
 var _npc_id: int = -1
 var _offer_panel: PanelContainer
@@ -1108,6 +1111,13 @@ func _build_npc_panel() -> void:
 	close.pressed.connect(func(): _npc_panel.visible = false)
 	row.add_child(talk)
 	row.add_child(close)
+	_quest_label = _label("", 19, Color("ffd9a0"))
+	_quest_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_quest_label.custom_minimum_size = Vector2(520, 0)
+	v.add_child(_quest_label)
+	_quest_btn = UiTheme.button(Loc.t("quest_turn_in"), Vector2(0, 60))
+	_quest_btn.pressed.connect(func(): client.quest_turn_in(_npc_id))
+	v.add_child(_quest_btn)
 	var grow := HBoxContainer.new()
 	grow.add_theme_constant_override("separation", 8)
 	v.add_child(grow)
@@ -1228,6 +1238,40 @@ func _fill_npc() -> void:
 			lv += 1
 	_npc_body.text = "%s: %s (%s/%s)\n%s" % [Loc.t("npc_friendship"), Loc.t("npc_level_%d" % lv), Loc.digits(str(pts)), Loc.digits(str(FWConst.FRIEND_MAX)),
 		Loc.fmt("npc_bonus", [Loc.digits(str(int(round(float(FWConst.NPC_TRADE_BONUS[lv]) * 100.0))))])]
+	_fill_quest(role, lv)
+
+
+## مأموریت جاری این NPC: متن مرحله، پاداش و شرط دوستی؛ دکمه فقط وقتی فعال است که کالا و سطح دوستی کافی باشد.
+## (حکم نهایی با سرور است؛ این فقط راهنمای نمایش است.)
+func _fill_quest(role: String, lv: int) -> void:
+	var total: int = Story.quest_total(role)
+	_quest_btn.visible = total > 0
+	_quest_label.visible = total > 0
+	if total == 0:
+		return
+	var done: int = client.quest_done(role)
+	var step: Dictionary = Story.quest_step(role, done)
+	if step.is_empty():
+		_quest_label.text = Loc.fmt("quest_all_done", [Loc.digits(str(total))])
+		_quest_btn.disabled = true
+		return
+	var item := str(step["item"])
+	var txt := Loc.fmt("quest_step", [Loc.digits(str(done + 1)), Loc.digits(str(total)), Loc.digits(str(int(step["n"]))), Loc.t("item_" + item)])
+	if client.creative:
+		txt += "\n" + Loc.t("quest_creative")
+	else:
+		txt += "\n" + Loc.fmt("quest_reward", [Loc.digits(str(int(step["reward"])))])
+		if step.has("bonus") and done + 1 >= total:
+			txt += "  " + Loc.fmt("quest_bonus", [Loc.digits(str(int(step["bonus"][1]))), Loc.t("item_" + str(step["bonus"][0]))])
+	var need := int(step["need"])
+	var enough: bool = client.creative or client.item_count(item) >= int(step["n"])
+	var friend_ok: bool = lv >= need
+	if not friend_ok:
+		txt += "\n" + Loc.fmt("quest_need_friend", [Loc.t("npc_level_%d" % need)])
+	elif not enough:
+		txt += "\n" + Loc.fmt("quest_have", [Loc.digits(str(client.item_count(item))), Loc.digits(str(int(step["n"])))])
+	_quest_label.text = txt
+	_quest_btn.disabled = not (friend_ok and enough)
 
 
 var _furn_btn: Button
@@ -1859,6 +1903,14 @@ func _on_notice(code: String, args: Dictionary) -> void:
 		"filled":
 			Sfx.play(self, "click")
 			toast(Loc.fmt("msg_filled", [Loc.digits(str(args["count"])), Loc.t("item_" + str(args["item"]))]), Color("c8f08a"))
+		"quest_done":
+			Sfx.play(self, "coin")
+			var qm := Loc.fmt("msg_quest_done", [str(args["npc"]), Loc.digits(str(args["step"])), Loc.digits(str(args["total"]))])
+			if int(args["reward"]) > 0:
+				qm += "  " + Loc.fmt("msg_book_reward", [Loc.digits(str(args["reward"]))])
+			if str(args["bonus_item"]) != "" and int(args["bonus_n"]) > 0:
+				qm += "  " + Loc.fmt("quest_bonus", [Loc.digits(str(args["bonus_n"])), Loc.t("item_" + str(args["bonus_item"]))])
+			toast(qm, Color("ffd24a"))
 		"book_unlock":
 			Sfx.play(self, "coin" if int(args["reward"]) > 0 else "notify")
 			var bmsg := Loc.fmt("msg_book_unlock", [Loc.t("book_" + str(args["id"]))])
