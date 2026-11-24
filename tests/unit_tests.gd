@@ -3052,6 +3052,23 @@ func test_scenarios() -> void:
 				names_ok = false
 	Loc.lang = "fa"
 	check(names_ok, "every world has a Persian and English name and description")
+	# --- غار: گنبد توخالی با درگاه قابل ورود ---
+	var cave_d: Dictionary = Scenarios.def("medieval_fort")
+	var cave_cs = CityState.new(int(cave_d["seed"]))
+	ScenarioApply.apply(cave_cs, "medieval_fort")
+	var cave_x: int = Scenarios.CENTER + 34
+	var cave_z: int = Scenarios.CENTER - 4
+	var g0: int = ScenarioApply._ground_level(cave_cs, cave_x, cave_z)
+	var g5: int = ScenarioApply._ground_level(cave_cs, cave_x, cave_z + 5)
+	var door_free := true
+	var inside_free := true
+	for dy in range(3):
+		if cave_cs.blocks.has(Vector3i(cave_x, g5 + dy, cave_z + 5)):
+			door_free = false
+		if cave_cs.blocks.has(Vector3i(cave_x, g0 + dy, cave_z)):
+			inside_free = false
+	check(door_free and inside_free, "the cave has a free doorway and a hollow inside")
+	check(cave_cs.blocks.has(Vector3i(cave_x, g0 + 5, cave_z)), "the cave has a solid roof")
 	for id in Scenarios.ids():
 		var d: Dictionary = Scenarios.def(id)
 		var cs = CityState.new(int(d["seed"]))
