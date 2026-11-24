@@ -110,7 +110,7 @@ const LEGENDS := {
 	"medieval_fort": [
 		{"dx": -60, "dz": -30, "reward": 25, "giver": "elder"},
 		{"dx": 40, "dz": -90, "reward": 35, "giver": "guide"},
-		{"dx": 110, "dz": 20, "reward": 45, "giver": "smith"},
+		{"dx": 34, "dz": -4, "reward": 45, "giver": "smith", "r": 3.0},   # مرکز غار سنگی (Scenarios «cave_dome»): باید داخلش بروی
 		{"dx": 70, "dz": 110, "reward": 55, "giver": "farmer"},
 		{"dx": -90, "dz": 90, "reward": 90, "giver": "elder", "bonus": ["gem", 1]},
 	],
@@ -157,7 +157,7 @@ static func legend_entries(scenario: String) -> Array:
 		var st: Dictionary = steps[i]
 		var last := i == steps.size() - 1
 		out.append({"id": "lg_%s_%d" % [scenario, i + 1], "kind": "legend", "a": i, "b": 0, "reward": int(st["reward"]),
-			"giver": str(st["giver"]), "climate": "", "scenario": scenario, "dx": int(st["dx"]), "dz": int(st["dz"]), "r": LEGEND_FINAL_RADIUS if last else LEGEND_RADIUS, "flat": last, "bonus": st.get("bonus", [])})
+			"giver": str(st["giver"]), "climate": "", "scenario": scenario, "dx": int(st["dx"]), "dz": int(st["dz"]), "r": LEGEND_FINAL_RADIUS if last else float(st.get("r", LEGEND_RADIUS)), "flat": last, "bonus": st.get("bonus", [])})
 	return out
 
 

@@ -3059,16 +3059,21 @@ func test_scenarios() -> void:
 	var cave_x: int = Scenarios.CENTER + 34
 	var cave_z: int = Scenarios.CENTER - 4
 	var g0: int = ScenarioApply._ground_level(cave_cs, cave_x, cave_z)
+	var g2: int = ScenarioApply._ground_level(cave_cs, cave_x + 2, cave_z)
 	var g5: int = ScenarioApply._ground_level(cave_cs, cave_x, cave_z + 5)
 	var door_free := true
 	var inside_free := true
 	for dy in range(3):
 		if cave_cs.blocks.has(Vector3i(cave_x, g5 + dy, cave_z + 5)):
 			door_free = false
-		if cave_cs.blocks.has(Vector3i(cave_x, g0 + dy, cave_z)):
+		if cave_cs.blocks.has(Vector3i(cave_x + 2, g2 + dy, cave_z)):
 			inside_free = false
 	check(door_free and inside_free, "the cave has a free doorway and a hollow inside")
 	check(cave_cs.blocks.has(Vector3i(cave_x, g0 + 5, cave_z)), "the cave has a solid roof")
+	var bell: Dictionary = Story.legend_entries("medieval_fort")[2]
+	var bell_spot: Vector2 = Book.legend_spot(cave_cs, bell)
+	check(int(floor(bell_spot.x)) == cave_x and int(floor(bell_spot.y)) == cave_z and float(bell["r"]) <= 3.5, "the bell-cave legend step sits inside the cave and needs you to enter it")
+	check(Book.evaluate(cave_cs, "hero", {"pos": Vector3(bell_spot.x + 6.0, 2.0, bell_spot.y), "mine": ""}).is_empty() or not Book.evaluate(cave_cs, "hero", {"pos": Vector3(bell_spot.x + 6.0, 2.0, bell_spot.y), "mine": ""}).any(func(g): return g["id"] == "lg_medieval_fort_3"), "standing outside the cave does not complete the bell step")
 	for id in Scenarios.ids():
 		var d: Dictionary = Scenarios.def(id)
 		var cs = CityState.new(int(d["seed"]))
