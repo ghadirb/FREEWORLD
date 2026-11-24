@@ -8,6 +8,7 @@ const LanDiscovery = preload("res://scripts/networking/lan_discovery.gd")
 const WorldSlots = preload("res://scripts/client/world_slots.gd")
 const Scenarios = preload("res://scripts/shared/scenarios.gd")
 const Entitlements = preload("res://scripts/client/entitlements.gd")
+const WorldGallery = preload("res://scripts/client/world_gallery.gd")
 
 signal connect_requested(host: String, port: int, player_name: String, secret: String)
 signal language_toggled
@@ -29,9 +30,7 @@ var _world_name: LineEdit
 var _creative_check: CheckBox
 var _delete_btn: Button
 var _delete_armed: bool = false
-var _scen_idx: int = -1   # -1 = جهان خالی با Seed تصادفی
-var _scen_label: Label
-var _scen_desc: Label
+var _gallery: Control
 
 
 func _ready() -> void:
@@ -191,54 +190,55 @@ func _build_world_picker(parent: Control) -> void:
 	_refresh_world_label()
 
 
-# ---- جهان‌های آماده ----
+# ---- جهان‌های آماده (گالری تصویری) ----
 func _build_scenario_picker(parent: Control) -> void:
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 6)
-	parent.add_child(row)
-	var prev := UiTheme.button("‹", Vector2(56, 46))
-	prev.pressed.connect(func(): _select_scenario(_scen_idx - 1))
-	row.add_child(prev)
-	_scen_label = Label.new()
-	_scen_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_scen_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_scen_label.clip_text = true
-	row.add_child(_scen_label)
-	var next := UiTheme.button("›", Vector2(56, 46))
-	next.pressed.connect(func(): _select_scenario(_scen_idx + 1))
-	row.add_child(next)
-	_scen_desc = Label.new()
-	_scen_desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_scen_desc.custom_minimum_size = Vector2(0, 74)
-	_scen_desc.add_theme_font_size_override("font_size", 15)
-	_scen_desc.modulate = Color(1, 1, 1, 0.75)
-	parent.add_child(_scen_desc)
-	_refresh_scenario()
+	var b := UiTheme.button(Loc.t("gallery_open"), Vector2(0, 62))
+	b.add_theme_font_size_override("font_size", 24)
+	b.pressed.connect(_open_gallery)
+	parent.add_child(b)
 
 
-## -1 .. ids.size()-1 دور می‌زند؛ -1 یعنی بدون جهان آماده.
-func _select_scenario(i: int) -> void:
-	var n := Scenarios.ids().size()
-	_scen_idx = ((i + 1) % (n + 1) + (n + 1)) % (n + 1) - 1
-	_refresh_scenario()
-
-
-func _scenario_id() -> String:
-	var ids := Scenarios.ids()
-	return str(ids[_scen_idx]) if _scen_idx >= 0 and _scen_idx < ids.size() else ""
-
-
-func _refresh_scenario() -> void:
-	var id := _scenario_id()
-	if id == "":
-		_scen_label.text = "%s: %s" % [Loc.t("scen_title"), Loc.t("scen_none")]
-		_scen_desc.text = ""
+func _open_gallery() -> void:
+	if _gallery != null:
 		return
-	var txt := "%s: %s" % [Loc.t("scen_title"), Loc.t("scen_" + id)]
-	if Scenarios.is_premium(id):
-		txt += "  ⭐ " + Loc.t("scen_premium")
-	_scen_label.text = txt
-	_scen_desc.text = Loc.t("scen_%s_desc" % id)
+	var have: Array = []
+	for w in _worlds:
+		if str(w.get("scenario", "")) != "":
+			have.append(str(w["scenario"]))
+	_gallery = WorldGallery.new()
+	_gallery.setup(have)
+	add_child(_gallery)
+	_gallery.closed.connect(_close_gallery)
+	_gallery.picked.connect(_on_gallery_pick)
+
+
+func _close_gallery() -> void:
+	if _gallery != null:
+		_gallery.queue_free()
+		_gallery = null
+
+
+## انتخاب کارت: جهان موجود از همان نوع ادامه می‌یابد (یا نسخهٔ تازه) و بازی بلافاصله شروع می‌شود.
+func _on_gallery_pick(id: String, fresh: bool) -> void:
+	var pname := _name.text.strip_edges()
+	if pname.length() < 3 or pname.length() > 16:
+		_gallery.set_status(Loc.err("bad_name"), true)
+		_close_gallery()
+		set_status(Loc.err("bad_name"), true)
+		return
+	var w: Dictionary = {} if fresh else WorldSlots.find_scenario_world(_worlds, id)
+	if w.is_empty():
+		var r := WorldSlots.add_world(_worlds, WorldSlots.unique_name(_worlds, Loc.t("scen_" + id)), randi_range(1, 2147483000), _creative_check.button_pressed, id)
+		if not r["ok"]:
+			_gallery.set_status(Loc.err(str(r["error"])), true)
+			return
+		WorldSlots.save_worlds(_worlds)
+		w = WorldSlots.find(_worlds, str(r["id"]))
+	WorldSlots.set_current(str(w["id"]))
+	_world_idx = _worlds.find(w)
+	_close_gallery()
+	_refresh_world_label()
+	_emit_local(solo_requested)
 
 
 func _refresh_world_label() -> void:
@@ -275,16 +275,7 @@ func _select_world(i: int) -> void:
 
 
 func _on_create_world() -> void:
-	var scen := _scenario_id()
-	var wname := _world_name.text
-	if wname.strip_edges() == "" and scen != "":
-		wname = Loc.t("scen_" + scen)
-		var k := 2
-		var base := wname
-		while not WorldSlots.find_by_name(_worlds, wname).is_empty():
-			wname = "%s %d" % [base, k]
-			k += 1
-	var r := WorldSlots.add_world(_worlds, wname, randi_range(1, 2147483000), _creative_check.button_pressed, scen)
+	var r := WorldSlots.add_world(_worlds, _world_name.text, randi_range(1, 2147483000), _creative_check.button_pressed)
 	if not r["ok"]:
 		set_status(Loc.err(str(r["error"])), true)
 		return

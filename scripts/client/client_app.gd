@@ -44,6 +44,8 @@ func _ready() -> void:
 		net.name = "Net"
 		get_tree().root.add_child(net)
 	_show_menu()
+	if _args.has("gallery") and menu != null:
+		menu._open_gallery()   # فقط برای عکس آزمایشی گالری
 	if _shot_path != "" and not _args.has("connect") and not _args.has("solo"):
 		_take_shot_later()
 	if _args.has("solo"):

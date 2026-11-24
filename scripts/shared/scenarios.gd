@@ -15,42 +15,42 @@ const DEFS := {
 		"seed": 102, "premium": false, "creative": false,
 		"money": 1500, "items": {"wood": 40, "stone": 20, "dirt": 20, "brick": 8, "glass": 4},
 		"hour": 7.0, "weather": "clear", "time_speed": 1.0, "forest_growth": true, "npcs": 4,
-		"structures": ["farm_fence", "lamp_street", "windmill", "cottages"],
+		"structures": ["farm_fence", "lamp_street", "windmill", "cottages", "well", "stable", "inn"],
 		"trees": 14, "animals": {"sheep": 8, "rabbit": 6},
 	},
 	"builder_playground": {
 		"seed": 66, "premium": false, "creative": true,
 		"money": 0, "items": {},
 		"hour": 12.0, "weather": "clear", "time_speed": 0.0, "forest_growth": false, "npcs": 2,
-		"structures": ["tower", "stairs_arena", "rail_loop"],
+		"structures": ["tower", "stairs_arena", "rail_loop", "build_pads", "obelisk", "townhouses"],
 		"trees": 4, "animals": {},
 	},
 	"god_sandbox": {
 		"seed": 78, "premium": false, "creative": true,
 		"money": 0, "items": {},
 		"hour": 9.0, "weather": "clear", "time_speed": 4.0, "forest_growth": true, "npcs": 6,
-		"structures": ["stone_circle", "cave_dome", "windmill", "lighthouse"],
+		"structures": ["stone_circle", "cave_dome", "windmill", "lighthouse", "obelisk", "well", "stable"],
 		"trees": 40, "animals": {"sheep": 14, "deer": 12, "rabbit": 14},
 	},
 	"island_castaway": {
 		"seed": 248, "premium": true, "creative": false,
 		"money": 50, "items": {"wood": 30, "stone": 6},
 		"hour": 6.0, "weather": "clear", "time_speed": 1.0, "forest_growth": true, "npcs": 2,
-		"structures": ["campfire", "hut", "stone_circle", "lighthouse"],
+		"structures": ["campfire", "hut", "stone_circle", "lighthouse", "fisher_hut", "well", "obelisk", "stable"],
 		"trees": 12, "animals": {"rabbit": 6},
 	},
 	"medieval_fort": {
 		"seed": 108, "premium": true, "creative": false,
 		"money": 800, "items": {"stone": 160, "wood": 60, "brick": 20, "iron": 8, "glass": 6},
 		"hour": 17.0, "weather": "fog", "time_speed": 1.0, "forest_growth": false, "npcs": 4,
-		"structures": ["ruined_fort", "watch_tower", "cave_dome"],
+		"structures": ["ruined_fort", "watch_tower", "cave_dome", "stone_keep", "well", "obelisk", "stable", "inn"],
 		"trees": 6, "animals": {"deer": 6},
 	},
 	"merchant_city": {
 		"seed": 43, "premium": true, "creative": false,
 		"money": 5000, "items": {"wood": 60, "stone": 60, "brick": 30, "glass": 12, "clay": 20},
 		"hour": 8.0, "weather": "clear", "time_speed": 1.0, "forest_growth": false, "npcs": 6,
-		"structures": ["market_street", "lamp_street", "fountain_plaza", "warehouse"],
+		"structures": ["market_street", "lamp_street", "fountain_plaza", "warehouse", "manor", "inn", "townhouses", "guild_hall", "well", "stable"],
 		"trees": 6, "animals": {"sheep": 6},
 	},
 	# اقلیم‌های تازه: فقط ظاهر زمین و منابع عوض می‌شود (برف و کاج / شن و نخل)؛ بقیهٔ قوانین همان است.
@@ -58,14 +58,14 @@ const DEFS := {
 		"seed": 297, "premium": true, "creative": false, "climate": "winter",
 		"money": 400, "items": {"wood": 80, "stone": 30, "iron": 6, "brick": 6, "glass": 4},
 		"hour": 15.0, "weather": "fog", "time_speed": 1.0, "forest_growth": false, "npcs": 4,
-		"structures": ["lodge", "campfire", "watch_tower", "igloo"],
+		"structures": ["lodge", "campfire", "watch_tower", "igloo", "hall_rooms", "ice_cabins", "well", "obelisk", "stable"],
 		"trees": 14, "animals": {"deer": 8, "rabbit": 6},
 	},
 	"desert_caravan": {
 		"seed": 326, "premium": true, "creative": false, "climate": "desert",
 		"money": 900, "items": {"clay": 30, "stone": 40, "wood": 30, "glass": 6, "brick": 12},
 		"hour": 11.0, "weather": "clear", "time_speed": 1.0, "forest_growth": false, "npcs": 5,
-		"structures": ["oasis_camp", "pyramid", "market_street", "caravanserai", "cave_dome_west"],
+		"structures": ["oasis_camp", "pyramid", "market_street", "caravanserai", "cave_dome_west", "adobe_quarter", "well", "obelisk", "stable", "inn"],
 		"trees": 10, "animals": {"sheep": 6, "rabbit": 8},
 	},
 }
@@ -180,6 +180,41 @@ static func _dome(out: Array, cx: int, cz: int, outer: Array, type: String, lamp
 		for c in [Vector2i(-rr, -rr), Vector2i(rr, -rr), Vector2i(0, -rr)]:
 			_col(out, cx + c.x, cz + c.y, 0, 1, "lamp")
 
+
+
+## اتاق‌های داخلی خانهٔ چنداتاقه. هر اتاق از دیوار سمت چپ خودش (دیوار بیرونی یا جداکننده) می‌چیند؛
+## فقط دو ردیف عقب (و فقط یک ردیف اگر خانه کوتاه است) پر می‌شود تا ردیف میانی (dz=0، درگاه‌ها) و
+## خانهٔ پشت در همیشه آزاد بماند. هر مورد: [ستون از دیوار چپ اتاق, ردیف از دیوار پشتی, ارتفاع, نوع].
+const ROOM_ITEMS := {
+	"bedroom": [[0, 0, 1, "wood"], [1, 0, 1, "wood"], [2, 0, 1, "lamp"], [0, 1, 1, "wood"]],
+	"kitchen": [[0, 0, 1, "stone"], [1, 0, 1, "stone"], [2, 0, 1, "lamp"], [0, 1, 1, "wood"], [1, 1, 1, "stairs"]],
+	"library": [[0, 0, 2, "wood"], [1, 0, 2, "wood"], [2, 0, 2, "wood"], [3, 0, 1, "lamp"], [0, 1, 1, "stairs"]],
+	"store": [[0, 0, 2, "wood"], [1, 0, 1, "wood"], [0, 1, 1, "wood"], [2, 0, 1, "lamp"]],
+	"hall": [[0, 0, 1, "stairs"], [1, 0, 1, "wood"], [2, 0, 1, "stairs"], [3, 0, 1, "lamp"]],
+	"hearth": [[0, 0, 3, "stone"], [1, 0, 1, "stone"], [0, 1, 1, "lamp"], [2, 0, 1, "stairs"]],
+	"shop": [[0, 0, 2, "wood"], [2, 0, 1, "lamp"], [0, 1, 1, "wood"], [1, 1, 1, "wood"], [2, 1, 1, "wood"]],
+}
+
+
+## خانهٔ چنداتاقه: پوستهٔ _house + دیوار جداکنندهٔ داخلی در هر x از splits (درگاه دوبلوکی در dz=0) + مبلمان هر اتاق.
+## rooms.size() باید splits.size()+1 باشد. هیچ جداکننده‌ای روی ستون در (dx=0) نمی‌افتد.
+static func _room_house(out: Array, cx: int, cz: int, hw: int, hd: int, wall_h: int, wall: String, splits: Array, rooms: Array) -> void:
+	_house(out, cx, cz, hw, hd, wall_h, wall)
+	for px in splits:
+		for dz in range(-hd + 1, hd):
+			if dz == 0:
+				continue   # درگاه میان دو اتاق
+			_col(out, cx + int(px), cz + dz, 0, wall_h, wall)
+	var rows := 2 if hd >= 3 else 1
+	var edges: Array = [-hw] + splits + [hw]
+	for i in range(rooms.size()):
+		var x0: int = int(edges[i]) + 1
+		var w: int = int(edges[i + 1]) - x0
+		var z0 := -hd + 1
+		for it in ROOM_ITEMS.get(str(rooms[i]), []):
+			if int(it[0]) >= w or int(it[1]) >= rows:
+				continue
+			_col(out, cx + x0 + int(it[0]), cz + z0 + int(it[1]), 0, int(it[2]), str(it[3]))
 
 
 ## ستون‌های یک سازه. rng برای سازه‌های ویرانه‌ای (شکستگی) از Seed جهان می‌آید تا قطعی بماند.
@@ -438,6 +473,86 @@ static func structure(kind: String, rng: RandomNumberGenerator) -> Array:
 				for dz in range(-1, 2):
 					if maxi(absi(dx), absi(dz)) == 1:
 						_col(out, cx + dx, cz + 1 + dz, 0, 1, "stone")
+
+		"manor":
+			# عمارت ۱۳×۹ با سه اتاق واقعی (خواب، تالار، کتابخانه)، درگاه‌های داخلی و چراغ ایوان
+			_room_house(out, CENTER, CENTER + 40, 6, 4, 4, "stone", [-2, 2], ["bedroom", "hall", "library"])
+			_col(out, CENTER - 2, CENTER + 45, 0, 3, "wood")
+			_col(out, CENTER - 2, CENTER + 45, 3, 1, "lamp")
+			_col(out, CENTER + 2, CENTER + 45, 0, 3, "wood")
+			_col(out, CENTER + 2, CENTER + 45, 3, 1, "lamp")
+		"inn":
+			# مسافرخانهٔ چوبی با دو اتاق خواب و تالار غذاخوری
+			_room_house(out, CENTER - 18, CENTER + 40, 5, 4, 3, "wood", [-2, 1], ["bedroom", "bedroom", "hall"])
+			_col(out, CENTER - 18, CENTER + 45, 0, 3, "wood")
+			_col(out, CENTER - 18, CENTER + 45, 3, 1, "lamp")
+		"townhouses":
+			# ردیف سه خانهٔ شهری ۹×۷ با اتاق‌های جدا (خواب/آشپزخانه، انبار/مغازه)
+			var kinds: Array = [["bedroom", "kitchen"], ["store", "shop"], ["library", "bedroom"]]
+			for k in range(3):
+				_room_house(out, CENTER + 18 + k * 10, CENTER + 40, 4, 3, 3, "brick" if k != 1 else "wood", [-1], kinds[k])
+		"stone_keep":
+			# برج‌خانهٔ سنگی ۱۱×۹ با شومینه، تالار و انبار (قلعه)
+			_room_house(out, CENTER + 36, CENTER - 30, 5, 4, 5, "stone", [-2, 2], ["hearth", "hall", "store"])
+		"hall_rooms":
+			# تالار چوبی بلند زمستانی با شومینهٔ سنگی، تالار و اتاق خواب
+			_room_house(out, CENTER + 40, CENTER - 14, 5, 4, 4, "wood", [-2, 2], ["hearth", "hall", "bedroom"])
+			_col(out, CENTER + 40, CENTER - 9, 0, 1, "lamp")
+		"ice_cabins":
+			# دو کلبهٔ چوبی کوچک با دو اتاق (انبار + خواب)
+			_room_house(out, CENTER - 40, CENTER - 20, 4, 3, 3, "wood", [-1], ["store", "bedroom"])
+			_room_house(out, CENTER - 40, CENTER - 32, 4, 3, 3, "wood", [-1], ["hearth", "bedroom"])
+		"fisher_hut":
+			# کلبهٔ ماهیگیر با انبار تور و اتاق خواب
+			_room_house(out, CENTER + 30, CENTER - 14, 4, 3, 3, "wood", [-1], ["store", "bedroom"])
+			_col(out, CENTER + 30, CENTER - 10, 0, 1, "lamp")
+		"adobe_quarter":
+			# سه خانهٔ آجری صحرایی هر کدام با دو اتاق، پشت‌سر هم کنار کاروانسرا
+			var plan: Array = [["bedroom", "kitchen"], ["store", "hall"], ["library", "bedroom"]]
+			for k in range(3):
+				_room_house(out, CENTER + 44, CENTER - 14 - k * 9, 4, 3, 3, "brick", [-1], plan[k])
+		"guild_hall":
+			# تالار اصناف: سه اتاق (غرفه، تالار، انبار) با دیوار آجری
+			_room_house(out, CENTER - 24, CENTER - 38, 6, 4, 4, "brick", [-2, 2], ["shop", "hall", "store"])
+		"well":
+			# چاه سنگی با چهار تیرک و سقف کوچک
+			var wx := CENTER + 10
+			var wz := CENTER + 28
+			for dx in range(-1, 2):
+				for dz in range(-1, 2):
+					if dx != 0 or dz != 0:
+						_col(out, wx + dx, wz + dz, 0, 1, "stone")
+			for c in [Vector2i(-1, -1), Vector2i(1, -1), Vector2i(-1, 1), Vector2i(1, 1)]:
+				_col(out, wx + c.x, wz + c.y, 1, 2, "wood")
+			for dx in range(-1, 2):
+				for dz in range(-1, 2):
+					_col(out, wx + dx, wz + dz, 3, 1, "roof")
+		"obelisk":
+			# ستون یادبود: پایهٔ آجری ۳×۳، ستون سنگی بلند و چراغ بالا
+			for dx in range(-1, 2):
+				for dz in range(-1, 2):
+					_col(out, CENTER + dx, CENTER - 44 + dz, 0, 2, "brick")
+			_col(out, CENTER, CENTER - 44, 2, 8, "stone")
+			_col(out, CENTER, CENTER - 44, 10, 1, "lamp")
+		"stable":
+			# طویلهٔ حصارکشی‌شده با سایبان چوبی نیمهٔ پشتی
+			var sx := CENTER + 46
+			var sz := CENTER + 30
+			for dx in range(-4, 5):
+				for dz in range(-3, 4):
+					if maxi(absi(dx), absi(dz)) == 4 or absi(dz) == 3:
+						if dx == 0 and dz == 3:
+							continue   # دروازه
+						_col(out, sx + dx, sz + dz, 0, 1, "fence")
+			for dx in [-3, 3]:
+				_col(out, sx + dx, sz - 2, 0, 2, "wood")
+			for dx in range(-3, 4):
+				for dz in range(-2, 0):
+					_col(out, sx + dx, sz + dz, 2, 1, "roof")
+		"build_pads":
+			# سه زمین ساخت با حاشیهٔ سنگی ۷×۷ برای تمرین ساخت
+			for k in range(3):
+				_ring(out, CENTER - 42, CENTER + 12 + k * 10, 3, 0, 1, "stone")
 
 	return out
 

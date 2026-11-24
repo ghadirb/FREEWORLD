@@ -75,6 +75,26 @@ static func find_by_name(worlds: Array, name: String) -> Dictionary:
 	return {}
 
 
+## آخرین جهانی که از این جهان آماده ساخته شده (خالی اگر نیست).
+static func find_scenario_world(worlds: Array, scenario: String) -> Dictionary:
+	for i in range(worlds.size() - 1, -1, -1):
+		if str(worlds[i].get("scenario", "")) == scenario:
+			return worlds[i]
+	return {}
+
+
+## نام یکتا بر پایهٔ base: «نام»، «نام ۲»، «نام ۳» …
+static func unique_name(worlds: Array, base: String) -> String:
+	var b := clean_name(base)
+	var n := b
+	var k := 2
+	while not find_by_name(worlds, n).is_empty():
+		var suffix := " %d" % k
+		n = b.substr(0, NAME_MAX - suffix.length()) + suffix
+		k += 1
+	return n
+
+
 static func remove_world(worlds: Array, id: String) -> bool:
 	for i in worlds.size():
 		if str(worlds[i]["id"]) == id:

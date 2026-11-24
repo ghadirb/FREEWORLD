@@ -23,6 +23,8 @@ const Story = preload("res://scripts/shared/story.gd")
 const Book = preload("res://scripts/server/book.gd")
 const Packs = preload("res://scripts/shared/blueprint_packs.gd")
 const Blueprints = preload("res://scripts/server/blueprints.gd")
+const WorldPreview = preload("res://scripts/client/world_preview.gd")
+const WorldGallery = preload("res://scripts/client/world_gallery.gd")
 
 var _fail := 0
 var _pass := 0
@@ -82,6 +84,7 @@ func _init() -> void:
 	test_terrain_shapes()
 	test_villages()
 	test_scenarios()
+	test_gallery_and_rooms()
 	test_climates()
 	test_story_book()
 	test_blueprint_packs()
@@ -3562,3 +3565,62 @@ func test_quests() -> void:
 	var dr: Dictionary = dcs.quest_turn_in("d", int(nomad["id"]), Vector2(float(nomad["x"]), float(nomad["z"])))
 	check(dr["ok"] and dr["role"] == "nomad" and int(dcs.accounts["d"]["quests"]["nomad"]) == 1, "scenario casts have their own quests (nomad in the desert)")
 
+
+
+func test_gallery_and_rooms() -> void:
+	print("[gallery and rooms]")
+	# --- پیش‌نمایش: قطعی، رنگارنگ و متفاوت برای هر جهان ---
+	var hashes: Dictionary = {}
+	for id in Scenarios.ids():
+		var img: Image = WorldPreview.render(id, 96, 80)
+		check(img.get_width() == 96 and img.get_height() == 80, "%s preview has the requested size" % id)
+		var colors: Dictionary = {}
+		for y in range(0, 80, 4):
+			for x in range(0, 96, 4):
+				colors[img.get_pixel(x, y).to_html(false)] = true
+		check(colors.size() >= 6, "%s preview is not a flat color (%d tones)" % [id, colors.size()])
+		check(WorldPreview.render(id, 96, 80).get_data() == img.get_data(), "%s preview is deterministic" % id)
+		hashes[hash(img.get_data())] = true
+	check(hashes.size() == Scenarios.ids().size(), "every world has its own picture")
+	check(WorldPreview.render("no_such_world", 8, 8).get_width() == 8, "an unknown world still renders a placeholder")
+	# --- غنی‌تر بودن جهان‌های ویژه ---
+	var free_min := 9999
+	var prem_min := 9999
+	for id in Scenarios.ids():
+		var n: int = WorldPreview.stats(id)["structures"]
+		if Scenarios.is_premium(id):
+			prem_min = mini(prem_min, n)
+		else:
+			free_min = mini(free_min, n)
+	check(prem_min > free_min, "every premium world has more structures than the sparsest free world (%d > %d)" % [prem_min, free_min])
+	# --- گالری بدون خطا ساخته می‌شود ---
+	var gal = WorldGallery.new()
+	gal.setup(["green_valley"])
+	gal._ready()   # بدون درخت صحنه هم ساخته می‌شود
+	check(gal.get_child_count() > 0, "the gallery builds a card for every world")
+	gal.free()
+	# --- کمک‌های فهرست جهان‌ها ---
+	var ws: Array = []
+	WorldSlots.add_world(ws, "دره‌ی سبز", 102, false, "green_valley")
+	check(WorldSlots.unique_name(ws, "دره‌ی سبز") == "دره‌ی سبز 2", "a repeated world name gets a number")
+	check(WorldSlots.unique_name(ws, "تازه") == "تازه", "a free name is kept")
+	check(str(WorldSlots.find_scenario_world(ws, "green_valley").get("scenario", "")) == "green_valley", "an existing world of a scenario is found")
+	check(WorldSlots.find_scenario_world(ws, "god_sandbox").is_empty(), "no world of an unused scenario")
+	# --- اتاق‌های داخلی واقعی در عمارت شهر تاجران ---
+	var d: Dictionary = Scenarios.def("merchant_city")
+	var cs = CityState.new(int(d["seed"]))
+	ScenarioApply.apply(cs, "merchant_city")
+	var cx: int = Scenarios.CENTER
+	var cz: int = Scenarios.CENTER + 40
+	var g := func(x: int, z: int) -> int: return ScenarioApply._ground_level(cs, x, z)
+	check(cs.blocks.has(Vector3i(cx - 2, g.call(cx - 2, cz - 3), cz - 3)), "the manor has an interior partition wall")
+	var doorway_free := true
+	for dy in range(2):
+		for px in [-2, 2]:
+			if cs.blocks.has(Vector3i(cx + px, g.call(cx + px, cz) + dy, cz)):
+				doorway_free = false
+	check(doorway_free, "the doorways between manor rooms are open")
+	check(not cs.blocks.has(Vector3i(cx, g.call(cx, cz + 3), cz + 3)) and not cs.blocks.has(Vector3i(cx, g.call(cx, cz + 3) + 1, cz + 3)), "the cell just inside the manor front door is free")
+	check(cs.blocks.has(Vector3i(cx - 5, g.call(cx - 5, cz - 3), cz - 3)), "the manor bedroom has a bed")
+	check(cs.blocks.has(Vector3i(cx + 3, g.call(cx + 3, cz - 3) + 1, cz - 3)), "the manor library has a tall bookshelf")
+	check(cs.blocks.size() < FWConst.MAX_BLOCKS_TOTAL / 2, "a ready-made world stays far below the block cap (%d)" % cs.blocks.size())
