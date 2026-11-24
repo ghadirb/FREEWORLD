@@ -14,6 +14,7 @@ const Hud = preload("res://scripts/client/hud.gd")
 const ServerMain = preload("res://scripts/server/server_main.gd")
 const LanDiscovery = preload("res://scripts/networking/lan_discovery.gd")
 const WorldSlots = preload("res://scripts/client/world_slots.gd")
+const Scenarios = preload("res://scripts/shared/scenarios.gd")
 
 var net: Node
 var client: Node
@@ -156,7 +157,13 @@ func _start_local(player_name: String, hosted: bool) -> void:
 	var world: Dictionary = WorldSlots.find(worlds, WorldSlots.current_id(worlds))
 	if world.is_empty():
 		world = worlds[0]
-	WorldSlots.set_current(str(world["id"]))
+	if _args.has("scenario") and not hosted and Scenarios.has(str(_args["scenario"])):
+		# آزمایشی (--scenario id): جهان آمادهٔ تازه در پوشهٔ موقت، بدون دست‌زدن به فهرست جهان‌های کاربر (برای عکس گالری)
+		var sid := str(_args["scenario"])
+		world = {"id": "shot", "name": sid, "seed": int(Scenarios.def(sid)["seed"]), "creative": bool(Scenarios.def(sid)["creative"]), "scenario": sid, "dir": "user://shot_" + sid}
+		WorldSlots.erase_files(world)
+	else:
+		WorldSlots.set_current(str(world["id"]))
 	var seed_value := int(world["seed"])
 	var cfg := {
 		"port": FWConst.DEFAULT_PORT if hosted else 0, "seed": seed_value, "creative": bool(world.get("creative", false)), "creative_force": true, "scenario": str(world.get("scenario", "")),
@@ -255,6 +262,10 @@ func _on_logged_in() -> void:
 		view.my_avatar.set_boat(str(_args["ride"]) == "boat")
 	if _args.has("panel"):
 		hud.debug_open_panel(str(_args["panel"]))
+	if _args.has("nohud"):
+		hud.visible = false   # آزمایشی: عکس تمیز بدون دکمه‌ها
+	if _args.has("focus") and client.local_server != null:
+		_debug_focus(str(_args["focus"]))
 	if _args.has("enter") and client.local_server != null:
 		_debug_enter(str(_args["enter"]))
 	if _args.has("mine") and client.local_server != null:
@@ -263,6 +274,31 @@ func _on_logged_in() -> void:
 		_debug_village(str(_args["village"]))
 	if _shot_path != "":
 		_take_shot_later()
+
+
+## آزمایشی (--focus x,z[,فاصله[,زاویه]]): دوربین را جلوی نقطه‌ای می‌برد (برای عکس سه‌بعدی کارت‌های گالری).
+func _debug_focus(spec: String) -> void:
+	var p: PackedStringArray = spec.split(",")
+	if p.size() < 2:
+		return
+	var srv = client.local_server
+	await get_tree().create_timer(0.5).timeout
+	var x := float(p[0])
+	var z := float(p[1])
+	srv.peers[1]["pos"] = Vector3(x, 0.0, z)
+	srv._send(1, "s2c_teleport", x, z)
+	if _args.has("bright"):
+		srv.cs.world_time = 11.0 * 3600.0   # عکس تبلیغاتی: ظهر و آسمان صاف
+		srv.cs.weather = "clear"
+		srv.cs.time_speed = 0.0
+		for _i in range(40):   # دلیل: همگام‌سازی هوا از سرور؛ چند بار روی کلاینت هم می‌نشانیم
+			client.weather = "clear"
+			await get_tree().create_timer(0.2).timeout
+	if p.size() > 2:
+		view.cam.world_distance = float(p[2])
+	if p.size() > 3:
+		view.cam.yaw = deg_to_rad(float(p[3]))
+	view.cam.snap(Vector3(x, srv.cs.world.height_at(x, z), z))
 
 
 ## آزمایشی (--enter house): ساختمان می‌سازد و وارد آن می‌شود تا داخلش در CI عکس گرفته شود.

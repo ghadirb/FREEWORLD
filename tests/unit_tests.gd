@@ -3582,6 +3582,8 @@ func test_gallery_and_rooms() -> void:
 		check(WorldPreview.render(id, 96, 80).get_data() == img.get_data(), "%s preview is deterministic" % id)
 		hashes[hash(img.get_data())] = true
 	check(hashes.size() == Scenarios.ids().size(), "every world has its own picture")
+	for id in Scenarios.ids():
+		check(ResourceLoader.exists(WorldPreview.photo_path(id)) and WorldPreview.texture(id).get_width() >= 400, "%s has a real in-game 3D picture" % id)
 	check(WorldPreview.render("no_such_world", 8, 8).get_width() == 8, "an unknown world still renders a placeholder")
 	# --- غنی‌تر بودن جهان‌های ویژه ---
 	var free_min := 9999

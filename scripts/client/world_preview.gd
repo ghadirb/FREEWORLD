@@ -21,9 +21,17 @@ const SKY := {"temperate": Color("6fb7e8"), "winter": Color("b9d3e8"), "desert":
 static var _cache: Dictionary = {}
 
 
-static func texture(id: String) -> ImageTexture:
+## عکس سه‌بعدی واقعی بازی (assets/worlds/<id>.png، ساختهٔ --scenario/--focus) اگر هست؛ وگرنه نقشهٔ بالا.
+static func photo_path(id: String) -> String:
+	return "res://assets/worlds/%s.png" % id
+
+
+static func texture(id: String) -> Texture2D:
 	if not _cache.has(id):
-		_cache[id] = ImageTexture.create_from_image(render(id))
+		if ResourceLoader.exists(photo_path(id)):
+			_cache[id] = load(photo_path(id))
+		else:
+			_cache[id] = ImageTexture.create_from_image(render(id))
 	return _cache[id]
 
 
