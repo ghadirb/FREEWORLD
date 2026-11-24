@@ -29,7 +29,7 @@ const DEFS := {
 		"seed": 78, "premium": false, "creative": true,
 		"money": 0, "items": {},
 		"hour": 9.0, "weather": "clear", "time_speed": 4.0, "forest_growth": true, "npcs": 6,
-		"structures": ["stone_circle"],
+		"structures": ["stone_circle", "cave_dome", "windmill", "lighthouse"],
 		"trees": 40, "animals": {"sheep": 14, "deer": 12, "rabbit": 14},
 	},
 	"island_castaway": {
@@ -65,7 +65,7 @@ const DEFS := {
 		"seed": 326, "premium": true, "creative": false, "climate": "desert",
 		"money": 900, "items": {"clay": 30, "stone": 40, "wood": 30, "glass": 6, "brick": 12},
 		"hour": 11.0, "weather": "clear", "time_speed": 1.0, "forest_growth": false, "npcs": 5,
-		"structures": ["oasis_camp", "pyramid", "market_street", "caravanserai"],
+		"structures": ["oasis_camp", "pyramid", "market_street", "caravanserai", "cave_dome_west"],
 		"trees": 10, "animals": {"sheep": 6, "rabbit": 8},
 	},
 }
@@ -146,6 +146,18 @@ static func _house(out: Array, cx: int, cz: int, hw: int, hd: int, wall_h: int, 
 				else:
 					_col(out, cx + dx, cz + dz, 0, wall_h, wall)
 			_col(out, cx + dx, cz + dz, wall_h, 1, "roof")
+
+
+## مبلمان ساده داخل خانه‌ای که با _house ساخته شده: تخت دوبلوکی، چراغ، میز و صندلی؛ خانهٔ مقابل در (ستون وسط رو به +z) همیشه آزاد می‌ماند.
+static func _furnish_house(out: Array, cx: int, cz: int, hw: int, hd: int) -> void:
+	var bx := -(hw - 1)
+	var bz := -(hd - 1)
+	_col(out, cx + bx, cz + bz, 0, 1, "wood")
+	_col(out, cx + bx + 1, cz + bz, 0, 1, "wood")
+	_col(out, cx + hw - 1, cz + bz, 0, 1, "lamp")
+	_col(out, cx + hw - 1, cz, 0, 1, "wood")
+	if hw >= 3:
+		_col(out, cx + hw - 2, cz, 0, 1, "stairs")
 
 
 ## گنبد توخالی با ورودی رو به +z (غار یا ایگلو). لایه‌به‌لایه از پایین و از بیرون به داخل ساخته می‌شود تا هر بلوک تکیه‌گاه داشته باشد.
@@ -352,8 +364,11 @@ static func structure(kind: String, rng: RandomNumberGenerator) -> Array:
 			var cx := CENTER + 32
 			var cz := CENTER + 4
 			_house(out, cx, cz, 2, 2, 3, "wood")
+			_furnish_house(out, cx, cz, 2, 2)
 			_house(out, cx + 8, cz + 3, 2, 3, 3, "brick")
+			_furnish_house(out, cx + 8, cz + 3, 2, 3)
 			_house(out, cx, cz + 10, 3, 2, 3, "wood")
+			_furnish_house(out, cx, cz + 10, 3, 2)
 			_col(out, cx + 4, cz + 8, 0, 3, "wood")
 			_col(out, cx + 4, cz + 8, 3, 1, "lamp")
 		"lighthouse":
@@ -370,6 +385,9 @@ static func structure(kind: String, rng: RandomNumberGenerator) -> Array:
 		"cave_dome":
 			# غار سنگی: گنبد توخالی ۱۳×۱۳ با درگاه رو به جنوب و چراغ داخل
 			_dome(out, CENTER + 34, CENTER - 4, [6, 6, 5, 4, 3, 2], "stone", true)
+		"cave_dome_west":
+			# غار سنگی سمت غرب (برای جهان‌هایی که سمت شرق جا ندارند)
+			_dome(out, CENTER - 34, CENTER - 4, [6, 6, 5, 4, 3, 2], "stone", true)
 		"igloo":
 			# ایگلوی شیشه‌ای کوچک (جهان زمستانی)
 			_dome(out, CENTER - 26, CENTER + 8, [4, 4, 3, 2], "glass", false)
@@ -388,7 +406,14 @@ static func structure(kind: String, rng: RandomNumberGenerator) -> Array:
 			_col(out, cx, cz, 3, 1, "lamp")
 		"warehouse":
 			# انبار بزرگ آجری ۱۱×۷
-			_house(out, CENTER - 32, CENTER + 26, 5, 3, 3, "brick")
+			var wx := CENTER - 32
+			var wz := CENTER + 26
+			_house(out, wx, wz, 5, 3, 3, "brick")
+			# صندوق‌های چوبی پشت انبار و چراغ دو طرف
+			for dx in [-4, -3, -2, 2, 3, 4]:
+				_col(out, wx + dx, wz - 2, 0, 2 if absi(dx) != 3 else 1, "wood")
+			_col(out, wx - 4, wz + 1, 0, 1, "lamp")
+			_col(out, wx + 4, wz + 1, 0, 1, "lamp")
 		"caravanserai":
 			# کاروانسرا: حیاط ۱۷×۱۷ با دیوار گلی، برج‌های گوشه و دروازهٔ جنوبی (جهان صحرا)
 			var cx := CENTER + 34
@@ -401,8 +426,14 @@ static func structure(kind: String, rng: RandomNumberGenerator) -> Array:
 						continue   # دروازه
 					var corner := absi(dx) == 8 and absi(dz) == 8
 					_col(out, cx + dx, cz + dz, 0, 5 if corner else 3, "brick")
-			for c in [Vector2i(-3, -3), Vector2i(3, -3)]:
+			for c in [Vector2i(-3, -3), Vector2i(3, -3), Vector2i(-6, 2), Vector2i(6, 2)]:
 				_col(out, cx + c.x, cz + c.y, 0, 1, "lamp")
+			# نیمکت‌های سنگی کنار دیوار پشتی و بارانداز چوبی دو طرف حیاط
+			for dx in [-6, -5, -4, 4, 5, 6]:
+				_col(out, cx + dx, cz - 6, 0, 1, "stone")
+			for dz in [-1, 0, 1]:
+				_col(out, cx - 7, cz + dz, 0, 2, "wood")
+				_col(out, cx + 7, cz + dz, 0, 2, "wood")
 			for dx in range(-1, 2):
 				for dz in range(-1, 2):
 					if maxi(absi(dx), absi(dz)) == 1:

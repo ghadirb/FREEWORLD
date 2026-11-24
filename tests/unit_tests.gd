@@ -3070,6 +3070,20 @@ func test_scenarios() -> void:
 			inside_free = false
 	check(door_free and inside_free, "the cave has a free doorway and a hollow inside")
 	check(cave_cs.blocks.has(Vector3i(cave_x, g0 + 5, cave_z)), "the cave has a solid roof")
+	# غار در جهان‌های دیگر و خانهٔ مبله‌شده
+	for cave_case in [["god_sandbox", Scenarios.CENTER + 34], ["desert_caravan", Scenarios.CENTER - 34]]:
+		var cdef: Dictionary = Scenarios.def(str(cave_case[0]))
+		var ccs = CityState.new(int(cdef["seed"]))
+		ScenarioApply.apply(ccs, str(cave_case[0]))
+		var ccx: int = int(cave_case[1])
+		var cg: int = ScenarioApply._ground_level(ccs, ccx, Scenarios.CENTER - 4)
+		check(ccs.blocks.has(Vector3i(ccx, cg + 5, Scenarios.CENTER - 4)), "%s has a cave with a solid roof" % str(cave_case[0]))
+	var vcs = CityState.new(int(Scenarios.def("green_valley")["seed"]))
+	ScenarioApply.apply(vcs, "green_valley")
+	var hx: int = Scenarios.CENTER + 32
+	var hz: int = Scenarios.CENTER + 4
+	check(vcs.blocks.has(Vector3i(hx - 1, ScenarioApply._ground_level(vcs, hx - 1, hz - 1), hz - 1)), "the village cottage has a bed")
+	check(not vcs.blocks.has(Vector3i(hx, ScenarioApply._ground_level(vcs, hx, hz + 1), hz + 1)), "the cottage entry cell inside the door stays free")
 	var bell: Dictionary = Story.legend_entries("medieval_fort")[2]
 	var bell_spot: Vector2 = Book.legend_spot(cave_cs, bell)
 	check(int(floor(bell_spot.x)) == cave_x and int(floor(bell_spot.y)) == cave_z and float(bell["r"]) <= 3.5, "the bell-cave legend step sits inside the cave and needs you to enter it")
