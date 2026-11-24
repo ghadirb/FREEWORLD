@@ -3206,6 +3206,18 @@ func test_story_book() -> void:
 				missing = k
 	Loc.lang = "fa"
 	check(texts_ok, "every entry, role and dialogue line has Persian and English text (%s)" % missing)
+	var scenes_ok := true
+	var scene_missing := ""
+	for lang_code in ["fa", "en"]:
+		Loc.lang = lang_code
+		for sc in Story.LEGENDS:
+			for e in Story.legend_entries(str(sc)):
+				var sk := "book_%s_s" % str(e["id"])
+				if Loc.t(sk) == sk:
+					scenes_ok = false
+					scene_missing = sk
+	Loc.lang = "fa"
+	check(scenes_ok, "every legend step has a story scene in Persian and English (%s)" % scene_missing)
 	# --- شخصیت‌ها ---
 	check(Story.role_of("", 1) == "farmer" and Story.role_of("", 3) == "guide" and Story.role_of("", 4) == "villager", "default cast by NPC order")
 	check(Story.role_of("frozen_north", 1) == "hunter" and Story.role_of("desert_caravan", 1) == "nomad", "scenario casts differ")

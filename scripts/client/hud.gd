@@ -1234,6 +1234,12 @@ func _fill_book() -> void:
 		d.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		d.custom_minimum_size = Vector2(520, 0)
 		box.add_child(d)
+		# صحنهٔ داستانی مرحلهٔ افسانه: فقط بعد از رسیدن به آن مرحله دیده می‌شود (اسپویلر ندارد).
+		if done and id.begins_with("lg_") and Loc.t("book_%s_s" % id) != "book_%s_s" % id:
+			var sc := _label("📜 " + Loc.t("book_%s_s" % id), 16, Color("d9c9a0"))
+			sc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			sc.custom_minimum_size = Vector2(520, 0)
+			box.add_child(sc)
 
 
 func _fill_npc() -> void:
