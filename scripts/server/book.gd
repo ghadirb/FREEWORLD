@@ -32,8 +32,17 @@ static func evaluate(cs, player: String, ctx: Dictionary) -> Array:
 		acc["book"][id] = cs.day_count
 		if reward > 0:
 			acc["money"] = int(acc["money"]) + reward
-		cs._log(player, "book_unlock", {"id": id, "reward": reward})
-		unlocked.append({"id": id, "reward": reward})
+		var bonus_item := ""
+		var bonus_n := 0
+		var bonus: Variant = e.get("bonus", [])
+		if not cs.creative and bonus is Array and (bonus as Array).size() == 2:
+			bonus_item = str(bonus[0])
+			bonus_n = int(bonus[1])
+			if not (acc.get("inv") is Dictionary):
+				acc["inv"] = {}
+			acc["inv"][bonus_item] = int(acc["inv"].get(bonus_item, 0)) + bonus_n
+		cs._log(player, "book_unlock", {"id": id, "reward": reward, "bonus": bonus_item})
+		unlocked.append({"id": id, "reward": reward, "bonus_item": bonus_item, "bonus_n": bonus_n})
 	return unlocked
 
 

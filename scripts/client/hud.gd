@@ -1968,6 +1968,8 @@ func _on_notice(code: String, args: Dictionary) -> void:
 			var bmsg := Loc.fmt("msg_book_unlock", [Loc.t("book_" + str(args["id"]))])
 			if int(args["reward"]) > 0:
 				bmsg += "  " + Loc.fmt("msg_book_reward", [Loc.digits(str(args["reward"]))])
+			if str(args.get("bonus_item", "")) != "" and int(args.get("bonus_n", 0)) > 0:
+				bmsg += "  " + Loc.fmt("quest_bonus", [Loc.digits(str(args["bonus_n"])), Loc.t("item_" + str(args["bonus_item"]))])
 			toast(bmsg, Color("ffd24a"))
 		"npc_talk":
 			_show_npc_speech(args)

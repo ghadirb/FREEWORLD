@@ -1868,6 +1868,24 @@ func test_legends() -> void:
 	check(data_ok, "legend steps have unique ids, known worlds, cast givers and small rewards (%d steps)" % ids.size())
 	check(texts_ok, "every legend step and direction has Persian and English text (%s)" % missing)
 	check(Story.legend_entries("").is_empty() and Story.entries_for("temperate", false, "").size() == Story.entries_for("temperate", false).size(), "worlds without a legend are unchanged")
+	# همهٔ جهان‌های افسانه‌دار: مقصدها خشکی‌اند و نشانگر دارند
+	for sc in Story.LEGENDS:
+		var wc = CityState.new(int(Scenarios.def(str(sc))["seed"]))
+		ScenarioApply.apply(wc, str(sc))
+		var all_dry := true
+		var all_marked := true
+		for e in Story.legend_entries(str(sc)):
+			var q: Vector2 = Book.legend_spot(wc, e)
+			if Boat.is_water(wc, q.x, q.y) or wc.world.height_at(q.x, q.y) < 0.5:
+				all_dry = false
+			var hit := false
+			for y in range(0, 24):
+				if wc.blocks.has(Vector3i(int(floor(q.x)), y, int(floor(q.y)))):
+					hit = true
+					break
+			if not hit:
+				all_marked = false
+		check(all_dry and all_marked, "%s: every stop is dry land with a marker" % str(sc))
 	var cs = CityState.new(int(Scenarios.def("medieval_fort")["seed"]))
 	ScenarioApply.apply(cs, "medieval_fort")
 	_login(cs, "hero")
@@ -1905,6 +1923,17 @@ func test_legends() -> void:
 	check(str(nxt.get("id", "")) == "lg_medieval_fort_3", "the book points at the next stop")
 	var cs2 = CityState.from_dict(cs.to_dict())
 	check(cs2 != null and (cs2.accounts["hero"]["book"] as Dictionary).has("lg_medieval_fort_2"), "legend progress survives save/load")
+	# پایان افسانه: کالای کمیاب به کیف می‌رسد (فقط یک بار)
+	var gem0: int = int(acc["inv"].get("gem", 0))
+	var last_ok := true
+	for i in range(2, steps.size()):
+		var sp3: Vector2 = Book.legend_spot(cs, steps[i])
+		var r3: Array = Book.evaluate(cs, "hero", {"pos": Vector3(sp3.x, 2.0, sp3.y), "mine": ""})
+		if not r3.any(func(g): return g["id"] == str(steps[i]["id"])):
+			last_ok = false
+	check(last_ok, "all stops can be completed in order")
+	check(int(acc["inv"].get("gem", 0)) == gem0 + 1, "finishing the legend gives the rare item once")
+	check(Book.public_state(cs, "hero")["legend"].is_empty(), "no next stop after the legend is finished")
 	var c2 = CityState.new(int(Scenarios.def("frozen_north")["seed"]))
 	ScenarioApply.apply(c2, "frozen_north")
 	_login(c2, "kid")

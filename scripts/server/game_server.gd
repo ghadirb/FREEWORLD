@@ -1668,7 +1668,8 @@ func _check_book(pid: int) -> void:
 	if got.is_empty():
 		return
 	for g in got:
-		_notice(pid, "book_unlock", {"id": g["id"], "reward": g["reward"]})
+		_notice(pid, "book_unlock", {"id": g["id"], "reward": g["reward"], "bonus_item": g.get("bonus_item", ""), "bonus_n": g.get("bonus_n", 0)})
+	_push_inv(pid, p["name"])
 	_send(pid, "s2c_money", cs.money_of(p["name"]))
 	_send(pid, "s2c_book", Book.public_state(cs, p["name"]))
 	_dirty = true

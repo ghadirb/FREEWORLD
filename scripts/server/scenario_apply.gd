@@ -77,6 +77,12 @@ static func _place_legend_markers(cs, id: String) -> int:
 					cols.append([x + dx, z + dz, 0, 1, "brick"])
 		cols.append([x, z, 0, 4, "stone"])
 		cols.append([x, z, 4, 1, "lamp"])
+		if int(e["a"]) == Story.legend_entries(id).size() - 1:
+			# مرحلهٔ آخر: دیوار سنگی دور ستون (با یک دروازه) تا «گنجینه» مهم‌تر دیده شود.
+			for dx in range(-3, 4):
+				for dz in range(-3, 4):
+					if maxi(absi(dx), absi(dz)) == 3 and not (dx == 3 and dz == 0):
+						cols.append([x + dx, z + dz, 0, 2, "stone"])
 	return _place_columns(cs, cols)
 
 

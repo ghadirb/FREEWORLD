@@ -112,19 +112,37 @@ const LEGENDS := {
 		{"dx": 40, "dz": -90, "reward": 35, "giver": "guide"},
 		{"dx": 110, "dz": 20, "reward": 45, "giver": "smith"},
 		{"dx": 70, "dz": 110, "reward": 55, "giver": "farmer"},
-		{"dx": -90, "dz": 90, "reward": 90, "giver": "elder"},
+		{"dx": -90, "dz": 90, "reward": 90, "giver": "elder", "bonus": ["gem", 1]},
 	],
 	"frozen_north": [
 		{"dx": 50, "dz": -70, "reward": 25, "giver": "hunter"},
 		{"dx": -80, "dz": -20, "reward": 40, "giver": "innkeeper"},
 		{"dx": -40, "dz": 100, "reward": 55, "giver": "hunter"},
-		{"dx": 100, "dz": 80, "reward": 90, "giver": "elder"},
+		{"dx": 100, "dz": 80, "reward": 90, "giver": "elder", "bonus": ["gold", 1]},
 	],
 	"desert_caravan": [
 		{"dx": -70, "dz": 40, "reward": 25, "giver": "nomad"},
 		{"dx": 20, "dz": -100, "reward": 40, "giver": "innkeeper"},
 		{"dx": 110, "dz": -30, "reward": 55, "giver": "smith"},
-		{"dx": 60, "dz": 100, "reward": 90, "giver": "nomad"},
+		{"dx": 60, "dz": 100, "reward": 90, "giver": "nomad", "bonus": ["gem", 1]},
+	],
+	"green_valley": [
+		{"dx": 45, "dz": -40, "reward": 25, "giver": "farmer"},
+		{"dx": -50, "dz": -60, "reward": 35, "giver": "baker"},
+		{"dx": -80, "dz": 40, "reward": 50, "giver": "guide"},
+		{"dx": 60, "dz": 80, "reward": 90, "giver": "farmer", "bonus": ["gem", 1]},
+	],
+	"island_castaway": [
+		{"dx": 30, "dz": -25, "reward": 25, "giver": "farmer"},
+		{"dx": -35, "dz": -30, "reward": 35, "giver": "guide"},
+		{"dx": -40, "dz": 30, "reward": 50, "giver": "baker"},
+		{"dx": 35, "dz": 35, "reward": 90, "giver": "guide", "bonus": ["gold", 1]},
+	],
+	"merchant_city": [
+		{"dx": 50, "dz": 35, "reward": 25, "giver": "baker"},
+		{"dx": -55, "dz": 45, "reward": 35, "giver": "guide"},
+		{"dx": -60, "dz": -50, "reward": 50, "giver": "farmer"},
+		{"dx": 70, "dz": -70, "reward": 90, "giver": "baker", "bonus": ["gem", 1]},
 	],
 }
 const LEGEND_RADIUS := 8.0
@@ -137,7 +155,7 @@ static func legend_entries(scenario: String) -> Array:
 	for i in range(steps.size()):
 		var st: Dictionary = steps[i]
 		out.append({"id": "lg_%s_%d" % [scenario, i + 1], "kind": "legend", "a": i, "b": 0, "reward": int(st["reward"]),
-			"giver": str(st["giver"]), "climate": "", "scenario": scenario, "dx": int(st["dx"]), "dz": int(st["dz"]), "r": LEGEND_RADIUS})
+			"giver": str(st["giver"]), "climate": "", "scenario": scenario, "dx": int(st["dx"]), "dz": int(st["dz"]), "r": LEGEND_RADIUS, "bonus": st.get("bonus", [])})
 	return out
 
 
