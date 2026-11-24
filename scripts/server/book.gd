@@ -120,19 +120,38 @@ static func _met(cs, acc: Dictionary, player: String, e: Dictionary, ctx: Dictio
 static func legend_spot(cs, e: Dictionary) -> Vector2:
 	var cx: float = float(Scenarios.CENTER) + float(e["dx"])
 	var cz: float = float(Scenarios.CENTER) + float(e["dz"])
-	for ring in range(0, 13):
-		var rad := float(ring) * 4.0
-		var n := 1 if ring == 0 else 16
-		for k in range(n):
-			var a := TAU * float(k) / float(n)
-			var x := cx + cos(a) * rad
-			var z := cz + sin(a) * rad
-			if cs.world.height_at(x, z) < 0.5 or Boat.is_water(cs, x, z):
-				continue
-			if cs.world.near_mine_entrance(x, z, FWConst.MINE_NO_BUILD_RADIUS) or cs.world.village_solid_at(x, z, 3.0):
-				continue
-			return Vector2(floorf(x) + 0.5, floorf(z) + 0.5)
+	# مرحلهٔ آخر (تالار) اول زمین تقریباً هموار می‌خواهد؛ اگر پیدا نشد هر خشکی‌ای قبول است.
+	var passes: Array = [true, false] if bool(e.get("flat", false)) else [false]
+	for need_flat in passes:
+		for ring in range(0, 13):
+			var rad := float(ring) * 4.0
+			var n := 1 if ring == 0 else 16
+			for k in range(n):
+				var a := TAU * float(k) / float(n)
+				var x := cx + cos(a) * rad
+				var z := cz + sin(a) * rad
+				if cs.world.height_at(x, z) < 0.5 or Boat.is_water(cs, x, z):
+					continue
+				if cs.world.near_mine_entrance(x, z, FWConst.MINE_NO_BUILD_RADIUS) or cs.world.village_solid_at(x, z, 3.0):
+					continue
+				if need_flat and not _flat_enough(cs, x, z):
+					continue
+				return Vector2(floorf(x) + 0.5, floorf(z) + 0.5)
 	return Vector2(cx, cz)
+
+
+## زمین ۱۱×۱۱ متری اطراف نقطه تقریباً هموار و خشک باشد (برای ساخت تالار).
+static func _flat_enough(cs, x: float, z: float) -> bool:
+	var lo := INF
+	var hi := -INF
+	for dx in [-5.0, 0.0, 5.0]:
+		for dz in [-5.0, 0.0, 5.0]:
+			var h: float = cs.world.height_at(x + dx, z + dz)
+			if h < 0.5 or Boat.is_water(cs, x + dx, z + dz):
+				return false
+			lo = minf(lo, h)
+			hi = maxf(hi, h)
+	return hi - lo <= 1.5
 
 
 ## مرحلهٔ بعدی افسانه برای بازیکن (خالی اگر جهان افسانه ندارد یا همه تمام شده): {id, x, z}.

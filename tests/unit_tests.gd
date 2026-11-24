@@ -1934,6 +1934,35 @@ func test_legends() -> void:
 	check(last_ok, "all stops can be completed in order")
 	check(int(acc["inv"].get("gem", 0)) == gem0 + 1, "finishing the legend gives the rare item once")
 	check(Book.public_state(cs, "hero")["legend"].is_empty(), "no next stop after the legend is finished")
+	# تالار پایانی: دیوار، سقف، دروازهٔ آزاد؛ و فقط داخل تالار مرحله را باز می‌کند
+	var hs: Vector2 = Book.legend_spot(cs, steps[steps.size() - 1])
+	var hx := int(floor(hs.x))
+	var hz := int(floor(hs.y))
+	var has_roof := false
+	var has_wall := false
+	var door_blocked := false
+	for y in range(0, 40):
+		if cs.blocks.has(Vector3i(hx, y, hz)) and str(cs.blocks[Vector3i(hx, y, hz)][0]) == "roof":
+			has_roof = true
+		if cs.blocks.has(Vector3i(hx - 4, y, hz)) and str(cs.blocks[Vector3i(hx - 4, y, hz)][0]) == "stone":
+			has_wall = true
+		var gd := maxi(0, int(floor(cs.world.height_at(float(hx + 4) + 0.5, float(hz) + 0.5))))
+		if y >= gd and y < gd + 3 and (cs.blocks.has(Vector3i(hx + 4, y, hz)) or cs.blocks.has(Vector3i(hx + 4, y, hz + 1))):
+			door_blocked = true
+	check(has_roof and has_wall, "the final hall has stone walls and a roof")
+	check(not door_blocked, "the hall doorway stays open")
+	var cf = CityState.new(int(Scenarios.def("medieval_fort")["seed"]))
+	ScenarioApply.apply(cf, "medieval_fort")
+	_login(cf, "walker")
+	var wacc: Dictionary = cf.accounts["walker"]
+	for i in range(steps.size() - 1):
+		var sq: Vector2 = Book.legend_spot(cf, steps[i])
+		Book.evaluate(cf, "walker", {"pos": Vector3(sq.x, 2.0, sq.y), "mine": ""})
+	var outside := Book.evaluate(cf, "walker", {"pos": Vector3(hs.x + 7.0, 2.0, hs.y), "mine": ""})
+	check(not outside.any(func(g): return g["id"] == str(steps[steps.size() - 1]["id"])), "standing outside the hall does not finish the legend")
+	check(Book.evaluate(cf, "walker", {"pos": Vector3(hs.x + 1.0, 2.0, hs.y), "mine": ""}).any(func(g): return g["id"] == str(steps[steps.size() - 1]["id"])), "standing inside the hall finishes the legend")
+	check(wacc.get("book") is Dictionary, "book stays valid")
+	check(FWConst.WORLD_LIMIT >= 800.0 and WorldGen.new(102).villages().size() >= 20, "the world is large and has many villages (%d)" % WorldGen.new(102).villages().size())
 	var c2 = CityState.new(int(Scenarios.def("frozen_north")["seed"]))
 	ScenarioApply.apply(c2, "frozen_north")
 	_login(c2, "kid")
@@ -2020,7 +2049,7 @@ func test_god_tools() -> void:
 	var cs2 = CityState.from_dict(cs.to_dict())
 	check(cs2 != null and cs2.god.size() == 2 and cs2.next_god_id == cs.next_god_id, "creatures survive save/load")
 	check(cs.god_action("mortal", "remove", "", land.x, land.y)["error"] == "forbidden", "players cannot remove creatures")
-	check(cs.god_action("maker", "remove", "", land.x + 500.0, land.y)["error"] == "bad_place", "far removal is rejected")
+	check(cs.god_action("maker", "remove", "", land.x + FWConst.WORLD_LIMIT + 100.0, land.y)["error"] == "bad_place", "far removal is rejected")
 	check(cs.god_action("maker", "remove", "", land.x, land.y)["ok"] and not cs.god.has(tr["id"]), "an admin removes the tree")
 	for i in range(FWConst.GOD_MAX):
 		cs.god[1000 + i] = {"id": 1000 + i, "kind": "tree", "x": land.x, "z": land.y, "tx": 0.0, "tz": 0.0, "wait": 0.0}

@@ -146,6 +146,7 @@ const LEGENDS := {
 	],
 }
 const LEGEND_RADIUS := 8.0
+const LEGEND_FINAL_RADIUS := 3.5   # مرحلهٔ آخر: باید داخل تالار بایستی
 
 
 ## مرحله‌های افسانهٔ یک جهان به شکل ورودی کتاب (kind = legend). a = شمارهٔ مرحله (۰-پایه).
@@ -154,8 +155,9 @@ static func legend_entries(scenario: String) -> Array:
 	var steps: Array = LEGENDS.get(scenario, [])
 	for i in range(steps.size()):
 		var st: Dictionary = steps[i]
+		var last := i == steps.size() - 1
 		out.append({"id": "lg_%s_%d" % [scenario, i + 1], "kind": "legend", "a": i, "b": 0, "reward": int(st["reward"]),
-			"giver": str(st["giver"]), "climate": "", "scenario": scenario, "dx": int(st["dx"]), "dz": int(st["dz"]), "r": LEGEND_RADIUS, "bonus": st.get("bonus", [])})
+			"giver": str(st["giver"]), "climate": "", "scenario": scenario, "dx": int(st["dx"]), "dz": int(st["dz"]), "r": LEGEND_FINAL_RADIUS if last else LEGEND_RADIUS, "flat": last, "bonus": st.get("bonus", [])})
 	return out
 
 

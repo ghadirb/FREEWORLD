@@ -64,26 +64,68 @@ static func _place_columns(cs, cols: Array) -> int:
 	return placed
 
 
-## نشانگر هر مرحلهٔ افسانه: ستون سنگی با چراغ بالایش و حلقهٔ آجری پایش، تا در نقشه دیده شود (قطعی و فقط یک بار).
+## نشانگر هر مرحلهٔ افسانه: ستون سنگی با چراغ بالایش و حلقهٔ آجری پایش (مرحلهٔ آخر یک تالار سنگیِ سقف‌دار است).
 static func _place_legend_markers(cs, id: String) -> int:
 	var cols: Array = []
-	for e in Story.legend_entries(id):
+	var placed := 0
+	var entries: Array = Story.legend_entries(id)
+	for e in entries:
 		var sp: Vector2 = Book.legend_spot(cs, e)
 		var x := int(floor(sp.x))
 		var z := int(floor(sp.y))
+		if int(e["a"]) == entries.size() - 1:
+			placed += _place_hall(cs, x, z)
+			continue
 		for dx in range(-1, 2):
 			for dz in range(-1, 2):
 				if dx != 0 or dz != 0:
 					cols.append([x + dx, z + dz, 0, 1, "brick"])
 		cols.append([x, z, 0, 4, "stone"])
 		cols.append([x, z, 4, 1, "lamp"])
-		if int(e["a"]) == Story.legend_entries(id).size() - 1:
-			# مرحلهٔ آخر: دیوار سنگی دور ستون (با یک دروازه) تا «گنجینه» مهم‌تر دیده شود.
-			for dx in range(-3, 4):
-				for dz in range(-3, 4):
-					if maxi(absi(dx), absi(dz)) == 3 and not (dx == 3 and dz == 0):
-						cols.append([x + dx, z + dz, 0, 2, "stone"])
-	return _place_columns(cs, cols)
+	return placed + _place_columns(cs, cols)
+
+
+## تالار پایان افسانه: دیوار سنگی ۴ بلوکی دور یک اتاق ۷×۷، دروازهٔ سه‌بلوکی سمت شرق، سقف، چهار چراغ گوشه و یک سکو با چراغ.
+## ارتفاع از بلندترین نقطهٔ زمین زیر تالار گرفته می‌شود تا سقف صاف و بی‌حفره باشد؛ ستون‌های پایین‌تر تا زمین پر می‌شوند.
+static func _place_hall(cs, cx: int, cz: int) -> int:
+	var base := 0
+	for dx in range(-4, 5):
+		for dz in range(-4, 5):
+			base = maxi(base, _ground_level(cs, cx + dx, cz + dz))
+	var placed := 0
+	# دیوارها (از زمین هر ستون تا زیر سقف)
+	for dx in range(-4, 5):
+		for dz in range(-4, 5):
+			if maxi(absi(dx), absi(dz)) != 4:
+				continue
+			if dx == 4 and absi(dz) <= 1:
+				continue   # دروازه
+			var x := cx + dx
+			var z := cz + dz
+			for y in range(_ground_level(cs, x, z), base + 4):
+				placed += _put(cs, x, y, z, "stone")
+	# سقف: از بیرون به داخل تا هر بلوک به همسایه‌اش تکیه کند
+	for ring in range(4, -1, -1):
+		for dx in range(-ring, ring + 1):
+			for dz in range(-ring, ring + 1):
+				if maxi(absi(dx), absi(dz)) == ring:
+					placed += _put(cs, cx + dx, base + 4, cz + dz, "roof")
+	# چراغ‌های گوشه (روی زمین داخل) و سکوی میانی
+	for c in [Vector2i(-3, -3), Vector2i(3, -3), Vector2i(-3, 3), Vector2i(3, 3)]:
+		placed += _put(cs, cx + c.x, _ground_level(cs, cx + c.x, cz + c.y), cz + c.y, "lamp")
+	var gy := _ground_level(cs, cx, cz)
+	placed += _put(cs, cx, gy, cz, "stone")
+	placed += _put(cs, cx, gy + 1, cz, "lamp")
+	return placed
+
+
+static func _put(cs, x: int, y: int, z: int, type: String) -> int:
+	if cs.blocks.size() >= FWConst.MAX_BLOCKS_TOTAL:
+		return 0
+	if cs.check_block(FWConst.ROLE_WORLD_ADMIN, x, y, z, type) != "":
+		return 0
+	cs._add_block(Vector3i(x, y, z), type, 0, OWNER)
+	return 1
 
 
 ## درخت و حیوان‌های آرام دور میدان، قطعی از Seed جهان (جدا از rng سازه‌ها).
