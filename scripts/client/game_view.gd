@@ -757,6 +757,8 @@ func _tool_tap(pos: Vector2) -> void:
 		"brush":
 			var hit: Dictionary = block_view.raycast(o, d)
 			if hit.get("kind", "") != "block":
+				Sfx.play(self, "error")
+				_feedback("brush_blocks_only")
 				return
 			if not _in_reach(hit["hit"]):
 				Sfx.play(self, "error")

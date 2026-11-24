@@ -1620,9 +1620,47 @@ func _furn_place_pressed() -> void:
 	var me: Vector2 = view.room_pos()
 	var h := FWConst.furn_half(t, _furn_rot)
 	var fwd := Vector2(sin(view.my_yaw), cos(view.my_yaw))
-	var at := me + fwd * (maxf(h.x, h.y) + 0.7)
+	var want := me + fwd * (maxf(h.x, h.y) + 0.7)
+	# اگر جلوی بازیکن دیوار/در/مبلمان دیگر است، نزدیک‌ترین جای آزاد پیدا می‌شود.
+	var at: Variant = _furn_find_spot(t, _furn_rot, want)
+	if at == null:
+		toast(Loc.t("err_furn_out"), Color("ff9a8a"))
+		return
 	Sfx.play(self, "click")
 	client.furn_place(t, at.x, at.y, _furn_rot)
+
+
+## همان قواعد سرور (محدوده، هم‌پوشانی، جلوی در) را روی کلاینت می‌سنجد و نزدیک‌ترین نقطهٔ معتبر را برمی‌گرداند.
+func _furn_spot_ok(t: String, rot: int, p: Vector2) -> bool:
+	var h := FWConst.furn_half(t, rot)
+	if absf(p.x) + h.x > FWConst.FURN_BOUND or absf(p.y) + h.y > FWConst.FURN_BOUND:
+		return false
+	var flat: bool = bool(FWConst.FURNITURE[t].get("flat", false))
+	for e in client.furn:
+		var eh := FWConst.furn_half(str(e["t"]), int(e["r"]))
+		var eflat: bool = bool(FWConst.FURNITURE[str(e["t"])].get("flat", false))
+		if eflat != flat:
+			continue
+		if absf(p.x - float(e["x"])) < h.x + eh.x - 0.001 and absf(p.y - float(e["z"])) < h.y + eh.y - 0.001:
+			return false
+	if not flat and absf(p.x) < h.x + 1.0 and p.y + h.y > 2.4:
+		return false
+	return true
+
+
+func _furn_find_spot(t: String, rot: int, want: Vector2) -> Variant:
+	var step: float = FWConst.FURN_SNAP
+	var best: Variant = null
+	var best_d := 1.0e9
+	var n := int(ceil((FWConst.FURN_BOUND * 2.0) / step))
+	for ix in range(-n, n + 1):
+		for iz in range(-n, n + 1):
+			var c := Vector2(snappedf(want.x, step) + float(ix) * step, snappedf(want.y, step) + float(iz) * step)
+			var d := c.distance_squared_to(want)
+			if d < best_d and _furn_spot_ok(t, rot, c):
+				best_d = d
+				best = c
+	return best
 
 
 func _furn_remove_pressed() -> void:
