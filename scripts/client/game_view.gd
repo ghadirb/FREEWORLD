@@ -56,6 +56,8 @@ var obs_nodes: Array = []      # موانع متحرک پارکور (پروتک�
 var _obs_mesh: ArrayMesh
 var _ball_node: MeshInstance3D   # توپ فوتبال بازی‌ساز (پروتکل ۴۲)
 var _ball_mesh: ArrayMesh
+var foe_nodes: Array = []      # دشمن‌های مبارزه و بقا (پروتکل ۴۳)
+var _foe_mesh: ArrayMesh
 var train_nodes: Array = []   # برای هر خط ریل: [گرهٔ لوکوموتیو، گره‌های واگن‌ها...]
 var _train_line_count: int = -1
 var _train_mesh_loco: ArrayMesh
@@ -1173,6 +1175,7 @@ func _process(delta: float) -> void:
 	_update_obstacles()
 	_update_ball()
 	var dt := minf(delta, 0.1)
+	_update_foes(dt)
 	var kb := _keyboard_vector()
 	if not (get_viewport().gui_get_focus_owner() is LineEdit):
 		if Input.is_key_pressed(KEY_Q):
@@ -1724,7 +1727,11 @@ func _sync_coins() -> void:
 		_ball_node.queue_free()
 		_ball_node = null
 	if not bool(client.minigame.get("active", false)):
+		for fn in foe_nodes:
+			fn.queue_free()
+		foe_nodes.clear()
 		return
+	_sync_foes()
 	if _god_mat == null:
 		_god_mat = MeshBuilder.material()
 	if client.minigame.has("ball"):
@@ -1782,6 +1789,40 @@ func _sync_coins() -> void:
 
 
 ## موانع پارکور: موقعیت فقط تابعی از ساعت دور است؛ ساعت سرور هنگام آخرین وضعیت + زمان محلی سپری‌شده.
+## دشمن‌ها: به تعداد فعلی گره می‌سازد/حذف می‌کند و هر فریم نرم به موقعیت سرور می‌برد.
+func _sync_foes() -> void:
+	var foes: Array = client.minigame.get("foes", [])
+	if _foe_mesh == null:
+		var fm := MeshBuilder.new()
+		fm.add_box(Vector3(0, 0.9, 0), Vector3(0.9, 1.4, 0.7), Color("b03030"))
+		fm.add_box(Vector3(0, 1.8, 0), Vector3(0.6, 0.6, 0.6), Color("8a1f1f"))
+		_foe_mesh = fm.build()
+	if _god_mat == null:
+		_god_mat = MeshBuilder.material()
+	while foe_nodes.size() < foes.size():
+		var n := MeshInstance3D.new()
+		n.mesh = _foe_mesh
+		n.material_override = _god_mat
+		n.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(n)
+		foe_nodes.append(n)
+		var f0: Array = foes[foe_nodes.size() - 1]
+		n.position = Vector3(float(f0[0]), world.height_at(float(f0[0]), float(f0[1])), float(f0[1]))
+	while foe_nodes.size() > foes.size():
+		foe_nodes.pop_back().queue_free()
+
+
+func _update_foes(dt: float) -> void:
+	var foes: Array = client.minigame.get("foes", [])
+	for i in mini(foe_nodes.size(), foes.size()):
+		var tx: float = float(foes[i][0])
+		var tz: float = float(foes[i][1])
+		var cur: Vector3 = foe_nodes[i].position
+		var nx: float = lerpf(cur.x, tx, minf(dt * 8.0, 1.0))
+		var nz: float = lerpf(cur.z, tz, minf(dt * 8.0, 1.0))
+		foe_nodes[i].position = Vector3(nx, world.height_at(nx, nz), nz)
+
+
 ## توپ: موقعیت آخرین وضعیت سرور + حرکت پیش‌بینی‌شده با سرعت (حداکثر ۰٫۳ ثانیه) تا نرم دیده شود.
 func _update_ball() -> void:
 	if _ball_node == null or not client.minigame.has("ball"):

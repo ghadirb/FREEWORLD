@@ -66,6 +66,7 @@ func _init() -> void:
 	test_arena_parkour()
 	test_arena_race()
 	test_arena_football()
+	test_arena_survival()
 	test_arena_win_rule()
 	test_arena_ratings()
 	test_arena_obstacles()
@@ -4022,6 +4023,54 @@ func test_arena_football() -> void:
 	var bp: Vector2 = cs.minigame.runs["kicker"]["ball"]["p"]
 	check(bp.distance_to(center) <= 14.0, "the ball stays inside the arena")
 	check(Arenas.parse_code(Arenas.export_code(a))["def"]["kind"] == "football", "share code keeps football")
+
+
+func test_arena_survival() -> void:
+	print("== Combat and survival arenas ==")
+	var cs = CityState.new(4244)
+	_login(cs, "maker")
+	_login(cs, "fighter")
+	cs.accounts["maker"]["money"] = 1000
+	cs.accounts["fighter"]["money"] = 0
+	var at := _mg_land_pos(cs)
+	var res: Dictionary = cs.arena_create("maker", "Arena", at, 14.0, 99, 90.0, 1, "survival", 100)
+	check(bool(res["ok"]), "a survival arena can be built")
+	var id: int = int(res["id"])
+	var a: Dictionary = cs.arenas.items[id]
+	check(str(a["kind"]) == "survival" and int(a["coins"]) == FWConst.SURV_COUNT_MAX, "kind kept and enemy count clamped")
+	check(Arenas.make_survival_spawns(cs.world, cs.seed_value, a).size() >= 1, "spawn points exist on land")
+	check(bool(cs.arena_play("fighter", id, at)["ok"]), "a fighter can start the round")
+	var st: Dictionary = cs.minigame.public_state("fighter")
+	check(st.has("foes") and int(st["hp"]) == int(FWConst.SURV_HP), "state carries enemies and health")
+	var total: int = int(cs.minigame.runs["fighter"]["total"])
+	# بازیکن ثابت در مرکز می‌ماند: دشمن‌ها می‌رسند، بازیکن خودکار می‌زند
+	var kills_seen := 0
+	var hurt := 0
+	var guard := 0
+	while cs.minigame.runs.has("fighter") and guard < 6000:
+		guard += 1
+		var evs: Array = cs.minigame.step(0.05, {"fighter": at}, 1, cs.world)
+		for e in evs:
+			if str(e["kind"]) == "hurt":
+				hurt += 1
+			if str(e["kind"]) == "coin":
+				kills_seen += 1
+		if cs.minigame.runs.has("fighter"):
+			cs.minigame.runs["fighter"]["hp"] = FWConst.SURV_HP   # بازیکن آسیب‌ناپذیر برای آزمایش
+	check(kills_seen == total and not cs.minigame.runs.has("fighter"), "all enemies are defeated and the round ends")
+	check(hurt > 0, "enemies hurt the player when they reach him")
+	check(int(cs.minigame.arena_scores[id]["fighter"]) == total, "the record counts defeated enemies")
+	# مرگ: سلامت صفر دور را تمام می‌کند
+	check(bool(cs.arena_play("fighter", id, at)["ok"]), "a second round starts")
+	cs.minigame.runs["fighter"]["hp"] = 5.0
+	guard = 0
+	while cs.minigame.runs.has("fighter") and guard < 4000:
+		guard += 1
+		cs.minigame.step(0.05, {"fighter": at}, 1, cs.world)
+		if cs.minigame.runs.has("fighter") and float(cs.minigame.runs["fighter"]["hp"]) > 0.0:
+			cs.minigame.runs["fighter"]["hp"] = 5.0 if guard < 5 else 0.0
+	check(not cs.minigame.runs.has("fighter"), "zero health ends the round")
+	check(Arenas.parse_code(Arenas.export_code(a))["def"]["kind"] == "survival", "share code keeps survival")
 
 
 func test_arena_share_code() -> void:

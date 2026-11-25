@@ -67,6 +67,15 @@ func start_arena(world, seed_value: int, player_name: String, arena: Dictionary)
 		"total": int(arena["coins"]) if kind_now == "football" else targets.size(), "owner": str(arena["owner"]), "per_coin": int(arena["reward"]),
 		"props": Arenas.clean_props(arena.get("props", []), arena), "prop_cd": 0.0,
 		"pk": Arenas.is_ordered(kind_now), "rc": kind_now == "race", "last": Vector2(float(arena["x"]), float(arena["z"]))}
+	if kind_now == "survival":
+		runs[player_name]["coins"] = []
+		runs[player_name]["foes"] = []
+		runs[player_name]["spawns"] = targets
+		runs[player_name]["spawned"] = 0
+		runs[player_name]["hp"] = FWConst.SURV_HP
+		runs[player_name]["atk"] = 0.0
+		runs[player_name]["send"] = 0.0
+		runs[player_name]["total"] = int(arena["coins"])
 	if kind_now == "football":
 		var c0 := Vector2(float(arena["x"]), float(arena["z"]))
 		runs[player_name]["ball"] = {"p": c0, "v": Vector2.ZERO, "cd": 0.0, "send": 0.0, "c": c0, "r": float(arena["r"]), "goal": targets[0]}
@@ -117,6 +126,9 @@ func step(dt: float, positions: Dictionary, day: int, world_ref = null) -> Array
 		var pos: Vector2 = positions[player_name]
 		var coins: Array = run["coins"]
 		var is_ball: bool = run.has("ball")
+		var is_surv: bool = run.has("foes")
+		if is_surv:
+			_step_foes(world_ref, run, player_name, pos, dt, events)
 		if is_ball:
 			_step_ball(world_ref, run, player_name, pos, dt, events)
 		var i := -1 if is_ball else coins.size() - 1
@@ -135,7 +147,7 @@ func step(dt: float, positions: Dictionary, day: int, world_ref = null) -> Array
 		var obs: Array = run.get("obs", [])
 		if not obs.is_empty():
 			run["hit_cd"] = maxf(float(run.get("hit_cd", 0.0)) - dt, 0.0)
-			if float(run["hit_cd"]) <= 0.0 and not coins.is_empty():
+			if float(run["hit_cd"]) <= 0.0 and (not coins.is_empty() or is_surv):
 				for d in obs:
 					if pos.distance_to(Arenas.obstacle_pos(d, float(run["clk"]))) <= FWConst.ARENA_OBS_HIT_RANGE:
 						run["t"] = float(run["t"]) - FWConst.ARENA_OBS_PENALTY
@@ -153,12 +165,12 @@ func step(dt: float, positions: Dictionary, day: int, world_ref = null) -> Array
 						run["t"] = minf(float(run["t"]) + FWConst.ARENA_BONUS_TIME, float(run.get("limit", run["t"])))
 						props.remove_at(j)
 						events.append({"name": player_name, "kind": "bonus"})
-					elif float(run["prop_cd"]) <= 0.0 and not coins.is_empty():
+					elif float(run["prop_cd"]) <= 0.0 and (not coins.is_empty() or is_surv):
 						run["t"] = float(run["t"]) - FWConst.ARENA_OBS_PENALTY
 						run["prop_cd"] = FWConst.ARENA_OBS_COOLDOWN
 						events.append({"name": player_name, "kind": "hit"})
 				j -= 1
-		if float(run["t"]) <= 0.0 or coins.is_empty() or (is_ball and int(run["score"]) >= int(run.get("total", 1))):
+		if float(run["t"]) <= 0.0 or (coins.is_empty() and not is_surv) or ((is_ball or is_surv) and int(run["score"]) >= int(run.get("total", 1))) or (is_surv and float(run["hp"]) <= 0.0):
 			events.append(_finish(player_name, day))
 	return events
 
@@ -200,6 +212,53 @@ func _step_ball(world, run: Dictionary, player_name: String, pos: Vector2, dt: f
 	b["send"] = float(b["send"]) + dt
 	if float(b["send"]) >= FWConst.FOOT_SEND and v != Vector2.ZERO:
 		b["send"] = 0.0
+		events.append({"name": player_name, "kind": "ball"})
+
+
+## مبارزه و بقا (سمت سرور): دشمن‌ها از نقطه‌های زایش می‌آیند، به سمت بازیکن می‌دوند و با برخورد از سلامت او کم می‌کنند؛
+## بازیکن هر ۰٫۶ ثانیه به نزدیک‌ترین دشمن در برد ضربه می‌زند (خودکار، مناسب لمسی). سلامت صفر یا پایان زمان دور را تمام می‌کند.
+func _step_foes(world, run: Dictionary, player_name: String, pos: Vector2, dt: float, events: Array) -> void:
+	var foes: Array = run["foes"]
+	var spawns: Array = run["spawns"]
+	var total: int = int(run.get("total", 1))
+	while foes.size() < FWConst.SURV_ALIVE_MAX and int(run["spawned"]) < total and not spawns.is_empty():
+		var sp: Vector2 = spawns[int(run["spawned"]) % spawns.size()]
+		if sp.distance_to(pos) < 5.0:
+			break
+		foes.append({"p": sp, "hp": FWConst.SURV_FOE_HP, "cd": 0.5})
+		run["spawned"] = int(run["spawned"]) + 1
+	run["atk"] = maxf(float(run["atk"]) - dt, 0.0)
+	var nearest := -1
+	var best := FWConst.SURV_ATTACK_RANGE
+	for i in foes.size():
+		var f: Dictionary = foes[i]
+		var fp: Vector2 = f["p"]
+		var d: float = fp.distance_to(pos)
+		f["cd"] = maxf(float(f["cd"]) - dt, 0.0)
+		if d > FWConst.SURV_FOE_REACH * 0.8:
+			var np: Vector2 = fp.move_toward(pos, FWConst.SURV_FOE_SPEED * dt)
+			if world == null or world.height_at(np.x, np.y) >= 0.5:
+				f["p"] = np
+		elif float(f["cd"]) <= 0.0:
+			run["hp"] = float(run["hp"]) - FWConst.SURV_FOE_DAMAGE
+			f["cd"] = FWConst.SURV_FOE_CD
+			events.append({"name": player_name, "kind": "hurt"})
+		if d < best:
+			best = d
+			nearest = i
+	if nearest >= 0 and float(run["atk"]) <= 0.0:
+		var tf: Dictionary = foes[nearest]
+		tf["hp"] = int(tf["hp"]) - 1
+		run["atk"] = FWConst.SURV_ATTACK_CD
+		var away: Vector2 = (tf["p"] - pos)
+		tf["p"] = tf["p"] + (away.normalized() * 0.8 if away.length() > 0.01 else Vector2.ZERO)
+		if int(tf["hp"]) <= 0:
+			foes.remove_at(nearest)
+			run["score"] = int(run["score"]) + 1
+			events.append({"name": player_name, "kind": "coin"})
+	run["send"] = float(run["send"]) + dt
+	if float(run["send"]) >= FWConst.FOOT_SEND and not foes.is_empty():
+		run["send"] = 0.0
 		events.append({"name": player_name, "kind": "ball"})
 
 
@@ -280,6 +339,12 @@ func public_state(player_name: String) -> Dictionary:
 		out["score"] = int(run["score"])
 		out["pk"] = bool(run.get("pk", false))
 		out["rc"] = bool(run.get("rc", false))
+		if run.has("foes"):
+			var fl: Array = []
+			for f in run["foes"]:
+				fl.append([snappedf(f["p"].x, 0.05), snappedf(f["p"].y, 0.05)])
+			out["foes"] = fl
+			out["hp"] = int(ceil(maxf(float(run["hp"]), 0.0)))
 		if run.has("ball"):
 			var bb: Dictionary = run["ball"]
 			out["ball"] = [snappedf(bb["p"].x, 0.05), snappedf(bb["p"].y, 0.05), snappedf(bb["v"].x, 0.05), snappedf(bb["v"].y, 0.05)]

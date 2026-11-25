@@ -25,12 +25,12 @@ static func clean_name(raw: String) -> String:
 ## هر مقدار ناشناخته سکه‌یاب است.
 static func clean_kind(raw: Variant) -> String:
 	var k := str(raw)
-	return k if k == "parkour" or k == "race" or k == "football" else "coins"
+	return k if k == "parkour" or k == "race" or k == "football" or k == "survival" else "coins"
 
 
 ## کمینهٔ تعداد هدف لازم برای ساخت: فوتبال فقط یک دروازه دارد.
 static func need_targets(kind: String, coins: int) -> int:
-	return 1 if kind == "football" else mini(coins, FWConst.ARENA_COINS_MIN)
+	return 1 if kind == "football" or kind == "survival" else mini(coins, FWConst.ARENA_COINS_MIN)
 
 
 ## دروازهٔ فوتبال: یک نقطهٔ قطعی روی خشکی نزدیک لبهٔ میدان (۷۰ تا ۸۰٪ شعاع)؛ خروجی آرایهٔ تک‌عضوی یا خالی.
@@ -155,6 +155,8 @@ static func parse_code(code: String) -> Dictionary:
 static func clamp_count(kind: String, n: int) -> int:
 	if kind == "football":
 		return clampi(n, 1, FWConst.FOOT_GOALS_MAX)
+	if kind == "survival":
+		return clampi(n, 3, FWConst.SURV_COUNT_MAX)
 	var hi: int = FWConst.ARENA_PARKOUR_MAX if is_ordered(kind) else FWConst.ARENA_COINS_MAX
 	return clampi(n, FWConst.ARENA_COINS_MIN, hi)
 
@@ -200,11 +202,29 @@ static func make_race_gates(world, seed_value: int, a: Dictionary) -> Array:
 	return out
 
 
+## نقطه‌های زایش دشمن در مبارزه و بقا: ۸ نقطهٔ قطعی روی حلقهٔ ۸۵٪ شعاع که روی خشکی‌اند.
+static func make_survival_spawns(world, seed_value: int, a: Dictionary) -> Array:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash("%d:surv:%d" % [seed_value, int(a.get("id", 0))])
+	var center := Vector2(float(a["x"]), float(a["z"]))
+	var base: float = rng.randf() * TAU
+	var out: Array = []
+	for i in 8:
+		var ang: float = base + TAU * float(i) / 8.0
+		var c := center + Vector2(cos(ang), sin(ang)) * float(a["r"]) * 0.85
+		var h: float = world.height_at(c.x, c.y)
+		if h >= 0.5 and h <= FWConst.MINIGAME_MAX_HEIGHT:
+			out.append(Vector2(snappedf(c.x, 0.1), snappedf(c.y, 0.1)))
+	return out
+
+
 ## اهداف دور بر اساس نوع میدان: سکه‌های پخش‌شده، ایستگاه‌های مرتب یا دروازه‌های پیست.
 static func make_targets(world, seed_value: int, player_name: String, counter: int, a: Dictionary) -> Array:
 	var kd := clean_kind(a.get("kind", "coins"))
 	if kd == "football":
 		return make_football_goal(world, seed_value, a)
+	if kd == "survival":
+		return make_survival_spawns(world, seed_value, a)
 	if kd == "race":
 		return make_race_gates(world, seed_value, a)
 	if kd == "parkour":

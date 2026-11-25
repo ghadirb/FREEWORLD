@@ -1,7 +1,7 @@
 extends RefCounted
 ## ثابت‌های مشترک بین سرور و کلاینت.
 
-const PROTOCOL_VERSION := 42
+const PROTOCOL_VERSION := 43
 # ترافیک شبکه با DTLS رمز می‌شود (نسخهٔ ۴ به بعد). فقط برای عیب‌یابی خاموش شود.
 const USE_DTLS := true
 const DEFAULT_PORT := 7777
@@ -280,6 +280,16 @@ const ARENA_BONUS_TIME := 5.0       # ثانیه‌ای که جایزهٔ زما
 const ARENA_RESPAWN_PENALTY := 3.0   # ثانیه‌ای که با بازگشت به نقطهٔ ذخیرهٔ پارکور از زمان کم می‌شود
 const ARENA_OBS_COOLDOWN := 1.5   # بین دو برخورد پشت‌سرهم
 const ARENA_WIN_MAX := 100   # درصد لازم برای برد؛ ۰ = بدون شرط برد (پروتکل ۳۷)
+const SURV_HP := 100.0            # سلامت بازیکن در دور مبارزه و بقا (پروتکل ۴۳)
+const SURV_FOE_HP := 3            # ضربه‌های لازم برای شکست یک دشمن
+const SURV_FOE_SPEED := 2.6       # سرعت دشمن (متر بر ثانیه)
+const SURV_FOE_DAMAGE := 10.0     # آسیب هر برخورد
+const SURV_FOE_CD := 1.0          # فاصلهٔ دو حملهٔ هر دشمن
+const SURV_FOE_REACH := 1.3       # فاصلهٔ حملهٔ دشمن
+const SURV_ATTACK_RANGE := 2.4    # برد ضربهٔ خودکار بازیکن
+const SURV_ATTACK_CD := 0.6       # فاصلهٔ ضربه‌های بازیکن
+const SURV_ALIVE_MAX := 3         # حداکثر دشمن هم‌زمان
+const SURV_COUNT_MAX := 20        # حداکثر دشمن هر دور
 const FOOT_GOALS_MAX := 10        # حداکثر گل هدف در میدان فوتبال (پروتکل ۴۲)
 const FOOT_KICK_SPEED := 9.0      # سرعت توپ پس از لمس بازیکن (متر بر ثانیه)
 const FOOT_RANGE := 1.6           # فاصلهٔ لمس توپ
