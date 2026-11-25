@@ -272,6 +272,7 @@ const ARENA_PLAY_MARGIN := 4.0
 const ARENA_OBS_MAX := 6          # حداکثر مانع متحرک در میدان پارکور (پروتکل ۳۹)
 const ARENA_OBS_HIT_RANGE := 1.2  # فاصلهٔ برخورد (متر)
 const ARENA_OBS_PENALTY := 4.0    # ثانیه‌ای که از زمان دور کم می‌شود
+const ARENA_RESPAWN_PENALTY := 3.0   # ثانیه‌ای که با بازگشت به نقطهٔ ذخیرهٔ پارکور از زمان کم می‌شود
 const ARENA_OBS_COOLDOWN := 1.5   # بین دو برخورد پشت‌سرهم
 const ARENA_WIN_MAX := 100   # درصد لازم برای برد؛ ۰ = بدون شرط برد (پروتکل ۳۷)
 const ARENA_PARKOUR_MAX := 12   # حداکثر ایستگاه در میدان پارکور (پروتکل ۳۶)

@@ -88,6 +88,7 @@ var _mg_status: Label
 var _mg_board: Label
 var _mg_best: Label
 var _mg_bar: Label
+var _respawn_btn: Button
 var _was_disaster: bool = false
 var _race_btn: Button
 var _book_btn: Button
@@ -975,6 +976,11 @@ func _build_minigame() -> void:
 	root.add_child(_mg_bar)
 	_place(_mg_bar, 0.5, 0.0, 0.0, 90.0)
 	_mg_bar.visible = false
+	_respawn_btn = UiTheme.button(Loc.t("arena_respawn"), Vector2(300, 60))
+	_respawn_btn.pressed.connect(func(): Sfx.play(self, "click"); client.arena_op("respawn"))
+	root.add_child(_respawn_btn)
+	_place(_respawn_btn, 0.5, 0.0, 0.0, 200.0)
+	_respawn_btn.visible = false
 	client.minigame_changed.connect(_refresh_minigame)
 	client.disaster_changed.connect(_on_disaster_changed)
 
@@ -1099,6 +1105,7 @@ func _update_mg_bar() -> void:
 		return
 	var active := bool(client.minigame.get("active", false))
 	_mg_bar.visible = active
+	_respawn_btn.visible = active and bool(client.minigame.get("pk", false))
 	if active:
 		_mg_bar.text = Loc.fmt("mg_status", [Loc.digits(str(int(client.minigame.get("score", 0)))), Loc.digits(str(int(ceil(client.minigame_time_left()))))])
 		var near := INF
@@ -2188,6 +2195,8 @@ func _on_notice(code: String, args: Dictionary) -> void:
 			toast(Loc.t("msg_arena_rated"), Color("c8f08a"))
 		"arena_started":
 			toast(Loc.t("msg_arena_started_parkour" if bool(args.get("parkour", false)) else "msg_arena_started_coins"), Color("ffd84a"))
+		"arena_respawned":
+			toast(Loc.fmt("msg_arena_respawned", [Loc.digits(str(int(FWConst.ARENA_RESPAWN_PENALTY)))]), Color("ffd84a"))
 		"arena_hit":
 			Sfx.play(self, "error")
 			toast(Loc.fmt("msg_arena_hit", [Loc.digits(str(int(FWConst.ARENA_OBS_PENALTY)))]), Color("ff9a8a"))

@@ -62,7 +62,8 @@ func start_arena(world, seed_value: int, player_name: String, arena: Dictionary)
 		coins = [targets[0]]
 		queue = targets.slice(1)
 	runs[player_name] = {"t": float(arena["time"]), "score": 0, "coins": coins, "win": int(arena.get("win", 0)), "obs": Arenas.make_obstacles(seed_value, arena) if Arenas.clean_kind(arena.get("kind", "coins")) == "parkour" else [], "clk": 0.0, "hit_cd": 0.0, "queue": queue, "limit": float(arena["time"]), "arena": int(arena["id"]),
-		"total": targets.size(), "owner": str(arena["owner"]), "per_coin": int(arena["reward"])}
+		"total": targets.size(), "owner": str(arena["owner"]), "per_coin": int(arena["reward"]),
+		"pk": Arenas.clean_kind(arena.get("kind", "coins")) == "parkour", "last": Vector2(float(arena["x"]), float(arena["z"]))}
 	return {"ok": true}
 
 
@@ -73,6 +74,18 @@ func arena_removed(id: int) -> void:
 	for nm in runs.keys():
 		if int(runs[nm].get("arena", 0)) == id:
 			runs.erase(nm)
+
+
+## نقطهٔ ذخیرهٔ دور پارکور (آخرین ایستگاه گرفته‌شده؛ در آغاز مرکز میدان) یا null. بازگشت ۳ ثانیه جریمه دارد.
+func respawn_point(player_name: String) -> Variant:
+	if not runs.has(player_name) or not bool(runs[player_name].get("pk", false)):
+		return null
+	return runs[player_name]["last"]
+
+
+func apply_respawn_penalty(player_name: String) -> void:
+	if runs.has(player_name):
+		runs[player_name]["t"] = float(runs[player_name]["t"]) - FWConst.ARENA_RESPAWN_PENALTY
 
 
 func cancel(player_name: String) -> void:
@@ -95,6 +108,8 @@ func step(dt: float, positions: Dictionary, day: int) -> Array:
 		var i := coins.size() - 1
 		while i >= 0:
 			if pos.distance_to(coins[i]) <= FWConst.MINIGAME_PICK_RANGE:
+				if bool(run.get("pk", false)):
+					run["last"] = coins[i]   # ایستگاه گرفته‌شده = نقطهٔ ذخیره
 				coins.remove_at(i)
 				run["score"] = int(run["score"]) + 1
 				var queue: Array = run.get("queue", [])
@@ -187,12 +202,13 @@ func board() -> Array:
 
 ## وضعیت قابل ارسال به یک بازیکن.
 func public_state(player_name: String) -> Dictionary:
-	var out := {"active": runs.has(player_name), "t": 0.0, "score": 0, "coins": [],
+	var out := {"active": runs.has(player_name), "t": 0.0, "score": 0, "coins": [], "pk": false,
 		"best": int(scores.get(player_name, 0)), "board": board()}
 	if runs.has(player_name):
 		var run: Dictionary = runs[player_name]
 		out["t"] = snappedf(float(run["t"]), 0.1)
 		out["score"] = int(run["score"])
+		out["pk"] = bool(run.get("pk", false))
 		var cl: Array = []
 		for c in run["coins"]:
 			cl.append([c.x, c.y])

@@ -618,6 +618,21 @@ func on_arena_op(pid: int, op: String, id: int) -> void:
 				return
 			_send(pid, "s2c_minigame", cs.minigame.public_state(p["name"]))
 			_notice(pid, "arena_started", {"parkour": Arenas.clean_kind(cs.arenas.items[id].get("kind", "coins")) == "parkour"})
+		"respawn":
+			if not _allow_action(p):
+				_notice(pid, "rate_limited")
+				return
+			var rp: Variant = cs.minigame.respawn_point(p["name"])
+			if rp == null:
+				return
+			var rx: float = rp.x
+			var rz: float = rp.y
+			p["pos"] = Vector3(rx, cs.ground_height(rx, rz, float(p["pos"].y)), rz)
+			p["last_move"] = Time.get_ticks_msec()
+			cs.minigame.apply_respawn_penalty(p["name"])
+			_send(pid, "s2c_teleport", rx, rz)
+			_send(pid, "s2c_minigame", cs.minigame.public_state(p["name"]))
+			_notice(pid, "arena_respawned")
 		"rate_1", "rate_2", "rate_3", "rate_4", "rate_5":
 			if not _allow_action(p):
 				_notice(pid, "rate_limited")
