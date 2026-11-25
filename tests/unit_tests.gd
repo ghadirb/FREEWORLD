@@ -66,6 +66,7 @@ func _init() -> void:
 	test_arena_parkour()
 	test_arena_win_rule()
 	test_arena_ratings()
+	test_arena_obstacles()
 	test_disasters()
 	test_race()
 	test_car_race()
@@ -3812,3 +3813,48 @@ func test_arena_ratings() -> void:
 	cs2.arenas.load_dict(cs.arenas.to_dict())
 	check(cs2.arenas.rating_of(id) == [1.5, 2], "ratings survive saving and loading")
 	check(cs.arena_remove("maker", id) == "" and cs.arenas.rating_of(id) == [0.0, 0], "deleting a game deletes its ratings")
+
+
+func test_arena_obstacles() -> void:
+	print("== Parkour moving obstacles ==")
+	var cs = CityState.new(4244)
+	_login(cs, "maker")
+	_login(cs, "runner")
+	cs.accounts["maker"]["money"] = 1000
+	var at := _mg_land_pos(cs)
+	var res: Dictionary = cs.arena_create("maker", "Mover", at, 14.0, 6, 60.0, 0, "parkour", 0, 99)
+	check(bool(res["ok"]), "a parkour arena with obstacles is built")
+	var id: int = int(res["id"])
+	var a: Dictionary = cs.arenas.items[id]
+	check(int(a["obs"]) == FWConst.ARENA_OBS_MAX, "the obstacle count is clamped")
+	var defs: Array = Arenas.make_obstacles(cs.seed_value, a)
+	check(defs.size() == FWConst.ARENA_OBS_MAX and defs == Arenas.make_obstacles(cs.seed_value, a), "obstacles are deterministic")
+	var p0: Vector2 = Arenas.obstacle_pos(defs[0], 0.0)
+	var p1: Vector2 = Arenas.obstacle_pos(defs[0], 1.3)
+	check(p0 == Arenas.obstacle_pos(defs[0], 0.0), "an obstacle position depends only on the clock")
+	check(p0.distance_to(p1) > 0.01, "an obstacle really moves")
+	var lo := Vector2(minf(float(defs[0][0]), float(defs[0][2])) - 0.01, minf(float(defs[0][1]), float(defs[0][3])) - 0.01)
+	var hi := Vector2(maxf(float(defs[0][0]), float(defs[0][2])) + 0.01, maxf(float(defs[0][1]), float(defs[0][3])) + 0.01)
+	check(p1.x >= lo.x and p1.x <= hi.x and p1.y >= lo.y and p1.y <= hi.y, "an obstacle stays on its segment")
+	var coin_arena := int(cs.arena_create("maker", "Plain", at + Vector2(80, 0), 10.0, 8, 30.0, 0, "coins", 0, 5)["id"])
+	check(int(cs.arenas.items[coin_arena]["obs"]) == 0, "coin arenas never get obstacles")
+	check(int(cs.arenas_public()[0]["obs"]) == FWConst.ARENA_OBS_MAX, "the list carries the obstacle count")
+	check(bool(cs.arena_play("runner", id, at)["ok"]), "the runner starts")
+	var st: Dictionary = cs.minigame.public_state("runner")
+	check(st.has("obs") and st["obs"].size() == FWConst.ARENA_OBS_MAX and st.has("el"), "the run state carries the obstacles and the clock")
+	# سرِ مانع بایست؛ برخورد زمان را کم می‌کند و بلافاصله دوباره نمی‌زند.
+	var t_before: float = float(cs.minigame.runs["runner"]["t"])
+	var stand: Vector2 = Arenas.obstacle_pos(defs[0], float(cs.minigame.runs["runner"]["clk"]) + 0.05)
+	var hit := false
+	for e in cs.minigame.step(0.05, {"runner": stand}, 1):
+		if str(e["kind"]) == "hit":
+			hit = true
+	check(hit, "touching an obstacle is a hit")
+	check(float(cs.minigame.runs["runner"]["t"]) <= t_before - FWConst.ARENA_OBS_PENALTY + 0.01, "a hit costs time")
+	var t_after: float = float(cs.minigame.runs["runner"]["t"])
+	cs.minigame.step(0.05, {"runner": stand}, 1)
+	check(float(cs.minigame.runs["runner"]["t"]) > t_after - 0.5, "hits have a cool-down")
+	var arenas2 = Arenas.new()
+	arenas2.load_dict(cs.arenas.to_dict())
+	check(int(arenas2.items[id]["obs"]) == FWConst.ARENA_OBS_MAX, "obstacles survive saving and loading")
+	check(cs.arena_edit("maker", id, "Mover", 14.0, 6, 60.0, 0, "coins", 0, 4) == "" and int(cs.arenas.items[id]["obs"]) == 0, "switching to coin hunt removes obstacles")

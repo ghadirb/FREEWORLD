@@ -286,6 +286,8 @@ func _minigame_step(dt: float) -> void:
 			continue
 		var pid: int = by_name[nm]
 		_send(pid, "s2c_minigame", cs.minigame.public_state(nm))
+		if ev["kind"] == "hit":
+			_notice(pid, "arena_hit")
 		if ev["kind"] == "end":
 			if int(ev["reward"]) > 0:
 				_send(pid, "s2c_money", int(ev["money"]))
@@ -555,7 +557,7 @@ func _broadcast_arenas() -> void:
 
 
 ## ساخت میدان در موقعیت فعلی بازیکن (پروتکل ۳۱).
-func on_arena_create(pid: int, arena_name: String, radius: float, coins: int, time: float, reward: int, kind: String = "coins", win_pct: int = 0) -> void:
+func on_arena_create(pid: int, arena_name: String, radius: float, coins: int, time: float, reward: int, kind: String = "coins", win_pct: int = 0, obstacles: int = 0) -> void:
 	var p := _player_of(pid)
 	if p.is_empty():
 		return
@@ -565,7 +567,7 @@ func on_arena_create(pid: int, arena_name: String, radius: float, coins: int, ti
 	if _indoors(p):
 		return
 	var pos: Vector3 = p["pos"]
-	var res: Dictionary = cs.arena_create(p["name"], arena_name, Vector2(pos.x, pos.z), radius, coins, time, reward, kind, win_pct)
+	var res: Dictionary = cs.arena_create(p["name"], arena_name, Vector2(pos.x, pos.z), radius, coins, time, reward, kind, win_pct, obstacles)
 	if not bool(res["ok"]):
 		_notice(pid, str(res["error"]))
 		return
@@ -576,14 +578,14 @@ func on_arena_create(pid: int, arena_name: String, radius: float, coins: int, ti
 
 
 ## ویرایش میدان خود (یا هر میدان برای مدیر)؛ رایگان.
-func on_arena_edit(pid: int, id: int, arena_name: String, radius: float, coins: int, time: float, reward: int, kind: String = "coins", win_pct: int = 0) -> void:
+func on_arena_edit(pid: int, id: int, arena_name: String, radius: float, coins: int, time: float, reward: int, kind: String = "coins", win_pct: int = 0, obstacles: int = 0) -> void:
 	var p := _player_of(pid)
 	if p.is_empty():
 		return
 	if not _allow_action(p):
 		_notice(pid, "rate_limited")
 		return
-	var err: String = cs.arena_edit(p["name"], id, arena_name, radius, coins, time, reward, kind, win_pct)
+	var err: String = cs.arena_edit(p["name"], id, arena_name, radius, coins, time, reward, kind, win_pct, obstacles)
 	if err != "":
 		_notice(pid, err)
 		return

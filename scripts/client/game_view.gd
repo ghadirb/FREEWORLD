@@ -19,6 +19,7 @@ const MineView = preload("res://scripts/client/mine_view.gd")
 const VillageView = preload("res://scripts/client/village_view.gd")
 const Mine = preload("res://scripts/shared/mine.gd")
 const RailNetwork = preload("res://scripts/shared/rail_network.gd")
+const Arenas = preload("res://scripts/server/arenas.gd")
 
 signal building_tapped(id: int)
 signal npc_tapped(id: int)
@@ -51,6 +52,8 @@ var npc_avatars: Dictionary = {}
 var god_kind: String = ""
 var god_nodes: Dictionary = {}
 var coin_nodes: Array = []
+var obs_nodes: Array = []      # موانع متحرک پارکور (پروتکل ۳۹)
+var _obs_mesh: ArrayMesh
 var train_nodes: Array = []   # برای هر خط ریل: [گرهٔ لوکوموتیو، گره‌های واگن‌ها...]
 var _train_line_count: int = -1
 var _train_mesh_loco: ArrayMesh
@@ -1127,6 +1130,7 @@ func _process(delta: float) -> void:
 	if client == null or not client.is_logged_in:
 		return
 	_check_long_press()
+	_update_obstacles()
 	var dt := minf(delta, 0.1)
 	var kb := _keyboard_vector()
 	if not (get_viewport().gui_get_focus_owner() is LineEdit):
@@ -1672,8 +1676,26 @@ func _sync_coins() -> void:
 	for n in coin_nodes:
 		n.queue_free()
 	coin_nodes.clear()
+	for n in obs_nodes:
+		n.queue_free()
+	obs_nodes.clear()
 	if not bool(client.minigame.get("active", false)):
 		return
+	if _god_mat == null:
+		_god_mat = MeshBuilder.material()
+	if _obs_mesh == null:
+		var ob := MeshBuilder.new()
+		ob.add_box(Vector3(0, 0.7, 0), Vector3(1.3, 1.4, 1.3), Color("e0503c"))
+		ob.add_box(Vector3(0, 1.5, 0), Vector3(0.7, 0.3, 0.7), Color("ffd24a"))
+		_obs_mesh = ob.build()
+	for d in client.minigame.get("obs", []):
+		var onode := MeshInstance3D.new()
+		onode.mesh = _obs_mesh
+		onode.material_override = _god_mat
+		onode.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(onode)
+		obs_nodes.append(onode)
+	_update_obstacles()
 	if _coin_mesh == null:
 		var mb := MeshBuilder.new()
 		mb.add_box(Vector3(0, 0.9, 0), Vector3(0.5, 0.5, 0.12), Color("ffd24a"))
@@ -1689,6 +1711,17 @@ func _sync_coins() -> void:
 		node.position = Vector3(float(c[0]), world.height_at(float(c[0]), float(c[1])), float(c[1]))
 		add_child(node)
 		coin_nodes.append(node)
+
+
+## موانع پارکور: موقعیت فقط تابعی از ساعت دور است؛ ساعت سرور هنگام آخرین وضعیت + زمان محلی سپری‌شده.
+func _update_obstacles() -> void:
+	if obs_nodes.is_empty():
+		return
+	var defs: Array = client.minigame.get("obs", [])
+	var clock: float = float(client.minigame.get("el", 0.0)) + (Time.get_ticks_msec() / 1000.0 - client.minigame_stamp)
+	for i in mini(obs_nodes.size(), defs.size()):
+		var p: Vector2 = Arenas.obstacle_pos(defs[i], clock)
+		obs_nodes[i].position = Vector3(p.x, world.height_at(p.x, p.y), p.y)
 
 
 func _sync_race() -> void:

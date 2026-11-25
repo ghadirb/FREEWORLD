@@ -61,7 +61,7 @@ func start_arena(world, seed_value: int, player_name: String, arena: Dictionary)
 		# پارکور: فقط ایستگاه بعدی دیده می‌شود؛ با رسیدن به آن، بعدی ظاهر می‌شود.
 		coins = [targets[0]]
 		queue = targets.slice(1)
-	runs[player_name] = {"t": float(arena["time"]), "score": 0, "coins": coins, "win": int(arena.get("win", 0)), "queue": queue, "limit": float(arena["time"]), "arena": int(arena["id"]),
+	runs[player_name] = {"t": float(arena["time"]), "score": 0, "coins": coins, "win": int(arena.get("win", 0)), "obs": Arenas.make_obstacles(seed_value, arena) if Arenas.clean_kind(arena.get("kind", "coins")) == "parkour" else [], "clk": 0.0, "hit_cd": 0.0, "queue": queue, "limit": float(arena["time"]), "arena": int(arena["id"]),
 		"total": targets.size(), "owner": str(arena["owner"]), "per_coin": int(arena["reward"])}
 	return {"ok": true}
 
@@ -102,6 +102,17 @@ func step(dt: float, positions: Dictionary, day: int) -> Array:
 					coins.append(queue.pop_front())
 				events.append({"name": player_name, "kind": "coin"})
 			i -= 1
+		run["clk"] = float(run.get("clk", 0.0)) + dt
+		var obs: Array = run.get("obs", [])
+		if not obs.is_empty():
+			run["hit_cd"] = maxf(float(run.get("hit_cd", 0.0)) - dt, 0.0)
+			if float(run["hit_cd"]) <= 0.0 and not coins.is_empty():
+				for d in obs:
+					if pos.distance_to(Arenas.obstacle_pos(d, float(run["clk"]))) <= FWConst.ARENA_OBS_HIT_RANGE:
+						run["t"] = float(run["t"]) - FWConst.ARENA_OBS_PENALTY
+						run["hit_cd"] = FWConst.ARENA_OBS_COOLDOWN
+						events.append({"name": player_name, "kind": "hit"})
+						break
 		if float(run["t"]) <= 0.0 or coins.is_empty():
 			events.append(_finish(player_name, day))
 	return events
@@ -186,6 +197,10 @@ func public_state(player_name: String) -> Dictionary:
 		for c in run["coins"]:
 			cl.append([c.x, c.y])
 		out["coins"] = cl
+		var ob: Array = run.get("obs", [])
+		if not ob.is_empty():
+			out["obs"] = ob
+			out["el"] = snappedf(float(run.get("clk", 0.0)), 0.1)
 	return out
 
 

@@ -1525,6 +1525,7 @@ func _build_arena_panel() -> void:
 	_arena_spin_row(v, "arena_time", FWConst.ARENA_TIME_MIN, FWConst.ARENA_TIME_MAX, 45)
 	_arena_spin_row(v, "arena_reward", 0, FWConst.ARENA_REWARD_MAX, 1)
 	_arena_spin_row(v, "arena_win", 0, FWConst.ARENA_WIN_MAX, 0)
+	_arena_spin_row(v, "arena_obs", 0, FWConst.ARENA_OBS_MAX, 0)
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 8)
 	v.add_child(row)
@@ -1535,10 +1536,10 @@ func _build_arena_panel() -> void:
 		Sfx.play(self, "click")
 		if _arena_edit_id > 0:
 			client.arena_edit(_arena_edit_id, _arena_name.text, float(_arena_spin["arena_radius"].value), int(_arena_spin["arena_coins"].value),
-				float(_arena_spin["arena_time"].value), int(_arena_spin["arena_reward"].value), _arena_kind, int(_arena_spin["arena_win"].value))
+				float(_arena_spin["arena_time"].value), int(_arena_spin["arena_reward"].value), _arena_kind, int(_arena_spin["arena_win"].value), int(_arena_spin["arena_obs"].value))
 		else:
 			client.arena_create(_arena_name.text, float(_arena_spin["arena_radius"].value), int(_arena_spin["arena_coins"].value),
-				float(_arena_spin["arena_time"].value), int(_arena_spin["arena_reward"].value), _arena_kind, int(_arena_spin["arena_win"].value))
+				float(_arena_spin["arena_time"].value), int(_arena_spin["arena_reward"].value), _arena_kind, int(_arena_spin["arena_win"].value), int(_arena_spin["arena_obs"].value))
 		_arena_set_edit(0, {}))
 	row.add_child(cb)
 	var close := UiTheme.button("✕", Vector2(64, 60))
@@ -1563,9 +1564,9 @@ func _build_arena_panel() -> void:
 ## حالت ویرایش: فرم را با مقدار میدان پر می‌کند و دکمهٔ اصلی را «ذخیرهٔ تغییرات» می‌کند؛ id صفر = حالت ساخت.
 ## قالب‌های آماده برای شروع سریع: نوع، شعاع، تعداد هدف، زمان، جایزه و درصد برد را پر می‌کنند؛ بعد می‌شود تغییرشان داد.
 const ARENA_PRESETS := [
-	{"id": "quick", "kind": "coins", "r": 10, "n": 12, "t": 45, "rw": 1, "win": 0},
-	{"id": "easy", "kind": "parkour", "r": 10, "n": 6, "t": 60, "rw": 1, "win": 100},
-	{"id": "hard", "kind": "parkour", "r": 18, "n": 12, "t": 40, "rw": 2, "win": 100},
+	{"id": "quick", "kind": "coins", "r": 10, "n": 12, "t": 45, "rw": 1, "win": 0, "obs": 0},
+	{"id": "easy", "kind": "parkour", "r": 10, "n": 6, "t": 60, "rw": 1, "win": 100, "obs": 0},
+	{"id": "hard", "kind": "parkour", "r": 18, "n": 12, "t": 40, "rw": 2, "win": 100, "obs": 3},
 ]
 
 
@@ -1577,6 +1578,7 @@ func _arena_apply_preset(pr: Dictionary) -> void:
 	_arena_spin["arena_time"].value = float(pr["t"])
 	_arena_spin["arena_reward"].value = float(pr["rw"])
 	_arena_spin["arena_win"].value = float(pr["win"])
+	_arena_spin["arena_obs"].value = float(pr["obs"])
 
 
 func _arena_kind_refresh() -> void:
@@ -1593,6 +1595,7 @@ func _arena_set_edit(id: int, a: Dictionary) -> void:
 		_arena_spin["arena_time"].value = float(a["time"])
 		_arena_spin["arena_reward"].value = float(a["reward"])
 		_arena_spin["arena_win"].value = float(a.get("win", 0))
+		_arena_spin["arena_obs"].value = float(a.get("obs", 0))
 		_arena_create_btn.text = Loc.t("arena_save")
 	else:
 		_arena_kind = "coins"
@@ -1634,6 +1637,8 @@ func _fill_arena_list() -> void:
 		var rt: Array = a.get("rating", [0.0, 0])
 		if int(rt[1]) > 0:
 			sub += "  ·  ⭐ %s (%s)" % [Loc.digits("%.1f" % float(rt[0])), Loc.digits(str(rt[1]))]
+		if int(a.get("obs", 0)) > 0:
+			sub += "  ·  " + Loc.fmt("arena_obs_info", [Loc.digits(str(a["obs"]))])
 		if int(a.get("win", 0)) > 0:
 			sub += "  ·  " + Loc.fmt("arena_goal", [Loc.digits(str(a["win"]))])
 		var bt: Array = a.get("best_time", ["", 0.0])
@@ -2163,6 +2168,12 @@ func _on_notice(code: String, args: Dictionary) -> void:
 		"arena_created":
 			Sfx.play(self, "place")
 			toast(Loc.t("msg_arena_created"), Color("c8f08a"))
+		"arena_rated":
+			Sfx.play(self, "notify")
+			toast(Loc.t("msg_arena_rated"), Color("c8f08a"))
+		"arena_hit":
+			Sfx.play(self, "error")
+			toast(Loc.fmt("msg_arena_hit", [Loc.digits(str(int(FWConst.ARENA_OBS_PENALTY)))]), Color("ff9a8a"))
 		"arena_deleted":
 			toast(Loc.t("msg_arena_deleted"))
 		"arena_edited":

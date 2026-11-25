@@ -24,6 +24,39 @@ static func clean_kind(raw: Variant) -> String:
 	return "parkour" if str(raw) == "parkour" else "coins"
 
 
+## مانع متحرک فقط در پارکور (پروتکل ۳۹).
+static func clamp_obs(kind: String, n: int) -> int:
+	return clampi(n, 0, FWConst.ARENA_OBS_MAX) if kind == "parkour" else 0
+
+
+## موانع متحرک: هر مانع روی یک پاره‌خط مماس بر حلقهٔ میدان با سرعت و فازِ قطعی (از Seed و شناسه) رفت‌وبرگشت می‌کند.
+## هر مانع [ax, az, bx, bz, سرعت, فاز] است؛ موقعیتش فقط تابعی از ساعت دور است، پس کلاینت هم می‌تواند بکشدش.
+static func make_obstacles(seed_value: int, a: Dictionary) -> Array:
+	var n: int = int(a.get("obs", 0))
+	var out: Array = []
+	if n <= 0:
+		return out
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash("%d:obs:%d:%d" % [seed_value, int(a.get("id", 0)), n])
+	var center := Vector2(float(a["x"]), float(a["z"]))
+	var r: float = float(a["r"])
+	for i in n:
+		var ang: float = TAU * (float(i) + rng.randf() * 0.6) / float(n)
+		var mid := center + Vector2(cos(ang), sin(ang)) * r * lerpf(0.4, 0.8, rng.randf())
+		var tangent := Vector2(-sin(ang), cos(ang)) * minf(r * 0.35, 4.0)
+		var p0 := mid - tangent
+		var p1 := mid + tangent
+		out.append([snappedf(p0.x, 0.1), snappedf(p0.y, 0.1), snappedf(p1.x, 0.1), snappedf(p1.y, 0.1),
+			snappedf(lerpf(0.8, 1.7, rng.randf()), 0.01), snappedf(rng.randf() * TAU, 0.01)])
+	return out
+
+
+## موقعیت مانع در ساعت دور clock (ثانیه).
+static func obstacle_pos(d: Array, clock: float) -> Vector2:
+	var k: float = 0.5 + 0.5 * sin(clock * float(d[4]) + float(d[5]))
+	return Vector2(lerpf(float(d[0]), float(d[2]), k), lerpf(float(d[1]), float(d[3]), k))
+
+
 static func clamp_count(kind: String, n: int) -> int:
 	var hi: int = FWConst.ARENA_PARKOUR_MAX if kind == "parkour" else FWConst.ARENA_COINS_MAX
 	return clampi(n, FWConst.ARENA_COINS_MIN, hi)
@@ -80,7 +113,7 @@ static func make_coins(world, seed_value: int, player_name: String, counter: int
 
 ## ویرایش میدان موجود (مکان ثابت می‌ماند): فقط سازنده یا مدیر. فاصله با میدان‌های دیگر و جای سکه‌ها دوباره
 ## بررسی می‌شود. خروجی {ok, arena} (میدان جدید، هنوز اعمال نشده) یا {ok: false, error}.
-func validate_edit(world, seed_value: int, who: String, is_admin: bool, id: int, arena_name: String, radius: float, coins: int, time: float, reward: int, kind: String = "coins", win_pct: int = 0) -> Dictionary:
+func validate_edit(world, seed_value: int, who: String, is_admin: bool, id: int, arena_name: String, radius: float, coins: int, time: float, reward: int, kind: String = "coins", win_pct: int = 0, obstacles: int = 0) -> Dictionary:
 	if not items.has(id):
 		return {"ok": false, "error": "arena_missing"}
 	var old: Dictionary = items[id]
@@ -93,7 +126,7 @@ func validate_edit(world, seed_value: int, who: String, is_admin: bool, id: int,
 		return {"ok": false, "error": "arena_bounds"}
 	var kd := clean_kind(kind)
 	var a := {
-		"id": id, "name": nm, "owner": old["owner"], "x": old["x"], "z": old["z"], "kind": kd, "win": clampi(win_pct, 0, FWConst.ARENA_WIN_MAX),
+		"id": id, "name": nm, "owner": old["owner"], "x": old["x"], "z": old["z"], "kind": kd, "win": clampi(win_pct, 0, FWConst.ARENA_WIN_MAX), "obs": clamp_obs(kd, obstacles),
 		"r": clampf(radius, FWConst.ARENA_R_MIN, FWConst.ARENA_R_MAX),
 		"coins": clamp_count(kd, coins),
 		"time": clampf(time, FWConst.ARENA_TIME_MIN, FWConst.ARENA_TIME_MAX),
@@ -116,7 +149,7 @@ func apply_edit(a: Dictionary) -> void:
 
 
 ## بررسی یک میدان جدید؛ خروجی {ok, arena} یا {ok: false, error}.
-func validate_new(world, seed_value: int, owner: String, arena_name: String, pos: Vector2, radius: float, coins: int, time: float, reward: int, kind: String = "coins", win_pct: int = 0) -> Dictionary:
+func validate_new(world, seed_value: int, owner: String, arena_name: String, pos: Vector2, radius: float, coins: int, time: float, reward: int, kind: String = "coins", win_pct: int = 0, obstacles: int = 0) -> Dictionary:
 	var nm := clean_name(arena_name)
 	if nm.is_empty():
 		return {"ok": false, "error": "arena_name"}
@@ -130,7 +163,7 @@ func validate_new(world, seed_value: int, owner: String, arena_name: String, pos
 		return {"ok": false, "error": "arena_limit"}
 	var kd := clean_kind(kind)
 	var a := {
-		"id": 0, "name": nm, "owner": owner, "x": snappedf(pos.x, 0.1), "z": snappedf(pos.y, 0.1), "kind": kd, "win": clampi(win_pct, 0, FWConst.ARENA_WIN_MAX),
+		"id": 0, "name": nm, "owner": owner, "x": snappedf(pos.x, 0.1), "z": snappedf(pos.y, 0.1), "kind": kd, "win": clampi(win_pct, 0, FWConst.ARENA_WIN_MAX), "obs": clamp_obs(kd, obstacles),
 		"r": clampf(radius, FWConst.ARENA_R_MIN, FWConst.ARENA_R_MAX),
 		"coins": clamp_count(kd, coins),
 		"time": clampf(time, FWConst.ARENA_TIME_MIN, FWConst.ARENA_TIME_MAX),
@@ -229,7 +262,7 @@ func list_public(arena_scores: Dictionary, arena_times: Dictionary = {}) -> Arra
 					best_time = tv
 					best_name = str(k)
 		rows.append({"id": int(id), "name": a["name"], "owner": a["owner"], "x": a["x"], "z": a["z"], "r": a["r"],
-			"coins": a["coins"], "time": a["time"], "reward": a["reward"], "kind": clean_kind(a.get("kind", "coins")), "win": int(a.get("win", 0)),
+			"coins": a["coins"], "time": a["time"], "reward": a["reward"], "kind": clean_kind(a.get("kind", "coins")), "win": int(a.get("win", 0)), "obs": int(a.get("obs", 0)),
 			"top": [top_name, top_score], "best_time": [best_name, best_time], "rating": rating_of(int(id))})
 	return rows
 
@@ -256,7 +289,7 @@ func load_dict(d: Variant) -> void:
 				continue
 			var kd := clean_kind(v.get("kind", "coins"))
 			items[id] = {
-				"kind": kd, "win": clampi(int(v.get("win", 0)), 0, FWConst.ARENA_WIN_MAX),
+				"kind": kd, "win": clampi(int(v.get("win", 0)), 0, FWConst.ARENA_WIN_MAX), "obs": clamp_obs(kd, int(v.get("obs", 0))),
 				"id": id, "name": nm, "owner": str(v.get("owner", "")).substr(0, 32),
 				"x": float(v.get("x", 0.0)), "z": float(v.get("z", 0.0)),
 				"r": clampf(float(v.get("r", FWConst.ARENA_R_MIN)), FWConst.ARENA_R_MIN, FWConst.ARENA_R_MAX),
