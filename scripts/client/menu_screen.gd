@@ -13,6 +13,7 @@ const WorldGallery = preload("res://scripts/client/world_gallery.gd")
 signal connect_requested(host: String, port: int, player_name: String, secret: String)
 signal language_toggled
 signal solo_requested(player_name: String)
+signal creator_requested(player_name: String)   # ورود مستقیم به بازی‌ساز در جهان انتخاب‌شده
 signal host_requested(player_name: String)
 
 var _name: LineEdit
@@ -92,6 +93,10 @@ func _ready() -> void:
 	solo.add_theme_font_size_override("font_size", 28)
 	solo.pressed.connect(func(): _emit_local(solo_requested))
 	left.add_child(solo)
+	var creator := UiTheme.button(Loc.t("creator_open"), Vector2(0, 62))
+	creator.add_theme_font_size_override("font_size", 24)
+	creator.pressed.connect(func(): _emit_local(creator_requested))
+	left.add_child(creator)
 	var host_btn := UiTheme.button(Loc.t("host"), Vector2(0, 66))
 	host_btn.add_theme_font_size_override("font_size", 26)
 	host_btn.pressed.connect(func(): _emit_local(host_requested))

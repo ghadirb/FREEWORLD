@@ -1072,6 +1072,13 @@ func _on_disaster_changed() -> void:
 	_was_disaster = k != ""
 
 
+## باز کردن پنل بازی‌ساز (از دکمهٔ صفحهٔ اصلی).
+func open_creator() -> void:
+	_arena_panel.visible = true
+	client.arena_op("list")
+	_refit_drawers()
+
+
 func _refresh_minigame() -> void:
 	if _mg_panel == null:
 		return

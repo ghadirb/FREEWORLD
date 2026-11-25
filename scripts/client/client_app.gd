@@ -32,6 +32,7 @@ var _hosted_server: Node = null  # سرور داخل برنامه (تک‌نفر
 var _beacon: Node = null  # پخش آدرس بازی در شبکهٔ محلی
 var _local: bool = false
 var _hosting: bool = false
+var _open_creator: bool = false   # پس از ورود، پنل بازی‌ساز باز شود
 
 
 func _ready() -> void:
@@ -75,7 +76,8 @@ func _show_menu(message: String = "", is_error: bool = false) -> void:
 	menu = MenuScreen.new()
 	add_child(menu)
 	menu.connect_requested.connect(_start_connect)
-	menu.solo_requested.connect(func(n): _start_local(n, false))
+	menu.solo_requested.connect(func(n): _open_creator = false; _start_local(n, false))
+	menu.creator_requested.connect(func(n): _open_creator = true; _start_local(n, false))
 	menu.host_requested.connect(func(n): _start_local(n, true))
 	menu.language_toggled.connect(func():
 		Loc.lang = "en" if Loc.lang == "fa" else "fa"
@@ -238,6 +240,9 @@ func _on_logged_in() -> void:
 	hud.host_info = _host_info_text()
 	add_child(hud)
 	hud.setup(client, view)
+	if _open_creator:
+		_open_creator = false
+		hud.open_creator()   # ورود از دکمهٔ «بازی‌ساز» صفحهٔ اصلی
 	hud.disconnect_requested.connect(func(): _show_menu())
 	hud.quality_changed.connect(func(nq):
 		Settings.set_value("quality", nq)
