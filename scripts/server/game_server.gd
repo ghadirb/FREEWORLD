@@ -289,6 +289,8 @@ func _minigame_step(dt: float) -> void:
 		_send(pid, "s2c_minigame", cs.minigame.public_state(nm))
 		if ev["kind"] == "hit":
 			_notice(pid, "arena_hit")
+		if ev["kind"] == "bonus":
+			_notice(pid, "arena_bonus")
 		if ev["kind"] == "end":
 			if int(ev["reward"]) > 0:
 				_send(pid, "s2c_money", int(ev["money"]))
@@ -618,6 +620,20 @@ func on_arena_op(pid: int, op: String, id: int) -> void:
 				return
 			_send(pid, "s2c_minigame", cs.minigame.public_state(p["name"]))
 			_notice(pid, "arena_started", {"parkour": Arenas.clean_kind(cs.arenas.items[id].get("kind", "coins")) == "parkour"})
+		"prop_bonus", "prop_hazard", "prop_undo":
+			if not _allow_action(p):
+				_notice(pid, "rate_limited")
+				return
+			var ppos: Vector3 = p["pos"]
+			var perr: String = cs.arena_prop(p["name"], id, op, Vector2(ppos.x, ppos.z))
+			if perr != "":
+				_notice(pid, perr)
+				return
+			_dirty = true
+			_notice(pid, "arena_prop_ok")
+			_broadcast_arenas()
+			for q in _auth_peers():
+				_send(q, "s2c_minigame", cs.minigame.public_state(peers[q]["name"]))
 		"respawn":
 			if not _allow_action(p):
 				_notice(pid, "rate_limited")

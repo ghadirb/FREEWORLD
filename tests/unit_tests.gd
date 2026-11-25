@@ -68,6 +68,7 @@ func _init() -> void:
 	test_arena_ratings()
 	test_arena_obstacles()
 	test_arena_checkpoint_respawn()
+	test_arena_props()
 	test_disasters()
 	test_race()
 	test_car_race()
@@ -3885,3 +3886,51 @@ func test_arena_checkpoint_respawn() -> void:
 	cs.minigame.cancel("runner")
 	cs.arena_play("runner", cid, at + Vector2(60.0, 0.0))
 	check(cs.minigame.respawn_point("runner") == null, "coin-hunt runs have no save point")
+
+
+func test_arena_props() -> void:
+	print("== Arena custom objects ==")
+	var cs = CityState.new(4244)
+	_login(cs, "maker")
+	_login(cs, "runner")
+	cs.accounts["maker"]["money"] = 1000
+	var at := _mg_land_pos(cs)
+	var id: int = int(cs.arena_create("maker", "Props", at, 14.0, 6, 60.0, 0, "parkour")["id"])
+	check(cs.arena_prop("runner", id, "prop_bonus", at) == "not_owner", "only the creator places objects")
+	check(cs.arena_prop("maker", id, "prop_bonus", at + Vector2(500.0, 0.0)) == "prop_far", "objects must be inside the arena")
+	check(cs.arena_prop("maker", 999, "prop_bonus", at) == "arena_missing", "missing arena")
+	check(cs.arena_prop("maker", id, "prop_undo", at) == "prop_empty", "nothing to undo at first")
+	check(cs.arena_prop("maker", id, "prop_bonus", at) == "", "a time bonus is placed")
+	check(cs.arena_prop("maker", id, "prop_hazard", at + Vector2(0.5, 0.0)) == "prop_close", "objects keep their distance")
+	check(cs.arena_prop("maker", id, "prop_hazard", at + Vector2(4.0, 0.0)) == "", "a trap is placed")
+	check(cs.arenas_public()[0]["props"].size() == 2, "the public list carries the objects")
+	# ذخیره و بارگذاری
+	var cs2 = CityState.from_dict(cs.to_dict())
+	check(cs2.arenas.items[id]["props"].size() == 2, "objects survive save and load")
+	# ویرایش میدان، اشیا را نگه می‌دارد
+	check(cs.arena_edit("maker", id, "Props2", 14.0, 6, 60.0, 0, "parkour") == "", "editing works")
+	check(cs.arenas.items[id]["props"].size() == 2, "editing keeps the objects")
+	# اجرا: جایزهٔ زمان و تله
+	cs.arena_play("runner", id, at)
+	cs.minigame.runs["runner"]["t"] = 30.0
+	var ev: Array = cs.minigame.step(0.1, {"runner": at}, 1)
+	var got_bonus := false
+	for e in ev:
+		if e["kind"] == "bonus":
+			got_bonus = true
+	check(got_bonus, "touching a bonus raises a bonus event")
+	check(float(cs.minigame.runs["runner"]["t"]) > 34.0, "the bonus adds time")
+	cs.minigame.runs["runner"]["t"] = 59.0
+	cs.minigame.step(0.1, {"runner": at + Vector2(4.0, 0.0)}, 1)
+	check(float(cs.minigame.runs["runner"]["t"]) < 56.0, "a trap costs time")
+	cs.minigame.runs["runner"]["t"] = 59.0
+	cs.minigame.step(0.1, {"runner": at}, 1)
+	check(float(cs.minigame.runs["runner"]["t"]) <= 59.0, "a used bonus is gone and time never exceeds the limit")
+	check(cs.arena_prop("maker", id, "prop_undo", at) == "", "the last object can be removed")
+	check(cs.arenas.items[id]["props"].size() == 1, "undo removes one object")
+	var filled := 0
+	for i in range(FWConst.ARENA_PROPS_MAX + 3):
+		if cs.arena_prop("maker", id, "prop_bonus", at + Vector2(-12.0 + float(i) * 2.1, 6.0 if i % 2 == 0 else -6.0)) == "":
+			filled += 1
+	check(cs.arenas.items[id]["props"].size() <= FWConst.ARENA_PROPS_MAX, "the object limit holds (%d added)" % filled)
+	check(Arenas.clean_props([["bogus", 1, 1], ["bonus", 1e30, 0]], {"x": 0.0, "z": 0.0, "r": 10.0}).is_empty(), "bad objects are dropped on load")

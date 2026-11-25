@@ -63,6 +63,7 @@ func start_arena(world, seed_value: int, player_name: String, arena: Dictionary)
 		queue = targets.slice(1)
 	runs[player_name] = {"t": float(arena["time"]), "score": 0, "coins": coins, "win": int(arena.get("win", 0)), "obs": Arenas.make_obstacles(seed_value, arena) if Arenas.clean_kind(arena.get("kind", "coins")) == "parkour" else [], "clk": 0.0, "hit_cd": 0.0, "queue": queue, "limit": float(arena["time"]), "arena": int(arena["id"]),
 		"total": targets.size(), "owner": str(arena["owner"]), "per_coin": int(arena["reward"]),
+		"props": Arenas.clean_props(arena.get("props", []), arena), "prop_cd": 0.0,
 		"pk": Arenas.clean_kind(arena.get("kind", "coins")) == "parkour", "last": Vector2(float(arena["x"]), float(arena["z"]))}
 	return {"ok": true}
 
@@ -128,6 +129,22 @@ func step(dt: float, positions: Dictionary, day: int) -> Array:
 						run["hit_cd"] = FWConst.ARENA_OBS_COOLDOWN
 						events.append({"name": player_name, "kind": "hit"})
 						break
+		var props: Array = run.get("props", [])
+		if not props.is_empty():
+			run["prop_cd"] = maxf(float(run.get("prop_cd", 0.0)) - dt, 0.0)
+			var j := props.size() - 1
+			while j >= 0:
+				var pp: Array = props[j]
+				if pos.distance_to(Vector2(float(pp[1]), float(pp[2]))) <= FWConst.ARENA_PROP_RANGE:
+					if str(pp[0]) == "bonus":
+						run["t"] = minf(float(run["t"]) + FWConst.ARENA_BONUS_TIME, float(run.get("limit", run["t"])))
+						props.remove_at(j)
+						events.append({"name": player_name, "kind": "bonus"})
+					elif float(run["prop_cd"]) <= 0.0 and not coins.is_empty():
+						run["t"] = float(run["t"]) - FWConst.ARENA_OBS_PENALTY
+						run["prop_cd"] = FWConst.ARENA_OBS_COOLDOWN
+						events.append({"name": player_name, "kind": "hit"})
+				j -= 1
 		if float(run["t"]) <= 0.0 or coins.is_empty():
 			events.append(_finish(player_name, day))
 	return events
@@ -209,6 +226,8 @@ func public_state(player_name: String) -> Dictionary:
 		out["t"] = snappedf(float(run["t"]), 0.1)
 		out["score"] = int(run["score"])
 		out["pk"] = bool(run.get("pk", false))
+		if not run.get("props", []).is_empty():
+			out["props"] = run["props"]
 		var cl: Array = []
 		for c in run["coins"]:
 			cl.append([c.x, c.y])

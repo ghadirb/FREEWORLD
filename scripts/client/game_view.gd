@@ -149,6 +149,8 @@ func setup(game_client, quality_level: int) -> void:
 	client.fire_changed.connect(_sync_nfire)
 	client.minigame_changed.connect(_sync_coins)
 	client.arenas_changed.connect(_sync_arenas)
+	client.arenas_changed.connect(_sync_props)
+	client.minigame_changed.connect(_sync_props)
 	client.race_changed.connect(_sync_race)
 	client.boat_changed.connect(func(): my_avatar.set_boat(client.boating))
 	client.horse_changed.connect(func(): my_avatar.set_horse(client.mounted))
@@ -1089,6 +1091,41 @@ func _long_press(pos: Vector2) -> void:
 
 ## نشانگر حلقه‌ای و ستون نور برای هر میدان ساخته‌شدهٔ بازیکنان (پروتکل ۳۱).
 var _arena_marks: Node3D = null
+var _prop_nodes: Array = []          # اشیای سفارشی میدان (جایزهٔ زمان / تله)
+var _prop_mesh_bonus: ArrayMesh
+var _prop_mesh_hazard: ArrayMesh
+
+
+## اشیای سفارشی: وسط دور فقط اشیای باقی‌ماندهٔ همان دور، در غیر این‌صورت اشیای همهٔ میدان‌ها.
+func _sync_props() -> void:
+	for n in _prop_nodes:
+		n.queue_free()
+	_prop_nodes.clear()
+	if _god_mat == null:
+		_god_mat = MeshBuilder.material()
+	if _prop_mesh_bonus == null:
+		var b := MeshBuilder.new()
+		b.add_box(Vector3(0, 0.9, 0), Vector3(0.8, 0.8, 0.8), Color("4ac8ff"))
+		b.add_box(Vector3(0, 1.6, 0), Vector3(0.3, 0.5, 0.3), Color("d6f4ff"))
+		_prop_mesh_bonus = b.build()
+		var hz := MeshBuilder.new()
+		hz.add_box(Vector3(0, 0.25, 0), Vector3(1.8, 0.5, 1.8), Color("8c1f1f"))
+		hz.add_box(Vector3(0, 0.8, 0), Vector3(0.5, 0.8, 0.5), Color("ff4a3a"))
+		_prop_mesh_hazard = hz.build()
+	var all: Array = []
+	if bool(client.minigame.get("active", false)):
+		all = client.minigame.get("props", [])
+	else:
+		for a in client.arenas:
+			all.append_array(a.get("props", []))
+	for p in all:
+		var node := MeshInstance3D.new()
+		node.mesh = _prop_mesh_bonus if str(p[0]) == "bonus" else _prop_mesh_hazard
+		node.material_override = _god_mat
+		node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		node.position = Vector3(float(p[1]), world.height_at(float(p[1]), float(p[2])), float(p[2]))
+		add_child(node)
+		_prop_nodes.append(node)
 
 
 func _sync_arenas() -> void:

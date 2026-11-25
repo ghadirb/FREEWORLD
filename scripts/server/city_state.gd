@@ -1692,6 +1692,17 @@ func arena_edit(player_name: String, id: int, arena_name: String, radius: float,
 	return ""
 
 
+## شیء سفارشی در میدان (فقط سازنده یا مدیر، در موقعیت خود بازیکن). رایگان؛ دورهای در حال اجرای آن میدان لغو می‌شوند.
+func arena_prop(player_name: String, id: int, op: String, pos: Vector2) -> String:
+	if not accounts.has(player_name):
+		return "no_account"
+	var err: String = arenas.prop_op(world, player_name, FWConst.is_admin(role_of(player_name)), id, op, pos)
+	if err == "":
+		minigame.arena_removed(id)
+		_log(player_name, "arena_prop", {"id": id, "op": op})
+	return err
+
+
 func arena_rate(player_name: String, id: int, stars: int) -> String:
 	if not accounts.has(player_name):
 		return "no_account"

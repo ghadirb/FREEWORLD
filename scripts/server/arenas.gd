@@ -8,6 +8,8 @@ const FWConst = preload("res://scripts/core/const.gd")
 
 var items: Dictionary = {}   # شناسه ← {id, name, owner, x, z, r, coins, time, reward}
 var next_id: int = 1
+const PROP_TYPES := ["bonus", "hazard"]
+
 var ratings: Dictionary = {}   # شناسهٔ میدان ← {نام بازیکن ← ستاره ۱ تا ۵} (پروتکل ۳۸)
 
 
@@ -55,6 +57,25 @@ static func make_obstacles(seed_value: int, a: Dictionary) -> Array:
 static func obstacle_pos(d: Array, clock: float) -> Vector2:
 	var k: float = 0.5 + 0.5 * sin(clock * float(d[4]) + float(d[5]))
 	return Vector2(lerpf(float(d[0]), float(d[2]), k), lerpf(float(d[1]), float(d[3]), k))
+
+
+## اشیای سفارشی: [نوع, x, z] داخل دایرهٔ میدان؛ نوع ناشناخته، بیرون از میدان یا بیش از سقف حذف می‌شود.
+static func clean_props(raw: Variant, a: Dictionary) -> Array:
+	var out: Array = []
+	if not (raw is Array):
+		return out
+	var center := Vector2(float(a["x"]), float(a["z"]))
+	for p in raw:
+		if out.size() >= FWConst.ARENA_PROPS_MAX:
+			break
+		if not (p is Array) or p.size() != 3 or not PROP_TYPES.has(str(p[0])):
+			continue
+		var x := float(p[1])
+		var z := float(p[2])
+		if not (is_finite(x) and is_finite(z)) or Vector2(x, z).distance_to(center) > float(a["r"]):
+			continue
+		out.append([str(p[0]), x, z])
+	return out
 
 
 static func clamp_count(kind: String, n: int) -> int:
@@ -132,6 +153,7 @@ func validate_edit(world, seed_value: int, who: String, is_admin: bool, id: int,
 		"time": clampf(time, FWConst.ARENA_TIME_MIN, FWConst.ARENA_TIME_MAX),
 		"reward": clampi(reward, 0, FWConst.ARENA_REWARD_MAX),
 	}
+	a["props"] = clean_props(old.get("props", []), a)
 	var pos := Vector2(float(a["x"]), float(a["z"]))
 	for oid in items:
 		if int(oid) == id:
@@ -142,6 +164,37 @@ func validate_edit(world, seed_value: int, who: String, is_admin: bool, id: int,
 	if make_targets(world, seed_value, str(a["owner"]), 0, a).size() < mini(int(a["coins"]), FWConst.ARENA_COINS_MIN):
 		return {"ok": false, "error": "arena_land"}
 	return {"ok": true, "arena": a}
+
+
+## افزودن/برداشتن شیء سفارشی در موقعیت سازنده؛ op: prop_bonus | prop_hazard | prop_undo. خروجی: رشتهٔ خطا یا «».
+func prop_op(world, who: String, is_admin: bool, id: int, op: String, pos: Vector2) -> String:
+	if not items.has(id):
+		return "arena_missing"
+	var a: Dictionary = items[id]
+	if str(a["owner"]) != who and not is_admin:
+		return "not_owner"
+	var props: Array = (a.get("props", []) as Array).duplicate(true)
+	if op == "prop_undo":
+		if props.is_empty():
+			return "prop_empty"
+		props.pop_back()
+		a["props"] = props
+		return ""
+	var kind := op.substr(5)
+	if not PROP_TYPES.has(kind):
+		return "arena_missing"
+	if props.size() >= FWConst.ARENA_PROPS_MAX:
+		return "prop_limit"
+	if not (is_finite(pos.x) and is_finite(pos.y)) or pos.distance_to(Vector2(float(a["x"]), float(a["z"]))) > float(a["r"]) - 0.5:
+		return "prop_far"
+	if world.height_at(pos.x, pos.y) < 0.5:
+		return "arena_land"
+	for p in props:
+		if Vector2(float(p[1]), float(p[2])).distance_to(pos) < FWConst.ARENA_PROP_SPACING:
+			return "prop_close"
+	props.append([kind, snappedf(pos.x, 0.1), snappedf(pos.y, 0.1)])
+	a["props"] = props
+	return ""
 
 
 func apply_edit(a: Dictionary) -> void:
@@ -167,7 +220,7 @@ func validate_new(world, seed_value: int, owner: String, arena_name: String, pos
 		"r": clampf(radius, FWConst.ARENA_R_MIN, FWConst.ARENA_R_MAX),
 		"coins": clamp_count(kd, coins),
 		"time": clampf(time, FWConst.ARENA_TIME_MIN, FWConst.ARENA_TIME_MAX),
-		"reward": clampi(reward, 0, FWConst.ARENA_REWARD_MAX),
+		"reward": clampi(reward, 0, FWConst.ARENA_REWARD_MAX), "props": [],
 	}
 	for id in items:
 		var o: Dictionary = items[id]
@@ -262,7 +315,7 @@ func list_public(arena_scores: Dictionary, arena_times: Dictionary = {}) -> Arra
 					best_time = tv
 					best_name = str(k)
 		rows.append({"id": int(id), "name": a["name"], "owner": a["owner"], "x": a["x"], "z": a["z"], "r": a["r"],
-			"coins": a["coins"], "time": a["time"], "reward": a["reward"], "kind": clean_kind(a.get("kind", "coins")), "win": int(a.get("win", 0)), "obs": int(a.get("obs", 0)),
+			"coins": a["coins"], "time": a["time"], "reward": a["reward"], "kind": clean_kind(a.get("kind", "coins")), "win": int(a.get("win", 0)), "obs": int(a.get("obs", 0)), "props": a.get("props", []),
 			"top": [top_name, top_score], "best_time": [best_name, best_time], "rating": rating_of(int(id))})
 	return rows
 
@@ -297,6 +350,7 @@ func load_dict(d: Variant) -> void:
 				"time": clampf(float(v.get("time", FWConst.ARENA_TIME_MIN)), FWConst.ARENA_TIME_MIN, FWConst.ARENA_TIME_MAX),
 				"reward": clampi(int(v.get("reward", 0)), 0, FWConst.ARENA_REWARD_MAX),
 			}
+			items[id]["props"] = clean_props(v.get("props", []), items[id])
 			next_id = maxi(next_id, id + 1)
 	var rs: Variant = d.get("ratings", {})
 	if rs is Dictionary:

@@ -1659,6 +1659,8 @@ func _fill_arena_list() -> void:
 			sub += "  ·  ⭐ %s (%s)" % [Loc.digits("%.1f" % float(rt[0])), Loc.digits(str(rt[1]))]
 		if int(a.get("obs", 0)) > 0:
 			sub += "  ·  " + Loc.fmt("arena_obs_info", [Loc.digits(str(a["obs"]))])
+		if not (a.get("props", []) as Array).is_empty():
+			sub += "  ·  " + Loc.fmt("arena_props_info", [Loc.digits(str((a["props"] as Array).size()))])
 		if int(a.get("win", 0)) > 0:
 			sub += "  ·  " + Loc.fmt("arena_goal", [Loc.digits(str(a["win"]))])
 		var bt: Array = a.get("best_time", ["", 0.0])
@@ -1702,6 +1704,21 @@ func _fill_arena_list() -> void:
 				Sfx.play(self, "click")
 				client.arena_op("delete", id))
 			r.add_child(del)
+			var ph := _label(Loc.t("arena_prop_hint"), 14, Color("aab6c8"))
+			ph.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			ph.custom_minimum_size = Vector2(520, 0)
+			box.add_child(ph)
+			var pr := HBoxContainer.new()
+			pr.add_theme_constant_override("separation", 6)
+			box.add_child(pr)
+			for po in ["prop_bonus", "prop_hazard", "prop_undo"]:
+				var pb := UiTheme.button(Loc.t("arena_" + po), Vector2(0, 44))
+				pb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+				pb.add_theme_font_size_override("font_size", 16)
+				pb.pressed.connect(func():
+					Sfx.play(self, "click")
+					client.arena_op(po, id))
+				pr.add_child(pb)
 
 
 ## بستهٔ طرح‌ها: هر بسته یک عنوان (قفل‌دار اگر هنوز خریداری نشده) و یک دکمه برای هر طرح.
@@ -2197,6 +2214,11 @@ func _on_notice(code: String, args: Dictionary) -> void:
 			toast(Loc.t("msg_arena_started_parkour" if bool(args.get("parkour", false)) else "msg_arena_started_coins"), Color("ffd84a"))
 		"arena_respawned":
 			toast(Loc.fmt("msg_arena_respawned", [Loc.digits(str(int(FWConst.ARENA_RESPAWN_PENALTY)))]), Color("ffd84a"))
+		"arena_prop_ok":
+			toast(Loc.t("msg_arena_prop_ok"), Color("c8f08a"))
+		"arena_bonus":
+			Sfx.play(self, "coin")
+			toast(Loc.fmt("msg_arena_bonus", [Loc.digits(str(int(FWConst.ARENA_BONUS_TIME)))]), Color("8ae0ff"))
 		"arena_hit":
 			Sfx.play(self, "error")
 			toast(Loc.fmt("msg_arena_hit", [Loc.digits(str(int(FWConst.ARENA_OBS_PENALTY)))]), Color("ff9a8a"))
