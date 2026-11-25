@@ -63,6 +63,7 @@ var _race_mesh_next: ArrayMesh
 var _race_mesh_other: ArrayMesh
 var _flash: float = 0.0   # برق طوفان؛ سریع محو می‌شود
 var _coin_mesh: ArrayMesh
+var _beacon_mesh: ArrayMesh   # ستون نورانی بلند برای هدف بعدی (پارکور و آخرین سکه‌ها)
 var _god_meshes: Dictionary = {}
 var _god_mat: StandardMaterial3D
 var building_nodes: Dictionary = {}
@@ -1709,6 +1710,17 @@ func _sync_coins() -> void:
 		node.material_override = _god_mat
 		node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		node.position = Vector3(float(c[0]), world.height_at(float(c[0]), float(c[1])), float(c[1]))
+		if client.minigame.get("coins", []).size() <= 3:
+			if _beacon_mesh == null:
+				var bm := MeshBuilder.new()
+				bm.add_box(Vector3(0, 12.0, 0), Vector3(0.7, 24.0, 0.7), Color("ffd24a"))
+				bm.add_box(Vector3(0, 0.15, 0), Vector3(3.0, 0.3, 3.0), Color("fff1a8"))
+				_beacon_mesh = bm.build()
+			var beacon := MeshInstance3D.new()
+			beacon.mesh = _beacon_mesh
+			beacon.material_override = _god_mat
+			beacon.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			node.add_child(beacon)
 		add_child(node)
 		coin_nodes.append(node)
 

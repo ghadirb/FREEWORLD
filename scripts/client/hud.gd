@@ -1094,6 +1094,12 @@ func _update_mg_bar() -> void:
 	_mg_bar.visible = active
 	if active:
 		_mg_bar.text = Loc.fmt("mg_status", [Loc.digits(str(int(client.minigame.get("score", 0)))), Loc.digits(str(int(ceil(client.minigame_time_left()))))])
+		var near := INF
+		if view != null:
+			for c in client.minigame.get("coins", []):
+				near = minf(near, Vector2(float(c[0]) - view.my_pos.x, float(c[1]) - view.my_pos.z).length())
+		if near < INF:
+			_mg_bar.text += "\n" + Loc.fmt("mg_target_dist", [Loc.digits(str(int(round(near))))])
 
 
 func _build_npc_panel() -> void:
@@ -2095,6 +2101,8 @@ func _on_notice(code: String, args: Dictionary) -> void:
 					txt += " " + Loc.t("msg_parkour_new_time")
 			if int(args.get("goal", 0)) > 0:
 				txt += " " + Loc.t("msg_arena_won" if bool(args.get("won", true)) else "msg_arena_lost")
+			if int(args["score"]) == 0 and float(args.get("time", 0.0)) <= 0.0 and args.has("goal"):
+				txt += "\n" + Loc.t("msg_arena_zero_hint")
 			toast(txt, Color("ffd84a"))
 		"race_end":
 			var rtxt: String
@@ -2171,6 +2179,8 @@ func _on_notice(code: String, args: Dictionary) -> void:
 		"arena_rated":
 			Sfx.play(self, "notify")
 			toast(Loc.t("msg_arena_rated"), Color("c8f08a"))
+		"arena_started":
+			toast(Loc.t("msg_arena_started_parkour" if bool(args.get("parkour", false)) else "msg_arena_started_coins"), Color("ffd84a"))
 		"arena_hit":
 			Sfx.play(self, "error")
 			toast(Loc.fmt("msg_arena_hit", [Loc.digits(str(int(FWConst.ARENA_OBS_PENALTY)))]), Color("ff9a8a"))

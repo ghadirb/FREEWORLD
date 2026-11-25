@@ -1614,11 +1614,11 @@ func test_arenas() -> void:
 	# سقف تعداد برای هر بازیکن و خلاقانه
 	cs.accounts["maker"]["money"] = 100000
 	var made := 0
-	for i in range(6):
-		var rr: Dictionary = cs.arena_create("maker", "A%d" % i, at + Vector2(float(i) * 60.0, 0.0), 8.0, 6, 30.0, 0)
+	for i in range(FWConst.ARENA_MAX_PER_PLAYER + 3):
+		var rr: Dictionary = cs.arena_create("maker", "A%d" % i, at + Vector2(float(i) * 30.0, 0.0), 8.0, 6, 30.0, 0)
 		if rr["ok"]:
 			made += 1
-	check(made <= FWConst.ARENA_MAX_PER_PLAYER, "per-player arena limit holds (%d built)" % made)
+	check(made == FWConst.ARENA_MAX_PER_PLAYER, "per-player arena limit holds and allows %d (%d built)" % [FWConst.ARENA_MAX_PER_PLAYER, made])
 	var cr = CityState.new(4244)
 	cr.creative = true
 	_login(cr, "free")

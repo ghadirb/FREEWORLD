@@ -257,8 +257,8 @@ const MINIGAME_REWARDED_RUNS := 3
 const MINIGAME_BOARD_SIZE := 10
 ## میدان‌های ساخته‌شده توسط بازیکن (پروتکل ۳۱، docs/ARENAS.md)
 const ARENA_COST := 150
-const ARENA_MAX_PER_PLAYER := 3
-const ARENA_MAX_TOTAL := 30
+const ARENA_MAX_PER_PLAYER := 12
+const ARENA_MAX_TOTAL := 80
 const ARENA_NAME_MAX := 24
 const ARENA_R_MIN := 6.0
 const ARENA_R_MAX := 20.0

@@ -8,6 +8,7 @@ const CityState = preload("res://scripts/server/city_state.gd")
 const Persistence = preload("res://scripts/server/persistence.gd")
 const NpcSim = preload("res://scripts/server/npc_sim.gd")
 const Book = preload("res://scripts/server/book.gd")
+const Arenas = preload("res://scripts/server/arenas.gd")
 const ScenarioApply = preload("res://scripts/server/scenario_apply.gd")
 const TlsSetup = preload("res://scripts/networking/tls_setup.gd")
 const Mine = preload("res://scripts/shared/mine.gd")
@@ -616,6 +617,7 @@ func on_arena_op(pid: int, op: String, id: int) -> void:
 				_notice(pid, str(res["error"]))
 				return
 			_send(pid, "s2c_minigame", cs.minigame.public_state(p["name"]))
+			_notice(pid, "arena_started", {"parkour": Arenas.clean_kind(cs.arenas.items[id].get("kind", "coins")) == "parkour"})
 		"rate_1", "rate_2", "rate_3", "rate_4", "rate_5":
 			if not _allow_action(p):
 				_notice(pid, "rate_limited")
