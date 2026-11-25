@@ -25,11 +25,13 @@ static func clean_name(raw: String) -> String:
 ## هر مقدار ناشناخته سکه‌یاب است.
 static func clean_kind(raw: Variant) -> String:
 	var k := str(raw)
-	return k if k == "parkour" or k == "race" or k == "football" or k == "survival" else "coins"
+	return k if k == "parkour" or k == "race" or k == "football" or k == "survival" or k == "adventure" else "coins"
 
 
 ## کمینهٔ تعداد هدف لازم برای ساخت: فوتبال فقط یک دروازه دارد.
 static func need_targets(kind: String, coins: int) -> int:
+	if kind == "adventure":
+		return mini(coins, 3)
 	return 1 if kind == "football" or kind == "survival" else mini(coins, FWConst.ARENA_COINS_MIN)
 
 
@@ -51,7 +53,7 @@ static func make_football_goal(world, seed_value: int, a: Dictionary) -> Array:
 
 ## نوع‌هایی که هدف‌هایشان به ترتیب ظاهر می‌شود (پارکور و مسابقه).
 static func is_ordered(kind: String) -> bool:
-	return kind == "parkour" or kind == "race"
+	return kind == "parkour" or kind == "race" or kind == "adventure"
 
 
 ## مانع متحرک فقط در پارکور (پروتکل ۳۹).
@@ -157,6 +159,8 @@ static func clamp_count(kind: String, n: int) -> int:
 		return clampi(n, 1, FWConst.FOOT_GOALS_MAX)
 	if kind == "survival":
 		return clampi(n, 3, FWConst.SURV_COUNT_MAX)
+	if kind == "adventure":
+		return clampi(n, 3, FWConst.ADV_STAGES_MAX)
 	var hi: int = FWConst.ARENA_PARKOUR_MAX if is_ordered(kind) else FWConst.ARENA_COINS_MAX
 	return clampi(n, FWConst.ARENA_COINS_MIN, hi)
 
@@ -218,6 +222,30 @@ static func make_survival_spawns(world, seed_value: int, a: Dictionary) -> Array
 	return out
 
 
+## مرحله‌های ماجراجویی: مارپیچ از نزدیک مرکز به دور (۳۰٪ تا ۹۰٪ شعاع) با زاویهٔ طلایی؛ هر مرحله دورتر از قبلی است و
+## آخرین مرحله «گنج» است. قطعی از Seed و شناسه؛ نقطهٔ روی آب یا کوه رد می‌شود.
+static func make_adventure_stages(world, seed_value: int, a: Dictionary) -> Array:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash("%d:adv:%d:%d" % [seed_value, int(a.get("id", 0)), int(a["coins"])])
+	var center := Vector2(float(a["x"]), float(a["z"]))
+	var r: float = float(a["r"])
+	var n: int = int(a["coins"])
+	var base: float = rng.randf() * TAU
+	var out: Array = []
+	for i in n:
+		var t: float = float(i) / float(maxi(n - 1, 1))
+		for attempt in 4:
+			var ang: float = base + float(i) * 2.399963 + float(attempt) * 0.9
+			var dist: float = r * lerpf(0.3, 0.9, t)
+			var c := center + Vector2(cos(ang), sin(ang)) * dist
+			var h: float = world.height_at(c.x, c.y)
+			if h < 0.5 or h > FWConst.MINIGAME_MAX_HEIGHT:
+				continue
+			out.append(Vector2(snappedf(c.x, 0.1), snappedf(c.y, 0.1)))
+			break
+	return out
+
+
 ## اهداف دور بر اساس نوع میدان: سکه‌های پخش‌شده، ایستگاه‌های مرتب یا دروازه‌های پیست.
 static func make_targets(world, seed_value: int, player_name: String, counter: int, a: Dictionary) -> Array:
 	var kd := clean_kind(a.get("kind", "coins"))
@@ -225,6 +253,8 @@ static func make_targets(world, seed_value: int, player_name: String, counter: i
 		return make_football_goal(world, seed_value, a)
 	if kd == "survival":
 		return make_survival_spawns(world, seed_value, a)
+	if kd == "adventure":
+		return make_adventure_stages(world, seed_value, a)
 	if kd == "race":
 		return make_race_gates(world, seed_value, a)
 	if kd == "parkour":

@@ -287,6 +287,8 @@ func _minigame_step(dt: float) -> void:
 			continue
 		var pid: int = by_name[nm]
 		_send(pid, "s2c_minigame", cs.minigame.public_state(nm))
+		if ev["kind"] == "coin" and bool(ev.get("adv", false)) and int(ev["n"]) < int(ev["of"]):
+			_notice(pid, "arena_stage", {"n": ev["n"], "of": ev["of"]})
 		if ev["kind"] == "hit":
 			_notice(pid, "arena_hit")
 		if ev["kind"] == "bonus":
@@ -640,7 +642,7 @@ func on_arena_op(pid: int, op: String, id: int) -> void:
 				_notice(pid, str(res["error"]))
 				return
 			_send(pid, "s2c_minigame", cs.minigame.public_state(p["name"]))
-			_notice(pid, "arena_started", {"parkour": Arenas.clean_kind(cs.arenas.items[id].get("kind", "coins")) == "parkour", "race": Arenas.clean_kind(cs.arenas.items[id].get("kind", "coins")) == "race", "football": Arenas.clean_kind(cs.arenas.items[id].get("kind", "coins")) == "football", "survival": Arenas.clean_kind(cs.arenas.items[id].get("kind", "coins")) == "survival"})
+			_notice(pid, "arena_started", {"parkour": Arenas.clean_kind(cs.arenas.items[id].get("kind", "coins")) == "parkour", "race": Arenas.clean_kind(cs.arenas.items[id].get("kind", "coins")) == "race", "football": Arenas.clean_kind(cs.arenas.items[id].get("kind", "coins")) == "football", "survival": Arenas.clean_kind(cs.arenas.items[id].get("kind", "coins")) == "survival", "adventure": Arenas.clean_kind(cs.arenas.items[id].get("kind", "coins")) == "adventure"})
 		"prop_bonus", "prop_hazard", "prop_undo":
 			if not _allow_action(p):
 				_notice(pid, "rate_limited")

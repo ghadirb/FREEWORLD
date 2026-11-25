@@ -1553,7 +1553,7 @@ func _build_arena_panel() -> void:
 	_arena_kind_btn = UiTheme.button("", Vector2(0, 52))
 	_arena_kind_btn.pressed.connect(func():
 		Sfx.play(self, "click")
-		_arena_kind = {"coins": "parkour", "parkour": "race", "race": "football", "football": "survival"}.get(_arena_kind, "coins")
+		_arena_kind = {"coins": "parkour", "parkour": "race", "race": "football", "football": "survival", "survival": "adventure"}.get(_arena_kind, "coins")
 		_arena_kind_refresh())
 	v.add_child(_arena_kind_btn)
 	_arena_kind_refresh()
@@ -1605,6 +1605,7 @@ const ARENA_PRESETS := [
 	{"id": "easy", "kind": "parkour", "r": 10, "n": 6, "t": 60, "rw": 1, "win": 100, "obs": 0},
 	{"id": "hard", "kind": "parkour", "r": 18, "n": 12, "t": 40, "rw": 2, "win": 100, "obs": 3},
 	{"id": "race", "kind": "race", "r": 20, "n": 10, "t": 45, "rw": 2, "win": 100, "obs": 0},
+	{"id": "adventure", "kind": "adventure", "r": 18, "n": 5, "t": 90, "rw": 3, "win": 100, "obs": 0},
 	{"id": "survival", "kind": "survival", "r": 14, "n": 8, "t": 60, "rw": 2, "win": 100, "obs": 0},
 	{"id": "football", "kind": "football", "r": 14, "n": 5, "t": 60, "rw": 2, "win": 100, "obs": 0},
 ]
@@ -1668,7 +1669,7 @@ func _fill_arena_list() -> void:
 		var mine: bool = str(a["owner"]) == client.my_name
 		var box := VBoxContainer.new()
 		_arena_rows.add_child(box)
-		box.add_child(_label(({"parkour": "🏁 ", "race": "🏎 ", "football": "⚽ ", "survival": "⚔ "}.get(str(a.get("kind", "coins")), "🪙 ")) + str(a["name"]), 22, Color("ffd24a")))
+		box.add_child(_label(({"parkour": "🏁 ", "race": "🏎 ", "football": "⚽ ", "survival": "⚔ ", "adventure": "🗝 "}.get(str(a.get("kind", "coins")), "🪙 ")) + str(a["name"]), 22, Color("ffd24a")))
 		var top: Array = a["top"]
 		var sub := "%s: %s  ·  %s" % [Loc.t("arena_owner"), str(a["owner"]),
 			Loc.fmt("arena_info", [Loc.digits(str(a["coins"])), Loc.digits(str(int(a["time"]))), Loc.digits(str(a["reward"]))])]
@@ -2238,7 +2239,7 @@ func _on_notice(code: String, args: Dictionary) -> void:
 			Sfx.play(self, "notify")
 			toast(Loc.t("msg_arena_rated"), Color("c8f08a"))
 		"arena_started":
-			toast(Loc.t("msg_arena_started_survival" if bool(args.get("survival", false)) else "msg_arena_started_football" if bool(args.get("football", false)) else "msg_arena_started_race" if bool(args.get("race", false)) else ("msg_arena_started_parkour" if bool(args.get("parkour", false)) else "msg_arena_started_coins")), Color("ffd84a"))
+			toast(Loc.t("msg_arena_started_adventure" if bool(args.get("adventure", false)) else "msg_arena_started_survival" if bool(args.get("survival", false)) else "msg_arena_started_football" if bool(args.get("football", false)) else "msg_arena_started_race" if bool(args.get("race", false)) else ("msg_arena_started_parkour" if bool(args.get("parkour", false)) else "msg_arena_started_coins")), Color("ffd84a"))
 		"arena_respawned":
 			toast(Loc.fmt("msg_arena_respawned", [Loc.digits(str(int(FWConst.ARENA_RESPAWN_PENALTY)))]), Color("ffd84a"))
 		"arena_imported":
@@ -2248,6 +2249,9 @@ func _on_notice(code: String, args: Dictionary) -> void:
 		"arena_bonus":
 			Sfx.play(self, "coin")
 			toast(Loc.fmt("msg_arena_bonus", [Loc.digits(str(int(FWConst.ARENA_BONUS_TIME)))]), Color("8ae0ff"))
+		"arena_stage":
+			Sfx.play(self, "notify")
+			toast(Loc.fmt("msg_arena_stage", [Loc.digits(str(int(args.get("n", 0)))), Loc.digits(str(int(args.get("of", 0))))]), Color("ffd84a"))
 		"arena_hit":
 			Sfx.play(self, "error")
 			toast(Loc.fmt("msg_arena_hit", [Loc.digits(str(int(FWConst.ARENA_OBS_PENALTY)))]), Color("ff9a8a"))

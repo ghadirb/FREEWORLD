@@ -66,7 +66,7 @@ func start_arena(world, seed_value: int, player_name: String, arena: Dictionary)
 	runs[player_name] = {"t": float(arena["time"]), "score": 0, "coins": coins, "win": int(arena.get("win", 0)), "obs": Arenas.make_obstacles(seed_value, arena) if Arenas.clean_kind(arena.get("kind", "coins")) == "parkour" else [], "clk": 0.0, "hit_cd": 0.0, "queue": queue, "limit": float(arena["time"]), "arena": int(arena["id"]),
 		"total": int(arena["coins"]) if kind_now == "football" else targets.size(), "owner": str(arena["owner"]), "per_coin": int(arena["reward"]),
 		"props": Arenas.clean_props(arena.get("props", []), arena), "prop_cd": 0.0,
-		"pk": Arenas.is_ordered(kind_now), "rc": kind_now == "race", "last": Vector2(float(arena["x"]), float(arena["z"]))}
+		"pk": Arenas.is_ordered(kind_now), "rc": kind_now == "race", "adv": kind_now == "adventure", "last": Vector2(float(arena["x"]), float(arena["z"]))}
 	if kind_now == "survival":
 		runs[player_name]["coins"] = []
 		runs[player_name]["foes"] = []
@@ -141,7 +141,7 @@ func step(dt: float, positions: Dictionary, day: int, world_ref = null) -> Array
 				var queue: Array = run.get("queue", [])
 				if not queue.is_empty():
 					coins.append(queue.pop_front())
-				events.append({"name": player_name, "kind": "coin"})
+				events.append({"name": player_name, "kind": "coin", "adv": bool(run.get("adv", false)), "n": int(run["score"]), "of": int(run.get("total", 0))})
 			i -= 1
 		run["clk"] = float(run.get("clk", 0.0)) + dt
 		var obs: Array = run.get("obs", [])
@@ -339,6 +339,9 @@ func public_state(player_name: String) -> Dictionary:
 		out["score"] = int(run["score"])
 		out["pk"] = bool(run.get("pk", false))
 		out["rc"] = bool(run.get("rc", false))
+		if bool(run.get("adv", false)):
+			out["adv"] = true
+			out["left"] = (run.get("queue", []) as Array).size()
 		if run.has("foes"):
 			var fl: Array = []
 			for f in run["foes"]:

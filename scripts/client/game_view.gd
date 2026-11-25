@@ -1773,7 +1773,7 @@ func _sync_coins() -> void:
 		node.material_override = _god_mat
 		node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		node.position = Vector3(float(c[0]), world.height_at(float(c[0]), float(c[1])), float(c[1]))
-		if client.minigame.get("coins", []).size() <= 3:
+		if client.minigame.get("coins", []).size() <= 3 and (not bool(client.minigame.get("adv", false)) or int(client.minigame.get("left", 0)) == 0):
 			if _beacon_mesh == null:
 				var bm := MeshBuilder.new()
 				bm.add_box(Vector3(0, 12.0, 0), Vector3(0.7, 24.0, 0.7), Color("ffd24a"))

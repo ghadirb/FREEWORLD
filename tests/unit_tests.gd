@@ -67,6 +67,7 @@ func _init() -> void:
 	test_arena_race()
 	test_arena_football()
 	test_arena_survival()
+	test_arena_adventure()
 	test_arena_win_rule()
 	test_arena_ratings()
 	test_arena_obstacles()
@@ -4071,6 +4072,40 @@ func test_arena_survival() -> void:
 			cs.minigame.runs["fighter"]["hp"] = 5.0 if guard < 5 else 0.0
 	check(not cs.minigame.runs.has("fighter"), "zero health ends the round")
 	check(Arenas.parse_code(Arenas.export_code(a))["def"]["kind"] == "survival", "share code keeps survival")
+
+
+func test_arena_adventure() -> void:
+	print("== Adventure arenas (staged treasure hunt) ==")
+	var cs = CityState.new(4244)
+	_login(cs, "maker")
+	_login(cs, "hero")
+	cs.accounts["maker"]["money"] = 1000
+	cs.accounts["hero"]["money"] = 0
+	var at := _mg_land_pos(cs)
+	var res: Dictionary = cs.arena_create("maker", "Quest", at, 18.0, 99, 90.0, 2, "adventure", 100)
+	check(bool(res["ok"]), "an adventure arena can be built")
+	var id: int = int(res["id"])
+	var a: Dictionary = cs.arenas.items[id]
+	check(str(a["kind"]) == "adventure" and int(a["coins"]) == FWConst.ADV_STAGES_MAX, "kind kept and stage count clamped")
+	var stages: Array = Arenas.make_adventure_stages(cs.world, cs.seed_value, a)
+	check(stages.size() >= 3 and stages == Arenas.make_adventure_stages(cs.world, cs.seed_value, a), "stages are placed on land and deterministic")
+	var center := Vector2(float(a["x"]), float(a["z"]))
+	check((stages[0] as Vector2).distance_to(center) < (stages[stages.size() - 1] as Vector2).distance_to(center), "later stages are farther out")
+	check(bool(cs.arena_play("hero", id, at)["ok"]), "a hero can start the adventure")
+	var st: Dictionary = cs.minigame.public_state("hero")
+	check(bool(st["adv"]) and st["coins"].size() == 1 and int(st["left"]) == stages.size() - 1, "only the next stage is visible and the state counts what is left")
+	var stage_events := 0
+	var guard := 0
+	while cs.minigame.runs.has("hero") and guard < 40:
+		guard += 1
+		var cur: Dictionary = cs.minigame.public_state("hero")
+		var target := Vector2(float(cur["coins"][0][0]), float(cur["coins"][0][1]))
+		for e in cs.minigame.step(0.1, {"hero": target}, 1, cs.world):
+			if str(e["kind"]) == "coin" and bool(e.get("adv", false)):
+				stage_events += 1
+	check(stage_events == stages.size(), "every stage announces progress with adv, n and of")
+	check(not cs.minigame.runs.has("hero") and float(cs.minigame.arena_times.get(id, {}).get("hero", 0.0)) > 0.0, "reaching the treasure ends the quest with a time")
+	check(Arenas.parse_code(Arenas.export_code(a))["def"]["kind"] == "adventure", "share code keeps adventure")
 
 
 func test_arena_share_code() -> void:

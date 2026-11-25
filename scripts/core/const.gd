@@ -1,7 +1,7 @@
 extends RefCounted
 ## ثابت‌های مشترک بین سرور و کلاینت.
 
-const PROTOCOL_VERSION := 43
+const PROTOCOL_VERSION := 44
 # ترافیک شبکه با DTLS رمز می‌شود (نسخهٔ ۴ به بعد). فقط برای عیب‌یابی خاموش شود.
 const USE_DTLS := true
 const DEFAULT_PORT := 7777
@@ -290,6 +290,7 @@ const SURV_ATTACK_RANGE := 2.4    # برد ضربهٔ خودکار بازیکن
 const SURV_ATTACK_CD := 0.6       # فاصلهٔ ضربه‌های بازیکن
 const SURV_ALIVE_MAX := 3         # حداکثر دشمن هم‌زمان
 const SURV_COUNT_MAX := 20        # حداکثر دشمن هر دور
+const ADV_STAGES_MAX := 8         # حداکثر مرحلهٔ ماجراجویی (پروتکل ۴۴)
 const FOOT_GOALS_MAX := 10        # حداکثر گل هدف در میدان فوتبال (پروتکل ۴۲)
 const FOOT_KICK_SPEED := 9.0      # سرعت توپ پس از لمس بازیکن (متر بر ثانیه)
 const FOOT_RANGE := 1.6           # فاصلهٔ لمس توپ
