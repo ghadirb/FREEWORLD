@@ -70,6 +70,8 @@ var _color_btns: Array = []
 var _inv_panel: PanelContainer
 var _inv_rows: Dictionary = {}
 var _god_panel: PanelContainer
+var _civ_panel: PanelContainer
+var _civ_list: VBoxContainer
 var _god_btn: Button
 var _mg_btn: Button
 var _arena_btn: Button
@@ -180,6 +182,7 @@ func setup(game_client, game_view) -> void:
 	_build_book_panel()
 	_build_arena_panel()
 	_build_god_panel()
+	_build_civ_panel()
 	_build_minigame()
 	_build_race()
 	_build_leave_button()
@@ -187,7 +190,7 @@ func setup(game_client, game_view) -> void:
 	_build_chat()
 	_build_admin_panel()
 	_build_menu_panel()
-	for dp in [_palette, _tools_panel, _inv_panel, _offer_panel, _npc_panel, _furn_panel, _bp_panel, _book_panel, _arena_panel, _god_panel, _mg_panel, _race_panel, _admin_panel, _menu_panel]:
+	for dp in [_palette, _tools_panel, _inv_panel, _offer_panel, _npc_panel, _furn_panel, _bp_panel, _book_panel, _arena_panel, _god_panel, _civ_panel, _mg_panel, _race_panel, _admin_panel, _menu_panel]:
 		_dock(dp)
 	view.is_over_ui = Callable(self, "is_over_ui")
 	view.building_tapped.connect(_on_building_tapped)
@@ -923,6 +926,104 @@ func _build_god_panel() -> void:
 		b.pressed.connect(func(): _select_god(str(k)))
 		row.add_child(b)
 		_god_btns[str(k)] = b
+	var civ_open := UiTheme.button(Loc.t("civ_open"), Vector2(0, 60))
+	civ_open.pressed.connect(_toggle_civ)
+	v.add_child(civ_open)
+
+
+# ---------------- تمدن‌ها و دیپلماسی (پروتکل ۴۵) ----------------
+func _build_civ_panel() -> void:
+	_civ_panel = _panel(0.5, 1.0)
+	_civ_panel.visible = false
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 8)
+	_civ_panel.add_child(v)
+	v.add_child(_label(Loc.t("civ_title"), 26, Color("ffd36a")))
+	_civ_list = VBoxContainer.new()
+	_civ_list.add_theme_constant_override("separation", 6)
+	v.add_child(_civ_list)
+	var close := UiTheme.button(Loc.t("civ_close"), Vector2(0, 56))
+	close.pressed.connect(func(): _civ_panel.visible = false)
+	v.add_child(close)
+	client.civ_changed.connect(_refresh_civ)
+
+
+func _toggle_civ() -> void:
+	Sfx.play(self, "click")
+	_civ_panel.visible = not _civ_panel.visible
+	if _civ_panel.visible:
+		_refresh_civ()
+
+
+func _civ_name(name_idx: int) -> String:
+	return Loc.t("kingdom_%d" % clampi(name_idx, 0, 11))
+
+
+func _refresh_civ() -> void:
+	if _civ_panel == null or not _civ_panel.visible:
+		return
+	for c in _civ_list.get_children():
+		_civ_list.remove_child(c)
+		c.queue_free()
+	var ks: Array = client.civ.get("k", [])
+	if ks.is_empty():
+		var l := _label(Loc.t("civ_empty"), 22, Color("d6e4ff"))
+		l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		l.custom_minimum_size = Vector2(380, 0)
+		_civ_list.add_child(l)
+	var rel_of := {}
+	for r in client.civ.get("rel", []):
+		rel_of["%d,%d" % [int(r[0]), int(r[1])]] = int(r[2])
+	for k in ks:
+		var row := HBoxContainer.new()
+		var tag := ""
+		if int(k[5]) == 1:
+			tag += " ☠"
+		if int(k[6]) == 1:
+			tag += " 🌾✗"
+		var text := "■ %s  👥 %s/%s%s" % [_civ_name(int(k[1])), Loc.digits(str(k[3])), Loc.digits(str(k[4])), tag]
+		var lab := _label(text, 22, FWConst.CIV_COLORS[int(k[2]) % FWConst.CIV_COLORS.size()])
+		lab.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		row.add_child(lab)
+		var del := UiTheme.button("✕", Vector2(56, 52))
+		var kid: int = int(k[0])
+		del.pressed.connect(func(): client.civ_op("remove", kid, 0, 0.0, 0.0))
+		row.add_child(del)
+		_civ_list.add_child(row)
+	for i in range(ks.size()):
+		for j in range(i + 1, ks.size()):
+			var a: int = int(ks[i][0])
+			var b: int = int(ks[j][0])
+			var cur: int = int(rel_of.get("%d,%d" % [mini(a, b), maxi(a, b)], 0))
+			var head := _label("%s ↔ %s" % [_civ_name(int(ks[i][1])), _civ_name(int(ks[j][1]))], 20, Color("d6e4ff"))
+			_civ_list.add_child(head)
+			var brow := HBoxContainer.new()
+			brow.add_theme_constant_override("separation", 6)
+			for def in [["war", "rel_war", 1], ["peace", "rel_peace", 0], ["ally", "rel_ally", 2]]:
+				var bt := UiTheme.button(Loc.t(str(def[1])), Vector2(0, 52))
+				bt.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+				bt.add_theme_font_size_override("font_size", 20)
+				bt.disabled = (cur == int(def[2]))
+				var op: String = str(def[0])
+				bt.pressed.connect(func(): client.civ_op(op, a, b, 0.0, 0.0))
+				brow.add_child(bt)
+			_civ_list.add_child(brow)
+	var log: Array = client.civ.get("log", [])
+	if not log.is_empty():
+		_civ_list.add_child(_label(Loc.t("civ_events"), 22, Color("ffd36a")))
+		for idx in range(log.size() - 1, maxi(-1, log.size() - 9), -1):
+			var e: Array = log[idx]
+			var key := "civlog_" + str(e[1])
+			var line := _civ_name(int(e[2]))
+			if Loc.t(key).count("%s") >= 2:
+				line = Loc.fmt(key, [_civ_name(int(e[2])), _civ_name(int(e[3]))])
+			elif Loc.t(key) != key:
+				line = Loc.fmt(key, [_civ_name(int(e[2]))])
+			var el := _label("%s %s" % [Loc.digits(str(e[0])), line], 18, Color("b8c4d8"))
+			el.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			el.custom_minimum_size = Vector2(380, 0)
+			_civ_list.add_child(el)
+
 
 
 func _select_god(k: String) -> void:
@@ -2295,6 +2396,8 @@ func _refresh_role() -> void:
 	_role.text = Loc.role_name(client.role)
 	_admin_btn.visible = FWConst.is_admin(client.role)
 	_god_btn.visible = FWConst.is_admin(client.role) and view.mode == "world"
+	if not _god_btn.visible and _civ_panel.visible:
+		_civ_panel.visible = false
 	if not _god_btn.visible and _god_panel.visible:
 		_toggle_god()
 

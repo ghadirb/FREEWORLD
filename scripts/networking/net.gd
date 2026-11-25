@@ -165,6 +165,12 @@ func c2s_arena_op(op: String, id: int) -> void:
 
 
 @rpc("any_peer", "call_remote", "reliable")
+func c2s_civ(op: String, a: int, b: int, x: float, z: float) -> void:
+	if server:
+		server.on_civ(multiplayer.get_remote_sender_id(), op, a, b, x, z)
+
+
+@rpc("any_peer", "call_remote", "reliable")
 func c2s_undo() -> void:
 	if server:
 		server.on_undo(multiplayer.get_remote_sender_id())
@@ -458,6 +464,12 @@ func s2c_player_left(player_name: String) -> void:
 func s2c_notice(code: String, args: Dictionary) -> void:
 	if client:
 		client.on_notice(code, args)
+
+
+@rpc("authority", "call_remote", "reliable")
+func s2c_civ(data: Dictionary) -> void:
+	if client:
+		client.on_civ(data)
 
 
 @rpc("authority", "call_remote", "reliable")

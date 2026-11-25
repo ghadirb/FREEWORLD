@@ -7,6 +7,7 @@ const FWConst = preload("res://scripts/core/const.gd")
 const Blueprints = preload("res://scripts/server/blueprints.gd")
 const InteriorMesh = preload("res://scripts/client/interior_mesh.gd")
 const Placement = preload("res://scripts/shared/placement.gd")
+const Civ = preload("res://scripts/server/civ.gd")
 const Loc = preload("res://scripts/client/loc.gd")
 const Sfx = preload("res://scripts/client/sfx.gd")
 const MeshBuilder = preload("res://scripts/client/mesh_builder.gd")
@@ -153,6 +154,7 @@ func setup(game_client, quality_level: int) -> void:
 	client.fire_changed.connect(_sync_nfire)
 	client.minigame_changed.connect(_sync_coins)
 	client.arenas_changed.connect(_sync_arenas)
+	client.civ_changed.connect(_sync_civ)
 	client.arenas_changed.connect(_sync_props)
 	client.minigame_changed.connect(_sync_props)
 	client.race_changed.connect(_sync_race)
@@ -847,6 +849,10 @@ func _tap(pos: Vector2) -> void:
 				client.god("ignite", "fire", gh.x, gh.z)
 			elif god_kind == "grove":
 				client.god("grove", "grove", gh.x, gh.z)
+			elif god_kind == "kingdom":
+				client.civ_op("found", 0, 0, gh.x, gh.z)
+			elif god_kind == "plague" or god_kind == "famine":
+				client.civ_op(god_kind, 0, 0, gh.x, gh.z)
 			else:
 				client.god("add", god_kind, gh.x, gh.z)
 		return
@@ -1130,6 +1136,51 @@ func _sync_props() -> void:
 		node.position = Vector3(float(p[1]), world.height_at(float(p[1]), float(p[2])), float(p[2]))
 		add_child(node)
 		_prop_nodes.append(node)
+
+
+## مرز کشورها (پروتکل ۴۵): یک حلقهٔ رنگی دور هر سکونتگاه و ستون بلند روی پایتخت.
+var _civ_marks: Node3D = null
+
+
+func _sync_civ() -> void:
+	if _civ_marks != null:
+		_civ_marks.queue_free()
+	_civ_marks = Node3D.new()
+	add_child(_civ_marks)
+	for k in client.civ.get("k", []):
+		var col: Color = FWConst.CIV_COLORS[int(k[2]) % FWConst.CIV_COLORS.size()]
+		var mat := StandardMaterial3D.new()
+		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		mat.albedo_color = Color(col.r, col.g, col.b, 0.7)
+		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		var capital := true
+		for s in k[7]:
+			var x: float = float(s[0])
+			var z: float = float(s[1])
+			var gy: float = client.mirror.ground_height(x, z)
+			var ring := MeshInstance3D.new()
+			var tm := TorusMesh.new()
+			tm.inner_radius = Civ.SETTLE_RADIUS - 0.4
+			tm.outer_radius = Civ.SETTLE_RADIUS
+			tm.rings = 32
+			tm.ring_segments = 4
+			ring.mesh = tm
+			ring.material_override = mat
+			ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			ring.position = Vector3(x, gy + 0.3, z)
+			_civ_marks.add_child(ring)
+			var h: float = 16.0 if capital else 6.0
+			var pillar := MeshInstance3D.new()
+			var cm := CylinderMesh.new()
+			cm.top_radius = 0.3
+			cm.bottom_radius = 0.3
+			cm.height = h
+			pillar.mesh = cm
+			pillar.material_override = mat
+			pillar.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			pillar.position = Vector3(x, gy + h * 0.5, z)
+			_civ_marks.add_child(pillar)
+			capital = false
 
 
 func _sync_arenas() -> void:

@@ -10,6 +10,7 @@ const Minigame = preload("res://scripts/server/minigame.gd")
 const Race = preload("res://scripts/server/race.gd")
 const Blueprints = preload("res://scripts/server/blueprints.gd")
 const Arenas = preload("res://scripts/server/arenas.gd")
+const Civ = preload("res://scripts/server/civ.gd")
 const Mine = preload("res://scripts/shared/mine.gd")
 const RailNetwork = preload("res://scripts/shared/rail_network.gd")
 const Scenarios = preload("res://scripts/shared/scenarios.gd")
@@ -63,6 +64,7 @@ var minigame = Minigame.new()
 var race = Race.new()
 var blueprints = Blueprints.new()
 var arenas = Arenas.new()
+var civ = Civ.new()   # تمدن‌ها (پروتکل ۴۵)
 ## ساخت بلوکی: Vector3i -> [نوع, رنگ, مالک]. block_cells شمارندهٔ بلوک در هر خانهٔ ۲×۲ شبکهٔ ساختمان است.
 var blocks: Dictionary = {}
 var block_cells: Dictionary = {}
@@ -1324,6 +1326,68 @@ func growth_step(dt: float) -> bool:
 	return changed
 
 
+## تمدن‌سازی (پروتکل ۴۵): فقط مدیران. op = found | war | peace | ally | plague | famine | remove
+func civ_action(actor: String, op: String, a: int, b: int, x: float, z: float) -> Dictionary:
+	if not FWConst.is_admin(role_of(actor)):
+		return {"ok": false, "error": "forbidden"}
+	var land := Callable(self, "_civ_land")
+	match op:
+		"found":
+			var res: Dictionary = civ.found(x, z, land, day_count)
+			if res["ok"]:
+				_log(actor, "civ_found", {"id": int(res["id"])})
+			return res
+		"war", "peace", "ally":
+			var r: int = Civ.WAR if op == "war" else (Civ.ALLY if op == "ally" else Civ.PEACE)
+			var err: String = civ.set_relation(a, b, r, day_count)
+			if err != "":
+				return {"ok": false, "error": err}
+			_log(actor, "civ_" + op, {"a": a, "b": b})
+			return {"ok": true}
+		"plague", "famine":
+			var target: int = a if a > 0 else civ.kingdom_at(x, z)
+			var terr: String = civ.trigger(target, op, day_count)
+			if terr != "":
+				return {"ok": false, "error": terr}
+			_log(actor, "civ_" + op, {"id": target})
+			return {"ok": true}
+		"remove":
+			if not civ.remove(a, day_count):
+				return {"ok": false, "error": "civ_no_target"}
+			_log(actor, "civ_remove", {"id": a})
+			return {"ok": true}
+	return {"ok": false, "error": "bad_request"}
+
+
+func _civ_land(x: float, z: float) -> bool:
+	var half := FWConst.CITY_SIZE * 0.5
+	if absf(x - half) > FWConst.WORLD_LIMIT or absf(z - half) > FWConst.WORLD_LIMIT:
+		return false
+	return world.height_at(x, z) >= FWConst.GOD_MIN_HEIGHT
+
+
+## شمار مزرعه‌های داخل دایره (برای ظرفیت غذایی کشور).
+func _civ_farms(x: float, z: float, r: float) -> int:
+	var n := 0
+	for id in buildings:
+		var b: Dictionary = buildings[id]
+		if str(b["type"]) != "farm":
+			continue
+		var bx := (float(b["cx"]) + 0.5) * FWConst.CELL_SIZE
+		var bz := (float(b["cz"]) + 0.5) * FWConst.CELL_SIZE
+		if Vector2(bx, bz).distance_to(Vector2(x, z)) <= r:
+			n += 1
+	return n
+
+
+func civ_step(dt: float) -> bool:
+	return civ.step(dt, time_speed, Callable(self, "_civ_land"), Callable(self, "_civ_farms"), day_count)
+
+
+func civ_public() -> Dictionary:
+	return civ.public()
+
+
 func _god_spot_ok(x: float, z: float) -> bool:
 	if world.height_at(x, z) < FWConst.GOD_MIN_HEIGHT:
 		return false
@@ -2446,6 +2510,7 @@ func to_dict() -> Dictionary:
 		"race": race.to_dict(),
 		"blueprints": blueprints.to_dict(),
 		"arenas": arenas.to_dict(),
+		"civ": civ.to_dict(),
 	}
 
 
@@ -2582,6 +2647,7 @@ static func from_dict(d: Dictionary):
 	cs.race.load_dict(d.get("race", {}))
 	cs.blueprints.load_dict(d.get("blueprints", {}))
 	cs.arenas.load_dict(d.get("arenas", {}))
+	cs.civ.load_dict(d.get("civ", {}))
 	cs.wheat_price = float(d.get("wheat_price", FWConst.WHEAT_BASE_PRICE))
 	cs.bread_price = float(d.get("bread_price", FWConst.BREAD_BASE_PRICE))
 	var mk = d.get("market", {})

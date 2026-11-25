@@ -287,6 +287,34 @@ func _run() -> void:
 	c.arena_op("delete", int(c.arenas[0]["id"]))
 	ok(await wait_until(func(): return c.arenas.is_empty() and server.cs.arenas.items.is_empty(), 3.0), "deleting the arena clears it everywhere")
 	ok(await wait_until(func(): return not bool(c.minigame.get("active", false)), 3.0), "deleting the arena cancels the running run")
+
+	# تمدن‌سازی (پروتکل ۴۵): کشور ← کشور دوم ← جنگ ← طاعون ← حذف، همه با سرور
+	var cpos: Vector3 = server.peers[1]["pos"]
+	c.civ_op("found", 0, 0, cpos.x, cpos.z)
+	ok(await wait_until(func(): return c.civ["k"].size() == 1 and server.cs.civ.items.size() == 1, 3.0), "a kingdom is founded and shown on the client")
+	var civ_far := Vector2.ZERO
+	for ang in range(0, 360, 20):
+		for dist in [100.0, 130.0, 160.0]:
+			var cand: Vector2 = Vector2(cpos.x, cpos.z) + Vector2.from_angle(deg_to_rad(float(ang))) * float(dist)
+			if civ_far == Vector2.ZERO and server.cs._civ_land(cand.x, cand.y):
+				civ_far = cand
+	ok(civ_far != Vector2.ZERO, "found land for a second kingdom")
+	c.civ_op("found", 0, 0, civ_far.x, civ_far.y)
+	ok(await wait_until(func(): return c.civ["k"].size() == 2, 3.0), "a second kingdom is founded")
+	var ida: int = int(c.civ["k"][0][0])
+	var idb: int = int(c.civ["k"][1][0])
+	c.civ_op("war", ida, idb, 0.0, 0.0)
+	ok(await wait_until(func(): return c.civ["rel"].size() == 1 and int(c.civ["rel"][0][2]) == 1, 3.0), "war is declared and reaches the client")
+	c.civ_op("ally", ida, idb, 0.0, 0.0)
+	await create_timer(0.3).timeout
+	ok(int(c.civ["rel"][0][2]) == 1, "alliance is refused while at war")
+	c.civ_op("plague", 0, 0, cpos.x, cpos.z)
+	ok(await wait_until(func(): return int(c.civ["k"][0][5]) == 1 or int(c.civ["k"][1][5]) == 1, 3.0), "a plague appears on the tapped kingdom")
+	c.civ_op("remove", ida, 0, 0.0, 0.0)
+	ok(await wait_until(func(): return c.civ["k"].size() == 1 and c.civ["rel"].is_empty(), 3.0), "removing a kingdom clears its relations")
+	await create_timer(1.2).timeout   # سقف نرخ درخواست در سرور
+	c.civ_op("remove", idb, 0, 0.0, 0.0)
+	ok(await wait_until(func(): return c.civ["k"].is_empty(), 3.0), "all kingdoms can be removed")
 	c.disconnect_from_server()
 	server.stop()
 	server.queue_free()

@@ -33,6 +33,7 @@ signal terrain_changed(x0: float, z0: float, x1: float, z1: float)
 signal teleported(pos: Vector2)
 signal ticked
 signal god_changed
+signal civ_changed
 signal fire_changed
 signal minigame_changed
 signal disaster_changed
@@ -353,6 +354,20 @@ func arena_import(code: String) -> void:
 func arena_op(op: String, id: int = 0) -> void:
 	if is_logged_in:
 		_tx("c2s_arena_op", [op, id])
+
+
+## تمدن‌ها (پروتکل ۴۵): k = [[id, نام، رنگ، جمعیت، ظرفیت، طاعون، قحطی، سکونتگاه‌ها]]، rel = [[الف، ب، ۱ جنگ | ۲ اتحاد]]، log = رویدادها
+var civ: Dictionary = {"k": [], "rel": [], "log": []}
+
+
+func on_civ(data: Dictionary) -> void:
+	civ = data
+	civ_changed.emit()
+
+
+func civ_op(op: String, a: int, b: int, x: float, z: float) -> void:
+	if is_logged_in:
+		_tx("c2s_civ", [op, a, b, x, z])
 
 
 func on_arenas(list: Array) -> void:

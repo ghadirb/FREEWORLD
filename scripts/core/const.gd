@@ -1,7 +1,7 @@
 extends RefCounted
 ## ثابت‌های مشترک بین سرور و کلاینت.
 
-const PROTOCOL_VERSION := 44
+const PROTOCOL_VERSION := 45
 # ترافیک شبکه با DTLS رمز می‌شود (نسخهٔ ۴ به بعد). فقط برای عیب‌یابی خاموش شود.
 const USE_DTLS := true
 const DEFAULT_PORT := 7777
@@ -351,7 +351,9 @@ const TERRAIN_ADMIN_MAX_UNITS := 160   # ابزار مدیر: تا ۲۰ متر �
 ## ابزار شکل‌دهی زمین برای مدیر (World Mode): کوه، دریاچه، صاف کردن
 const GOD_SHAPES := ["mountain", "lake", "flatten"]
 # قوانین جهان (پروتکل ۲۲، حس WorldBox): آتش‌سوزی درخت‌ها و رشد جنگل. فقط روی درخت‌های ساخته‌شده/کاشته‌شده (god) اثر دارد.
-const GOD_POWERS := ["fire", "grove"]
+## رنگ کشورها (به ترتیب شمارهٔ رنگ در Civ.COLOR_COUNT)
+const CIV_COLORS := [Color("e6504a"), Color("4a8be6"), Color("4ac86a"), Color("a05ae6"), Color("f0963c"), Color("3cc8c8")]
+const GOD_POWERS := ["fire", "grove", "kingdom", "plague", "famine"]
 const FIRE_BURN_SECONDS := 8.0
 const FIRE_SPREAD_RANGE := 5.0
 const FIRE_SPREAD_CHANCE := 0.25     # احتمال در هر ثانیه برای هر درخت همسایه

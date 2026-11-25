@@ -91,6 +91,7 @@ func _init() -> void:
 	test_day_night_and_creative_switch()
 	test_clear_resource()
 	test_world_rules()
+	test_civilization()
 	test_batch_build()
 	test_blueprints()
 	test_terrain_shapes()
@@ -2582,6 +2583,131 @@ func test_tls_pinning() -> void:
 			d.remove(f)
 		DirAccess.remove_absolute(dir)
 	Settings.clear_pins()
+
+
+func test_civilization() -> void:
+	print("[civilization]")
+	var Civ = load("res://scripts/server/civ.gd")
+	var all_land := func(_x: float, _z: float) -> bool: return true
+	var no_land := func(_x: float, _z: float) -> bool: return false
+	var no_farms := func(_x: float, _z: float, _r: float) -> int: return 0
+	var c = Civ.new()
+	check(not c.found(10.0, 10.0, no_land, 0)["ok"], "kingdom needs land")
+	check(c.found(NAN, 10.0, all_land, 0)["error"] == "bad_request", "kingdom rejects non-finite positions")
+	var a: Dictionary = c.found(100.0, 100.0, all_land, 0)
+	check(a["ok"] and c.items.size() == 1, "an admin can found a kingdom")
+	check(c.found(130.0, 100.0, all_land, 0)["error"] == "civ_too_close", "capitals keep their distance")
+	var b: Dictionary = c.found(200.0, 100.0, all_land, 0)
+	check(b["ok"], "second kingdom 100 m away")
+	var ia: int = int(a["id"])
+	var ib: int = int(b["id"])
+	check(c.items[ia]["n"] != c.items[ib]["n"], "kingdoms get different names")
+	# رشد: جمعیت تا ظرفیت بالا می‌رود و سکونتگاه تازه ساخته می‌شود.
+	for i in range(45):
+		c.step_once(all_land, no_farms, 0)
+	check(int(c.items[ia]["pop"]) >= 25 and int(c.items[ia]["pop"]) <= int(c.items[ia]["cap"]) + 1, "population grows toward capacity")
+	check(c.items[ia]["s"].size() >= 2, "a grown kingdom founds a new settlement")
+	check(int(c.items[ia]["cap"]) >= 60, "capacity counts every settlement")
+	# مزرعه ظرفیت را بالا می‌برد.
+	var one_farm := func(_x: float, _z: float, _r: float) -> int: return 1
+	check(c.capacity_of(c.items[ia], one_farm) > c.capacity_of(c.items[ia], no_farms), "farms feed more people")
+	# مرز زمین: بدون خشکی گسترش نمی‌یابد.
+	var d = Civ.new()
+	d.found(100.0, 100.0, all_land, 0)
+	for i in range(30):
+		d.step_once(no_land, no_farms, 0)
+	check(d.items[1]["s"].size() == 1, "no expansion without land")
+	# رابطه‌ها
+	check(c.set_relation(ia, ia, Civ.WAR, 0) == "civ_no_target", "a kingdom cannot fight itself")
+	check(c.set_relation(ia, 99, Civ.WAR, 0) == "civ_no_target", "unknown kingdom is rejected")
+	check(c.set_relation(ia, ib, Civ.ALLY, 0) == "", "alliance accepted")
+	check(c.set_relation(ia, ib, Civ.WAR, 0) == "civ_need_peace", "alliance cannot flip straight into war")
+	check(c.set_relation(ia, ib, Civ.PEACE, 0) == "" and c.relation(ia, ib) == Civ.PEACE, "peace clears the relation")
+	check(c.set_relation(ia, ib, Civ.PEACE, 0) == "civ_same", "repeating a relation is rejected")
+	# جنگ: دو طرف تلفات می‌دهند؛ ضعیف‌تر فتح می‌شود.
+	c.items[ia]["pop"] = 60
+	c.items[ib]["pop"] = 12
+	check(c.set_relation(ia, ib, Civ.WAR, 0) == "", "war declared")
+	var pop_a: int = int(c.items[ia]["pop"])
+	c._wars(0)
+	check(int(c.items[ia]["pop"]) < pop_a and int(c.items[ib]["pop"]) < 12, "both sides lose people in war")
+	var settlements_before: int = c.items[ia]["s"].size() + c.items[ib]["s"].size()
+	c.items[ib]["pop"] = 2
+	c._collapse(0)
+	check(not c.items.has(ib) and c.items.has(ia), "the beaten kingdom falls")
+	check(c.items[ia]["s"].size() == mini(settlements_before, Civ.MAX_SETTLEMENTS), "the winner takes the settlements")
+	check(c.rel.is_empty(), "relations are cleaned after a conquest")
+	# جنگ دور: بدون برخورد مرزها تلفاتی نیست.
+	var f = Civ.new()
+	var fa: int = int(f.found(100.0, 100.0, all_land, 0)["id"])
+	var fb: int = int(f.found(600.0, 100.0, all_land, 0)["id"])
+	f.set_relation(fa, fb, Civ.WAR, 0)
+	f.items[fa]["pop"] = 20
+	f.items[fb]["pop"] = 20
+	f._wars(0)
+	check(int(f.items[fa]["pop"]) == 20 and int(f.items[fb]["pop"]) == 20, "distant war causes no losses")
+	# متحدها به جنگ می‌پیوندند.
+	var g = Civ.new()
+	var ga: int = int(g.found(100.0, 100.0, all_land, 0)["id"])
+	var gb: int = int(g.found(220.0, 100.0, all_land, 0)["id"])
+	var gc: int = int(g.found(340.0, 100.0, all_land, 0)["id"])
+	g.set_relation(ga, gb, Civ.ALLY, 0)
+	g.set_relation(gc, ga, Civ.WAR, 0)
+	check(g.relation(gb, gc) == Civ.WAR, "an ally joins the war")
+	# طاعون و قحطی
+	var h = Civ.new()
+	var ha: int = int(h.found(100.0, 100.0, all_land, 0)["id"])
+	h.items[ha]["pop"] = 30
+	check(h.trigger(ha, "plague", 0) == "" and h.trigger(ha, "meteor", 0) == "bad_request", "plague accepted, unknown event rejected")
+	h.step_once(all_land, no_farms, 0)
+	check(int(h.items[ha]["pop"]) < 30, "plague kills people")
+	for i in range(12):
+		h.step_once(all_land, no_farms, 0)
+	check(float(h.items[ha]["plague"]) == 0.0 and int(h.items[ha]["pop"]) > 0, "plague ends and the kingdom survives")
+	h.items[ha]["pop"] = 1
+	h.trigger(ha, "famine", 0)
+	h.step_once(all_land, no_farms, 0)
+	check(not h.items.has(ha), "a kingdom with no people goes extinct")
+	# سرعت زمان: توقف = بدون شبیه‌سازی.
+	var j = Civ.new()
+	j.found(100.0, 100.0, all_land, 0)
+	check(not j.step(100.0, 0.0, all_land, no_farms, 0) and int(j.items[1]["pop"]) == Civ.START_POP, "time speed 0 pauses civilization")
+	check(j.step(Civ.STEP_SECONDS + 0.1, 1.0, all_land, no_farms, 0) and int(j.items[1]["pop"]) > Civ.START_POP, "civilization advances with time")
+	# ذخیره و بازیابی
+	var snap: Dictionary = JSON.parse_string(JSON.stringify(c.to_dict()))
+	var r = Civ.new()
+	r.load_dict(snap)
+	check(r.items.size() == c.items.size() and r.items.has(ia) and r.next_id == c.next_id, "civilization survives save and load")
+	check(r.items[ia]["s"].size() == c.items[ia]["s"].size() and int(r.items[ia]["pop"]) == int(c.items[ia]["pop"]), "kingdom details survive the round trip")
+	r.load_dict({"items": {"1": {"s": [[NAN, 1.0]]}, "x": 5, "2": {"s": [[5.0, 5.0]], "pop": -9999999, "n": 999}}, "rel": {"2,1": 1}})
+	check(r.items.size() == 1 and int(r.items[2]["pop"]) == 0 and int(r.items[2]["n"]) == Civ.NAME_COUNT - 1, "load sanitizes bad data")
+	var pub: Dictionary = c.public()
+	check(pub.has("k") and pub.has("rel") and pub.has("log") and pub["k"][0].size() == 8, "public view shape")
+	# ادغام با شهر: فقط مدیر؛ مرز روی خشکی؛ ذخیره با شهر.
+	var cs = CityState.new(31337)
+	_login(cs, "mortal")
+	cs.provision_admin("maker", "secret-secret-1", FWConst.ROLE_CITY_ADMIN)
+	var spot := Vector2.ZERO
+	for i in range(100, 400, 5):
+		if cs.world.height_at(float(i), 90.0) > 1.5:
+			spot = Vector2(float(i), 90.0)
+			break
+	check(spot != Vector2.ZERO, "found land for a kingdom")
+	check(cs.civ_action("mortal", "found", 0, 0, spot.x, spot.y)["error"] == "forbidden", "players cannot found kingdoms")
+	var fr: Dictionary = cs.civ_action("maker", "found", 0, 0, spot.x, spot.y)
+	check(fr["ok"] and cs.civ.items.size() == 1, "an admin founds a kingdom in the city")
+	check(cs.civ_action("maker", "plague", 0, 0, spot.x, spot.y)["ok"], "a plague targets the kingdom under the tap")
+	check(cs.civ_action("maker", "plague", 0, 0, spot.x + 500.0, spot.y)["error"] == "civ_no_target", "a plague needs a kingdom")
+	check(cs.civ_action("maker", "dance", 0, 0, 0.0, 0.0)["error"] == "bad_request", "unknown civ action rejected")
+	check(cs.civ_action("mortal", "war", 1, 2, 0.0, 0.0)["error"] == "forbidden", "players cannot declare wars")
+	var logged := false
+	for e in cs.audit:
+		if str(e["action"]) == "civ_found":
+			logged = true
+	check(logged, "founding a kingdom is audited")
+	var d2: Dictionary = cs.to_dict()
+	check(d2.has("civ") and d2["civ"]["items"].size() == 1, "civ is part of the city save")
+	check(FWConst.PROTOCOL_VERSION >= 45, "protocol bumped for the civilization message")
 
 
 func test_world_rules() -> void:

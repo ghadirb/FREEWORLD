@@ -27,7 +27,7 @@ const LOCAL_PID := 1
 const LOCAL_METHODS := [
 	"c2s_login", "c2s_move", "c2s_place", "c2s_remove", "c2s_collect",
 	"c2s_chat", "c2s_set_role", "c2s_get_audit", "c2s_job", "c2s_set_world", "c2s_enter", "c2s_leave",
-	"c2s_place_block", "c2s_remove_block", "c2s_paint_block", "c2s_build_region", "c2s_paste", "c2s_bp_save", "c2s_bp_op", "c2s_arena_create", "c2s_arena_edit", "c2s_arena_import", "c2s_arena_op", "c2s_undo", "c2s_gather", "c2s_dig", "c2s_fill", "c2s_craft", "c2s_trade", "c2s_offer", "c2s_offer_answer", "c2s_npc", "c2s_npc_sell", "c2s_npc_buy", "c2s_furn_place", "c2s_furn_remove", "c2s_minigame_start", "c2s_race_start", "c2s_grace", "c2s_boat", "c2s_horse", "c2s_car", "c2s_fish", "c2s_disaster", "c2s_god",
+	"c2s_place_block", "c2s_remove_block", "c2s_paint_block", "c2s_build_region", "c2s_paste", "c2s_bp_save", "c2s_bp_op", "c2s_arena_create", "c2s_arena_edit", "c2s_arena_import", "c2s_arena_op", "c2s_civ", "c2s_undo", "c2s_gather", "c2s_dig", "c2s_fill", "c2s_craft", "c2s_trade", "c2s_offer", "c2s_offer_answer", "c2s_npc", "c2s_npc_sell", "c2s_npc_buy", "c2s_furn_place", "c2s_furn_remove", "c2s_minigame_start", "c2s_race_start", "c2s_grace", "c2s_boat", "c2s_horse", "c2s_car", "c2s_fish", "c2s_disaster", "c2s_god",
 	"c2s_mine_enter", "c2s_mine_leave", "c2s_mine_gather", "c2s_book", "c2s_quest",
 ]
 
@@ -242,6 +242,9 @@ func _process(delta: float) -> void:
 	_work_step(dt)
 	_minigame_step(dt)
 	_race_step(dt)
+	if cs.civ_step(dt):
+		_broadcast("s2c_civ", cs.civ_public())
+		_dirty = true
 	if cs.disaster_step(dt):
 		_broadcast("s2c_disaster", cs.disaster_public())
 	var now := Time.get_ticks_msec()
@@ -931,6 +934,7 @@ func on_login(pid: int, player_name: String, token: String, proto: int) -> void:
 	_send(pid, "s2c_fire", cs.nfire_flat())
 	_send(pid, "s2c_minigame", cs.minigame.public_state(player_name))
 	_send(pid, "s2c_arenas", cs.arenas_public())
+	_send(pid, "s2c_civ", cs.civ_public())
 	_send(pid, "s2c_disaster", cs.disaster_public())
 	_send(pid, "s2c_race", cs.race.public_state(player_name))
 	_send(pid, "s2c_book", Book.public_state(cs, player_name))
@@ -1700,6 +1704,22 @@ func on_god(pid: int, action: String, kind: String, x: float, z: float) -> void:
 		_notice(pid, str(res["error"]))
 		return
 	_broadcast("s2c_god", cs.god_public())
+	_dirty = true
+
+
+## تمدن‌سازی (پروتکل ۴۵): فرمان مدیر؛ شبیه‌سازی در سرور جلو می‌رود و وضعیت برای همه پخش می‌شود.
+func on_civ(pid: int, op: String, a: int, b: int, x: float, z: float) -> void:
+	var p := _player_of(pid)
+	if p.is_empty():
+		return
+	if not _allow_action(p):
+		_notice(pid, "rate_limited")
+		return
+	var res: Dictionary = cs.civ_action(p["name"], op.substr(0, 12), a, b, x, z)
+	if not res["ok"]:
+		_notice(pid, str(res["error"]))
+		return
+	_broadcast("s2c_civ", cs.civ_public())
 	_dirty = true
 
 
