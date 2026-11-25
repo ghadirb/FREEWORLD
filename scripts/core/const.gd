@@ -1,7 +1,7 @@
 extends RefCounted
 ## ثابت‌های مشترک بین سرور و کلاینت.
 
-const PROTOCOL_VERSION := 41
+const PROTOCOL_VERSION := 42
 # ترافیک شبکه با DTLS رمز می‌شود (نسخهٔ ۴ به بعد). فقط برای عیب‌یابی خاموش شود.
 const USE_DTLS := true
 const DEFAULT_PORT := 7777
@@ -280,6 +280,13 @@ const ARENA_BONUS_TIME := 5.0       # ثانیه‌ای که جایزهٔ زما
 const ARENA_RESPAWN_PENALTY := 3.0   # ثانیه‌ای که با بازگشت به نقطهٔ ذخیرهٔ پارکور از زمان کم می‌شود
 const ARENA_OBS_COOLDOWN := 1.5   # بین دو برخورد پشت‌سرهم
 const ARENA_WIN_MAX := 100   # درصد لازم برای برد؛ ۰ = بدون شرط برد (پروتکل ۳۷)
+const FOOT_GOALS_MAX := 10        # حداکثر گل هدف در میدان فوتبال (پروتکل ۴۲)
+const FOOT_KICK_SPEED := 9.0      # سرعت توپ پس از لمس بازیکن (متر بر ثانیه)
+const FOOT_RANGE := 1.6           # فاصلهٔ لمس توپ
+const FOOT_KICK_CD := 0.3         # فاصلهٔ دو ضربه
+const FOOT_FRICTION := 1.6        # کاهش نمایی سرعت توپ
+const FOOT_GOAL_RANGE := 2.2      # فاصلهٔ ورود توپ به دروازه
+const FOOT_SEND := 0.2            # هر چند ثانیه موقعیت توپ برای بازیکن فرستاده می‌شود
 const ARENA_PARKOUR_MAX := 12   # حداکثر ایستگاه در میدان پارکور (پروتکل ۳۶)
 # مسابقهٔ ایستگاه‌ها: ۶ ایستگاه به ترتیب روی حلقه، سقف زمان ۹۰ ثانیه، سرعت مجاز در طول مسابقه ۱٫۶ برابر.
 const RACE_GATES := 6

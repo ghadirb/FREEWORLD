@@ -1792,7 +1792,7 @@ func race_step(dt: float, positions: Dictionary) -> Array:
 
 ## هر فریم سرور: رویدادهای مینی‌بازی را می‌گیرد و جایزهٔ دورهای تمام‌شده را به حساب بازیکن می‌ریزد.
 func minigame_step(dt: float, positions: Dictionary) -> Array:
-	var events: Array = minigame.step(dt, positions, day_count)
+	var events: Array = minigame.step(dt, positions, day_count, world)
 	for ev in events:
 		if ev["kind"] == "end":
 			var nm: String = ev["name"]

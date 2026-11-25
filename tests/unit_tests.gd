@@ -65,6 +65,7 @@ func _init() -> void:
 	test_arena_edit()
 	test_arena_parkour()
 	test_arena_race()
+	test_arena_football()
 	test_arena_win_rule()
 	test_arena_ratings()
 	test_arena_obstacles()
@@ -3976,6 +3977,51 @@ func test_arena_race() -> void:
 	check(float(cs.minigame.arena_times.get(id, {}).get("driver", 0.0)) > 0.0, "finishing the track records a lap time")
 	var pr: Dictionary = Arenas.parse_code(Arenas.export_code(a))
 	check(bool(pr["ok"]) and str(pr["def"]["kind"]) == "race", "the share code keeps the race kind")
+
+
+func test_arena_football() -> void:
+	print("== Football arenas (server-side ball) ==")
+	var cs = CityState.new(4244)
+	_login(cs, "maker")
+	_login(cs, "kicker")
+	cs.accounts["maker"]["money"] = 1000
+	var at := _mg_land_pos(cs)
+	var res: Dictionary = cs.arena_create("maker", "Pitch", at, 14.0, 99, 60.0, 1, "football", 100)
+	check(bool(res["ok"]), "a football arena can be built")
+	var id: int = int(res["id"])
+	var a: Dictionary = cs.arenas.items[id]
+	check(str(a["kind"]) == "football" and int(a["coins"]) == FWConst.FOOT_GOALS_MAX, "kind kept and goal count clamped")
+	var goal: Array = Arenas.make_football_goal(cs.world, cs.seed_value, a)
+	check(goal.size() == 1 and goal == Arenas.make_football_goal(cs.world, cs.seed_value, a), "one deterministic goal")
+	check(bool(cs.arena_play("kicker", id, at)["ok"]), "a player can start football")
+	var st: Dictionary = cs.minigame.public_state("kicker")
+	check(st.has("ball") and st["coins"].size() == 1, "state carries the ball and the goal")
+	var g: Vector2 = goal[0]
+	var center := Vector2(float(a["x"]), float(a["z"]))
+	# بازیکن روی دروازه می‌ایستد ولی توپ نیست: امتیازی نمی‌دهد
+	cs.minigame.step(0.1, {"kicker": g}, 1, cs.world)
+	check(int(cs.minigame.runs["kicker"]["score"]) == 0, "standing in the goal scores nothing without the ball")
+	# بازیکن پشت توپ می‌ایستد و به سمت دروازه می‌دود
+	var dir: Vector2 = (g - center).normalized()
+	var guard := 0
+	var kicks := 0
+	while cs.minigame.runs.has("kicker") and int(cs.minigame.runs["kicker"]["score"]) == 0 and guard < 400:
+		guard += 1
+		var ball: Vector2 = cs.minigame.runs["kicker"]["ball"]["p"]
+		var behind: Vector2 = ball - dir * 1.0
+		var evs: Array = cs.minigame.step(0.05, {"kicker": behind}, 1, cs.world)
+		for e in evs:
+			if str(e["kind"]) == "ball":
+				kicks += 1
+	check(not cs.minigame.runs.has("kicker") or int(cs.minigame.runs["kicker"]["score"]) >= 1, "pushing the ball to the goal scores")
+	check(kicks > 0, "ball position updates are announced while it moves")
+	var ball_run: Dictionary = {"ball": {"p": center, "v": Vector2(50.0, 0.0), "cd": 0.0, "send": 0.0, "c": center, "r": 14.0, "goal": Vector2(1e6, 1e6)}}
+	cs.minigame.runs["kicker"] = {"t": 30.0, "score": 0, "coins": [g], "ball": ball_run["ball"], "total": 3, "limit": 30.0, "arena": id, "owner": "maker", "per_coin": 1, "win": 0, "props": [], "obs": [], "queue": []}
+	for k in 60:
+		cs.minigame.step(0.05, {"kicker": Vector2(-9999.0, -9999.0)}, 1, cs.world)
+	var bp: Vector2 = cs.minigame.runs["kicker"]["ball"]["p"]
+	check(bp.distance_to(center) <= 14.0, "the ball stays inside the arena")
+	check(Arenas.parse_code(Arenas.export_code(a))["def"]["kind"] == "football", "share code keeps football")
 
 
 func test_arena_share_code() -> void:

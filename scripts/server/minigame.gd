@@ -53,7 +53,8 @@ func start_arena(world, seed_value: int, player_name: String, arena: Dictionary)
 		return {"ok": false, "error": "mg_running"}
 	_counter += 1
 	var targets := Arenas.make_targets(world, seed_value, player_name, _counter, arena)
-	if targets.size() < FWConst.ARENA_COINS_MIN:
+	var kind_pre: String = Arenas.clean_kind(arena.get("kind", "coins"))
+	if targets.size() < Arenas.need_targets(kind_pre, int(arena["coins"])):
 		return {"ok": false, "error": "mg_no_space"}
 	var coins: Array = targets
 	var queue: Array = []
@@ -63,9 +64,12 @@ func start_arena(world, seed_value: int, player_name: String, arena: Dictionary)
 		coins = [targets[0]]
 		queue = targets.slice(1)
 	runs[player_name] = {"t": float(arena["time"]), "score": 0, "coins": coins, "win": int(arena.get("win", 0)), "obs": Arenas.make_obstacles(seed_value, arena) if Arenas.clean_kind(arena.get("kind", "coins")) == "parkour" else [], "clk": 0.0, "hit_cd": 0.0, "queue": queue, "limit": float(arena["time"]), "arena": int(arena["id"]),
-		"total": targets.size(), "owner": str(arena["owner"]), "per_coin": int(arena["reward"]),
+		"total": int(arena["coins"]) if kind_now == "football" else targets.size(), "owner": str(arena["owner"]), "per_coin": int(arena["reward"]),
 		"props": Arenas.clean_props(arena.get("props", []), arena), "prop_cd": 0.0,
 		"pk": Arenas.is_ordered(kind_now), "rc": kind_now == "race", "last": Vector2(float(arena["x"]), float(arena["z"]))}
+	if kind_now == "football":
+		var c0 := Vector2(float(arena["x"]), float(arena["z"]))
+		runs[player_name]["ball"] = {"p": c0, "v": Vector2.ZERO, "cd": 0.0, "send": 0.0, "c": c0, "r": float(arena["r"]), "goal": targets[0]}
 	return {"ok": true}
 
 
@@ -102,7 +106,7 @@ func cancel(player_name: String) -> void:
 ## زمان را جلو می‌برد و سکه‌های نزدیک بازیکنان را برمی‌دارد. positions فقط بازیکنان آنلاین را دارد.
 ## رویدادها: {"name", "kind": "coin"} یا {"name", "kind": "end", "score", "best", "new_best", "reward"}.
 ## جایزه را خود cs (که حساب‌ها را دارد) از رویداد پایان می‌پردازد؛ این‌جا فقط محاسبه می‌شود.
-func step(dt: float, positions: Dictionary, day: int) -> Array:
+func step(dt: float, positions: Dictionary, day: int, world_ref = null) -> Array:
 	var events: Array = []
 	for player_name in runs.keys():
 		if not positions.has(player_name):
@@ -112,7 +116,10 @@ func step(dt: float, positions: Dictionary, day: int) -> Array:
 		run["t"] = float(run["t"]) - dt
 		var pos: Vector2 = positions[player_name]
 		var coins: Array = run["coins"]
-		var i := coins.size() - 1
+		var is_ball: bool = run.has("ball")
+		if is_ball:
+			_step_ball(world_ref, run, player_name, pos, dt, events)
+		var i := -1 if is_ball else coins.size() - 1
 		while i >= 0:
 			if pos.distance_to(coins[i]) <= FWConst.MINIGAME_PICK_RANGE:
 				if bool(run.get("pk", false)):
@@ -151,9 +158,49 @@ func step(dt: float, positions: Dictionary, day: int) -> Array:
 						run["prop_cd"] = FWConst.ARENA_OBS_COOLDOWN
 						events.append({"name": player_name, "kind": "hit"})
 				j -= 1
-		if float(run["t"]) <= 0.0 or coins.is_empty():
+		if float(run["t"]) <= 0.0 or coins.is_empty() or (is_ball and int(run["score"]) >= int(run.get("total", 1))):
 			events.append(_finish(player_name, day))
 	return events
+
+
+## فیزیک ساده و سمت‌سرور توپ فوتبال: لمس بازیکن توپ را از او دور می‌کند، اصطکاک آن را می‌خواباند، لبهٔ میدان
+## و آب آن را برمی‌گرداند/نگه می‌دارد و رسیدن به دروازه گل حساب می‌شود (توپ به مرکز برمی‌گردد).
+func _step_ball(world, run: Dictionary, player_name: String, pos: Vector2, dt: float, events: Array) -> void:
+	var b: Dictionary = run["ball"]
+	var p: Vector2 = b["p"]
+	var v: Vector2 = b["v"]
+	b["cd"] = maxf(float(b["cd"]) - dt, 0.0)
+	if float(b["cd"]) <= 0.0 and pos.distance_to(p) <= FWConst.FOOT_RANGE:
+		var dir: Vector2 = p - pos
+		dir = dir.normalized() if dir.length() > 0.01 else Vector2.RIGHT
+		v = dir * FWConst.FOOT_KICK_SPEED
+		b["cd"] = FWConst.FOOT_KICK_CD
+	var np: Vector2 = p + v * dt
+	var center: Vector2 = b["c"]
+	var rad: float = float(b["r"]) - 0.5
+	if np.distance_to(center) > rad:
+		var n: Vector2 = (np - center).normalized()
+		np = center + n * rad
+		v = v.bounce(n) * 0.6
+	if world != null and world.height_at(np.x, np.y) < 0.5:
+		np = p
+		v = Vector2.ZERO
+	v *= exp(-FWConst.FOOT_FRICTION * dt)
+	if v.length() < 0.2:
+		v = Vector2.ZERO
+	b["p"] = np
+	b["v"] = v
+	if np.distance_to(b["goal"]) <= FWConst.FOOT_GOAL_RANGE:
+		run["score"] = int(run["score"]) + 1
+		b["p"] = center
+		b["v"] = Vector2.ZERO
+		events.append({"name": player_name, "kind": "coin"})
+		b["send"] = 0.0
+		return
+	b["send"] = float(b["send"]) + dt
+	if float(b["send"]) >= FWConst.FOOT_SEND and v != Vector2.ZERO:
+		b["send"] = 0.0
+		events.append({"name": player_name, "kind": "ball"})
 
 
 func _finish(player_name: String, day: int) -> Dictionary:
@@ -233,6 +280,9 @@ func public_state(player_name: String) -> Dictionary:
 		out["score"] = int(run["score"])
 		out["pk"] = bool(run.get("pk", false))
 		out["rc"] = bool(run.get("rc", false))
+		if run.has("ball"):
+			var bb: Dictionary = run["ball"]
+			out["ball"] = [snappedf(bb["p"].x, 0.05), snappedf(bb["p"].y, 0.05), snappedf(bb["v"].x, 0.05), snappedf(bb["v"].y, 0.05)]
 		if not run.get("props", []).is_empty():
 			out["props"] = run["props"]
 		var cl: Array = []

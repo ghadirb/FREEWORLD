@@ -25,7 +25,28 @@ static func clean_name(raw: String) -> String:
 ## هر مقدار ناشناخته سکه‌یاب است.
 static func clean_kind(raw: Variant) -> String:
 	var k := str(raw)
-	return k if k == "parkour" or k == "race" else "coins"
+	return k if k == "parkour" or k == "race" or k == "football" else "coins"
+
+
+## کمینهٔ تعداد هدف لازم برای ساخت: فوتبال فقط یک دروازه دارد.
+static func need_targets(kind: String, coins: int) -> int:
+	return 1 if kind == "football" else mini(coins, FWConst.ARENA_COINS_MIN)
+
+
+## دروازهٔ فوتبال: یک نقطهٔ قطعی روی خشکی نزدیک لبهٔ میدان (۷۰ تا ۸۰٪ شعاع)؛ خروجی آرایهٔ تک‌عضوی یا خالی.
+static func make_football_goal(world, seed_value: int, a: Dictionary) -> Array:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash("%d:goal:%d" % [seed_value, int(a.get("id", 0))])
+	var center := Vector2(float(a["x"]), float(a["z"]))
+	var r: float = float(a["r"])
+	var base: float = rng.randf() * TAU
+	for i in 8:
+		var ang: float = base + TAU * float(i) / 8.0
+		var c := center + Vector2(cos(ang), sin(ang)) * r * 0.75
+		var h: float = world.height_at(c.x, c.y)
+		if h >= 0.5 and h <= FWConst.MINIGAME_MAX_HEIGHT:
+			return [Vector2(snappedf(c.x, 0.1), snappedf(c.y, 0.1))]
+	return []
 
 
 ## نوع‌هایی که هدف‌هایشان به ترتیب ظاهر می‌شود (پارکور و مسابقه).
@@ -132,6 +153,8 @@ static func parse_code(code: String) -> Dictionary:
 
 
 static func clamp_count(kind: String, n: int) -> int:
+	if kind == "football":
+		return clampi(n, 1, FWConst.FOOT_GOALS_MAX)
 	var hi: int = FWConst.ARENA_PARKOUR_MAX if is_ordered(kind) else FWConst.ARENA_COINS_MAX
 	return clampi(n, FWConst.ARENA_COINS_MIN, hi)
 
@@ -180,6 +203,8 @@ static func make_race_gates(world, seed_value: int, a: Dictionary) -> Array:
 ## اهداف دور بر اساس نوع میدان: سکه‌های پخش‌شده، ایستگاه‌های مرتب یا دروازه‌های پیست.
 static func make_targets(world, seed_value: int, player_name: String, counter: int, a: Dictionary) -> Array:
 	var kd := clean_kind(a.get("kind", "coins"))
+	if kd == "football":
+		return make_football_goal(world, seed_value, a)
 	if kd == "race":
 		return make_race_gates(world, seed_value, a)
 	if kd == "parkour":
@@ -237,7 +262,7 @@ func validate_edit(world, seed_value: int, who: String, is_admin: bool, id: int,
 		var o: Dictionary = items[oid]
 		if Vector2(float(o["x"]), float(o["z"])).distance_to(pos) < float(o["r"]) + float(a["r"]) + FWConst.ARENA_SPACING:
 			return {"ok": false, "error": "arena_close"}
-	if make_targets(world, seed_value, str(a["owner"]), 0, a).size() < mini(int(a["coins"]), FWConst.ARENA_COINS_MIN):
+	if make_targets(world, seed_value, str(a["owner"]), 0, a).size() < need_targets(kd, int(a["coins"])):
 		return {"ok": false, "error": "arena_land"}
 	return {"ok": true, "arena": a}
 
@@ -305,7 +330,7 @@ func validate_new(world, seed_value: int, owner: String, arena_name: String, pos
 			return {"ok": false, "error": "arena_close"}
 	if world.height_at(pos.x, pos.y) < 0.5:
 		return {"ok": false, "error": "arena_land"}
-	if make_targets(world, seed_value, owner, 0, a).size() < mini(int(a["coins"]), FWConst.ARENA_COINS_MIN):
+	if make_targets(world, seed_value, owner, 0, a).size() < need_targets(kd, int(a["coins"])):
 		return {"ok": false, "error": "arena_land"}
 	return {"ok": true, "arena": a}
 

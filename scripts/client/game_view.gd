@@ -54,6 +54,8 @@ var god_nodes: Dictionary = {}
 var coin_nodes: Array = []
 var obs_nodes: Array = []      # موانع متحرک پارکور (پروتکل ۳۹)
 var _obs_mesh: ArrayMesh
+var _ball_node: MeshInstance3D   # توپ فوتبال بازی‌ساز (پروتکل ۴۲)
+var _ball_mesh: ArrayMesh
 var train_nodes: Array = []   # برای هر خط ریل: [گرهٔ لوکوموتیو، گره‌های واگن‌ها...]
 var _train_line_count: int = -1
 var _train_mesh_loco: ArrayMesh
@@ -1169,6 +1171,7 @@ func _process(delta: float) -> void:
 		return
 	_check_long_press()
 	_update_obstacles()
+	_update_ball()
 	var dt := minf(delta, 0.1)
 	var kb := _keyboard_vector()
 	if not (get_viewport().gui_get_focus_owner() is LineEdit):
@@ -1717,10 +1720,25 @@ func _sync_coins() -> void:
 	for n in obs_nodes:
 		n.queue_free()
 	obs_nodes.clear()
+	if _ball_node != null:
+		_ball_node.queue_free()
+		_ball_node = null
 	if not bool(client.minigame.get("active", false)):
 		return
 	if _god_mat == null:
 		_god_mat = MeshBuilder.material()
+	if client.minigame.has("ball"):
+		if _ball_mesh == null:
+			var bm2 := MeshBuilder.new()
+			bm2.add_box(Vector3(0, 0.45, 0), Vector3(0.9, 0.9, 0.9), Color("f4f4f4"))
+			bm2.add_box(Vector3(0, 0.45, 0), Vector3(0.95, 0.35, 0.35), Color("2a2a2a"))
+			_ball_mesh = bm2.build()
+		_ball_node = MeshInstance3D.new()
+		_ball_node.mesh = _ball_mesh
+		_ball_node.material_override = _god_mat
+		_ball_node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(_ball_node)
+		_update_ball()
 	if _obs_mesh == null:
 		var ob := MeshBuilder.new()
 		ob.add_box(Vector3(0, 0.7, 0), Vector3(1.3, 1.4, 1.3), Color("e0503c"))
@@ -1734,6 +1752,7 @@ func _sync_coins() -> void:
 		add_child(onode)
 		obs_nodes.append(onode)
 	_update_obstacles()
+	_update_ball()
 	if _coin_mesh == null:
 		var mb := MeshBuilder.new()
 		mb.add_box(Vector3(0, 0.9, 0), Vector3(0.5, 0.5, 0.12), Color("ffd24a"))
@@ -1763,6 +1782,18 @@ func _sync_coins() -> void:
 
 
 ## موانع پارکور: موقعیت فقط تابعی از ساعت دور است؛ ساعت سرور هنگام آخرین وضعیت + زمان محلی سپری‌شده.
+## توپ: موقعیت آخرین وضعیت سرور + حرکت پیش‌بینی‌شده با سرعت (حداکثر ۰٫۳ ثانیه) تا نرم دیده شود.
+func _update_ball() -> void:
+	if _ball_node == null or not client.minigame.has("ball"):
+		return
+	var b: Array = client.minigame["ball"]
+	var el: float = minf(Time.get_ticks_msec() / 1000.0 - client.minigame_stamp, 0.3)
+	var x: float = float(b[0]) + float(b[2]) * el
+	var z: float = float(b[1]) + float(b[3]) * el
+	_ball_node.position = Vector3(x, world.height_at(x, z), z)
+	_ball_node.rotation.x += 0.2
+
+
 func _update_obstacles() -> void:
 	if obs_nodes.is_empty():
 		return
