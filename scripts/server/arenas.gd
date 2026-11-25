@@ -79,7 +79,7 @@ static func make_coins(world, seed_value: int, player_name: String, counter: int
 
 ## ویرایش میدان موجود (مکان ثابت می‌ماند): فقط سازنده یا مدیر. فاصله با میدان‌های دیگر و جای سکه‌ها دوباره
 ## بررسی می‌شود. خروجی {ok, arena} (میدان جدید، هنوز اعمال نشده) یا {ok: false, error}.
-func validate_edit(world, seed_value: int, who: String, is_admin: bool, id: int, arena_name: String, radius: float, coins: int, time: float, reward: int, kind: String = "coins") -> Dictionary:
+func validate_edit(world, seed_value: int, who: String, is_admin: bool, id: int, arena_name: String, radius: float, coins: int, time: float, reward: int, kind: String = "coins", win_pct: int = 0) -> Dictionary:
 	if not items.has(id):
 		return {"ok": false, "error": "arena_missing"}
 	var old: Dictionary = items[id]
@@ -92,7 +92,7 @@ func validate_edit(world, seed_value: int, who: String, is_admin: bool, id: int,
 		return {"ok": false, "error": "arena_bounds"}
 	var kd := clean_kind(kind)
 	var a := {
-		"id": id, "name": nm, "owner": old["owner"], "x": old["x"], "z": old["z"], "kind": kd,
+		"id": id, "name": nm, "owner": old["owner"], "x": old["x"], "z": old["z"], "kind": kd, "win": clampi(win_pct, 0, FWConst.ARENA_WIN_MAX),
 		"r": clampf(radius, FWConst.ARENA_R_MIN, FWConst.ARENA_R_MAX),
 		"coins": clamp_count(kd, coins),
 		"time": clampf(time, FWConst.ARENA_TIME_MIN, FWConst.ARENA_TIME_MAX),
@@ -115,7 +115,7 @@ func apply_edit(a: Dictionary) -> void:
 
 
 ## بررسی یک میدان جدید؛ خروجی {ok, arena} یا {ok: false, error}.
-func validate_new(world, seed_value: int, owner: String, arena_name: String, pos: Vector2, radius: float, coins: int, time: float, reward: int, kind: String = "coins") -> Dictionary:
+func validate_new(world, seed_value: int, owner: String, arena_name: String, pos: Vector2, radius: float, coins: int, time: float, reward: int, kind: String = "coins", win_pct: int = 0) -> Dictionary:
 	var nm := clean_name(arena_name)
 	if nm.is_empty():
 		return {"ok": false, "error": "arena_name"}
@@ -129,7 +129,7 @@ func validate_new(world, seed_value: int, owner: String, arena_name: String, pos
 		return {"ok": false, "error": "arena_limit"}
 	var kd := clean_kind(kind)
 	var a := {
-		"id": 0, "name": nm, "owner": owner, "x": snappedf(pos.x, 0.1), "z": snappedf(pos.y, 0.1), "kind": kd,
+		"id": 0, "name": nm, "owner": owner, "x": snappedf(pos.x, 0.1), "z": snappedf(pos.y, 0.1), "kind": kd, "win": clampi(win_pct, 0, FWConst.ARENA_WIN_MAX),
 		"r": clampf(radius, FWConst.ARENA_R_MIN, FWConst.ARENA_R_MAX),
 		"coins": clamp_count(kd, coins),
 		"time": clampf(time, FWConst.ARENA_TIME_MIN, FWConst.ARENA_TIME_MAX),
@@ -197,7 +197,7 @@ func list_public(arena_scores: Dictionary, arena_times: Dictionary = {}) -> Arra
 					best_time = tv
 					best_name = str(k)
 		rows.append({"id": int(id), "name": a["name"], "owner": a["owner"], "x": a["x"], "z": a["z"], "r": a["r"],
-			"coins": a["coins"], "time": a["time"], "reward": a["reward"], "kind": clean_kind(a.get("kind", "coins")),
+			"coins": a["coins"], "time": a["time"], "reward": a["reward"], "kind": clean_kind(a.get("kind", "coins")), "win": int(a.get("win", 0)),
 			"top": [top_name, top_score], "best_time": [best_name, best_time]})
 	return rows
 
@@ -223,7 +223,7 @@ func load_dict(d: Variant) -> void:
 				continue
 			var kd := clean_kind(v.get("kind", "coins"))
 			items[id] = {
-				"kind": kd,
+				"kind": kd, "win": clampi(int(v.get("win", 0)), 0, FWConst.ARENA_WIN_MAX),
 				"id": id, "name": nm, "owner": str(v.get("owner", "")).substr(0, 32),
 				"x": float(v.get("x", 0.0)), "z": float(v.get("z", 0.0)),
 				"r": clampf(float(v.get("r", FWConst.ARENA_R_MIN)), FWConst.ARENA_R_MIN, FWConst.ARENA_R_MAX),

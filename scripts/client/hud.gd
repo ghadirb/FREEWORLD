@@ -1494,6 +1494,18 @@ func _build_arena_panel() -> void:
 	_arena_name.max_length = FWConst.ARENA_NAME_MAX
 	_arena_name.custom_minimum_size = Vector2(0, 56)
 	v.add_child(_arena_name)
+	v.add_child(_label(Loc.t("arena_presets"), 17, Color("c8f08a")))
+	var prow := HBoxContainer.new()
+	prow.add_theme_constant_override("separation", 6)
+	v.add_child(prow)
+	for pr in ARENA_PRESETS:
+		var pb := UiTheme.button(Loc.t("arena_preset_" + str(pr["id"])), Vector2(0, 48))
+		pb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		pb.add_theme_font_size_override("font_size", 17)
+		pb.pressed.connect(func():
+			Sfx.play(self, "click")
+			_arena_apply_preset(pr))
+		prow.add_child(pb)
 	_arena_kind_btn = UiTheme.button("", Vector2(0, 52))
 	_arena_kind_btn.pressed.connect(func():
 		Sfx.play(self, "click")
@@ -1505,6 +1517,7 @@ func _build_arena_panel() -> void:
 	_arena_spin_row(v, "arena_coins", FWConst.ARENA_COINS_MIN, FWConst.ARENA_COINS_MAX, 12)
 	_arena_spin_row(v, "arena_time", FWConst.ARENA_TIME_MIN, FWConst.ARENA_TIME_MAX, 45)
 	_arena_spin_row(v, "arena_reward", 0, FWConst.ARENA_REWARD_MAX, 1)
+	_arena_spin_row(v, "arena_win", 0, FWConst.ARENA_WIN_MAX, 0)
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 8)
 	v.add_child(row)
@@ -1515,10 +1528,10 @@ func _build_arena_panel() -> void:
 		Sfx.play(self, "click")
 		if _arena_edit_id > 0:
 			client.arena_edit(_arena_edit_id, _arena_name.text, float(_arena_spin["arena_radius"].value), int(_arena_spin["arena_coins"].value),
-				float(_arena_spin["arena_time"].value), int(_arena_spin["arena_reward"].value), _arena_kind)
+				float(_arena_spin["arena_time"].value), int(_arena_spin["arena_reward"].value), _arena_kind, int(_arena_spin["arena_win"].value))
 		else:
 			client.arena_create(_arena_name.text, float(_arena_spin["arena_radius"].value), int(_arena_spin["arena_coins"].value),
-				float(_arena_spin["arena_time"].value), int(_arena_spin["arena_reward"].value), _arena_kind)
+				float(_arena_spin["arena_time"].value), int(_arena_spin["arena_reward"].value), _arena_kind, int(_arena_spin["arena_win"].value))
 		_arena_set_edit(0, {}))
 	row.add_child(cb)
 	var close := UiTheme.button("✕", Vector2(64, 60))
@@ -1535,6 +1548,24 @@ func _build_arena_panel() -> void:
 
 
 ## حالت ویرایش: فرم را با مقدار میدان پر می‌کند و دکمهٔ اصلی را «ذخیرهٔ تغییرات» می‌کند؛ id صفر = حالت ساخت.
+## قالب‌های آماده برای شروع سریع: نوع، شعاع، تعداد هدف، زمان، جایزه و درصد برد را پر می‌کنند؛ بعد می‌شود تغییرشان داد.
+const ARENA_PRESETS := [
+	{"id": "quick", "kind": "coins", "r": 10, "n": 12, "t": 45, "rw": 1, "win": 0},
+	{"id": "easy", "kind": "parkour", "r": 10, "n": 6, "t": 60, "rw": 1, "win": 100},
+	{"id": "hard", "kind": "parkour", "r": 18, "n": 12, "t": 40, "rw": 2, "win": 100},
+]
+
+
+func _arena_apply_preset(pr: Dictionary) -> void:
+	_arena_kind = str(pr["kind"])
+	_arena_kind_refresh()
+	_arena_spin["arena_radius"].value = float(pr["r"])
+	_arena_spin["arena_coins"].value = float(pr["n"])
+	_arena_spin["arena_time"].value = float(pr["t"])
+	_arena_spin["arena_reward"].value = float(pr["rw"])
+	_arena_spin["arena_win"].value = float(pr["win"])
+
+
 func _arena_kind_refresh() -> void:
 	_arena_kind_btn.text = Loc.t("arena_kind_" + _arena_kind)
 
@@ -1548,6 +1579,7 @@ func _arena_set_edit(id: int, a: Dictionary) -> void:
 		_arena_spin["arena_coins"].value = float(a["coins"])
 		_arena_spin["arena_time"].value = float(a["time"])
 		_arena_spin["arena_reward"].value = float(a["reward"])
+		_arena_spin["arena_win"].value = float(a.get("win", 0))
 		_arena_create_btn.text = Loc.t("arena_save")
 	else:
 		_arena_kind = "coins"
@@ -1575,6 +1607,8 @@ func _fill_arena_list() -> void:
 			Loc.fmt("arena_info", [Loc.digits(str(a["coins"])), Loc.digits(str(int(a["time"]))), Loc.digits(str(a["reward"]))])]
 		if int(top[1]) > 0:
 			sub += "  ·  %s: %s %s" % [Loc.t("arena_top"), str(top[0]), Loc.digits(str(top[1]))]
+		if int(a.get("win", 0)) > 0:
+			sub += "  ·  " + Loc.fmt("arena_goal", [Loc.digits(str(a["win"]))])
 		var bt: Array = a.get("best_time", ["", 0.0])
 		if float(bt[1]) > 0.0:
 			sub += "  ·  ⏱ %s %s" % [str(bt[0]), Loc.fmt("msg_parkour_time", [Loc.digits("%.1f" % float(bt[1]))])]
@@ -2014,6 +2048,8 @@ func _on_notice(code: String, args: Dictionary) -> void:
 				txt += " " + Loc.fmt("msg_parkour_time", [Loc.digits("%.1f" % float(args["time"]))])
 				if bool(args.get("new_time", false)):
 					txt += " " + Loc.t("msg_parkour_new_time")
+			if int(args.get("goal", 0)) > 0:
+				txt += " " + Loc.t("msg_arena_won" if bool(args.get("won", true)) else "msg_arena_lost")
 			toast(txt, Color("ffd84a"))
 		"race_end":
 			var rtxt: String

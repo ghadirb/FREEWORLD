@@ -64,6 +64,7 @@ func _init() -> void:
 	test_arenas()
 	test_arena_edit()
 	test_arena_parkour()
+	test_arena_win_rule()
 	test_disasters()
 	test_race()
 	test_car_race()
@@ -3745,3 +3746,43 @@ func test_arena_parkour() -> void:
 	var arenas2 = Arenas.new()
 	arenas2.load_dict(d)
 	check(str(arenas2.items[id]["kind"]) == "coins", "kind survives saving and loading")
+
+
+func test_arena_win_rule() -> void:
+	print("== Arena win threshold ==")
+	var cs = CityState.new(4244)
+	_login(cs, "maker")
+	_login(cs, "runner")
+	cs.accounts["maker"]["money"] = 1000
+	cs.accounts["runner"]["money"] = 0
+	var at := _mg_land_pos(cs)
+	var res: Dictionary = cs.arena_create("maker", "Gate", at, 14.0, 8, 60.0, 2, "parkour", 999)
+	check(bool(res["ok"]), "an arena with a win threshold can be built")
+	var id: int = int(res["id"])
+	check(int(cs.arenas.items[id]["win"]) == FWConst.ARENA_WIN_MAX, "the win threshold is clamped to 100")
+	check(int(cs.arenas_public()[0]["win"]) == 100, "the public list carries the threshold")
+	check(bool(cs.arena_play("runner", id, at)["ok"]), "the runner starts")
+	var evs: Array = cs.minigame_step(61.0, {"runner": Vector2(-9999.0, -9999.0)})
+	var end_ev: Dictionary = {}
+	for e in evs:
+		if str(e["kind"]) == "end":
+			end_ev = e
+	check(not end_ev.is_empty() and not bool(end_ev["won"]) and int(end_ev["reward"]) == 0, "timing out below the threshold loses and pays nothing")
+	check(cs.money_of("runner") == 0, "a loser receives no prize")
+	check(bool(cs.arena_play("runner", id, at)["ok"]), "the runner tries again")
+	var total := 0
+	var guard := 0
+	var final_ev: Dictionary = {}
+	while cs.minigame.runs.has("runner") and guard < 40:
+		guard += 1
+		var cur: Dictionary = cs.minigame.public_state("runner")
+		var tgt := Vector2(float(cur["coins"][0][0]), float(cur["coins"][0][1]))
+		for e in cs.minigame_step(0.1, {"runner": tgt}):
+			if str(e["kind"]) == "end":
+				final_ev = e
+		total += 1
+	check(not final_ev.is_empty() and bool(final_ev["won"]) and int(final_ev["goal"]) == 100, "reaching every checkpoint wins")
+	check(cs.money_of("runner") == total * 2, "the winner is paid per checkpoint by the creator")
+	var cs2 = CityState.new(4244)
+	cs2.arenas.load_dict(cs.arenas.to_dict())
+	check(int(cs2.arenas.items[id]["win"]) == 100, "the threshold survives saving and loading")

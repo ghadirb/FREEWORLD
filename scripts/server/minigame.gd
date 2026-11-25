@@ -61,7 +61,7 @@ func start_arena(world, seed_value: int, player_name: String, arena: Dictionary)
 		# پارکور: فقط ایستگاه بعدی دیده می‌شود؛ با رسیدن به آن، بعدی ظاهر می‌شود.
 		coins = [targets[0]]
 		queue = targets.slice(1)
-	runs[player_name] = {"t": float(arena["time"]), "score": 0, "coins": coins, "queue": queue, "limit": float(arena["time"]), "arena": int(arena["id"]),
+	runs[player_name] = {"t": float(arena["time"]), "score": 0, "coins": coins, "win": int(arena.get("win", 0)), "queue": queue, "limit": float(arena["time"]), "arena": int(arena["id"]),
 		"total": targets.size(), "owner": str(arena["owner"]), "per_coin": int(arena["reward"])}
 	return {"ok": true}
 
@@ -143,8 +143,12 @@ func _finish_arena(player_name: String, run: Dictionary) -> Dictionary:
 			sc[player_name] = score
 		best = score
 	arena_scores[id] = sc
+	# شرط برد (اختیاری): درصدی از اهداف باید گرفته شود؛ جایزه فقط برای برنده پرداخت می‌شود.
+	var goal: int = int(run.get("win", 0))
+	var total: int = maxi(int(run.get("total", 0)), 1)
+	var won: bool = goal <= 0 or score * 100 >= total * goal
 	var reward := 0
-	if player_name != str(run["owner"]):
+	if player_name != str(run["owner"]) and won:
 		reward = score * int(run["per_coin"])
 	# پارکور: اگر همهٔ ایستگاه‌ها گرفته شد، زمان تمام‌کردن ثبت و سریع‌ترین زمان نگه داشته می‌شود.
 	var finish_time := 0.0
@@ -159,7 +163,7 @@ func _finish_arena(player_name: String, run: Dictionary) -> Dictionary:
 				new_time = true
 		arena_times[id] = tm
 	return {"name": player_name, "kind": "end", "score": score, "best": best, "new_best": new_best,
-		"reward": reward, "arena": id, "owner": str(run["owner"]), "time": finish_time, "new_time": new_time}
+		"reward": reward, "arena": id, "owner": str(run["owner"]), "time": finish_time, "new_time": new_time, "goal": goal, "won": won}
 
 
 func board() -> Array:

@@ -141,15 +141,15 @@ func c2s_bp_op(op: String, id: int) -> void:
 
 
 @rpc("any_peer", "call_remote", "reliable")
-func c2s_arena_create(arena_name: String, radius: float, coins: int, time: float, reward: int, kind: String = "coins") -> void:
+func c2s_arena_create(arena_name: String, radius: float, coins: int, time: float, reward: int, kind: String = "coins", win_pct: int = 0) -> void:
 	if server:
-		server.on_arena_create(multiplayer.get_remote_sender_id(), arena_name, radius, coins, time, reward, kind)
+		server.on_arena_create(multiplayer.get_remote_sender_id(), arena_name, radius, coins, time, reward, kind, win_pct)
 
 
 @rpc("any_peer", "call_remote", "reliable")
-func c2s_arena_edit(id: int, arena_name: String, radius: float, coins: int, time: float, reward: int, kind: String = "coins") -> void:
+func c2s_arena_edit(id: int, arena_name: String, radius: float, coins: int, time: float, reward: int, kind: String = "coins", win_pct: int = 0) -> void:
 	if server:
-		server.on_arena_edit(multiplayer.get_remote_sender_id(), id, arena_name, radius, coins, time, reward, kind)
+		server.on_arena_edit(multiplayer.get_remote_sender_id(), id, arena_name, radius, coins, time, reward, kind, win_pct)
 
 
 @rpc("any_peer", "call_remote", "reliable")

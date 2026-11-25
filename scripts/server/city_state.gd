@@ -1665,10 +1665,10 @@ func arenas_public() -> Array:
 
 
 ## ساخت میدان در موقعیت بازیکن؛ هزینه ARENA_COST (در جهان خلاقانه رایگان).
-func arena_create(player_name: String, arena_name: String, pos: Vector2, radius: float, coins: int, time: float, reward: int, kind: String = "coins") -> Dictionary:
+func arena_create(player_name: String, arena_name: String, pos: Vector2, radius: float, coins: int, time: float, reward: int, kind: String = "coins", win_pct: int = 0) -> Dictionary:
 	if not accounts.has(player_name):
 		return {"ok": false, "error": "no_account"}
-	var res: Dictionary = arenas.validate_new(world, seed_value, player_name, arena_name, pos, radius, coins, time, reward, kind)
+	var res: Dictionary = arenas.validate_new(world, seed_value, player_name, arena_name, pos, radius, coins, time, reward, kind, win_pct)
 	if not bool(res["ok"]):
 		return res
 	if not _pay(accounts[player_name], FWConst.ARENA_COST):
@@ -1679,10 +1679,10 @@ func arena_create(player_name: String, arena_name: String, pos: Vector2, radius:
 
 
 ## ویرایش رایگان میدان توسط سازنده یا مدیر. دورهای در حال اجرای همان میدان لغو می‌شوند چون چیدمان سکه‌ها عوض می‌شود.
-func arena_edit(player_name: String, id: int, arena_name: String, radius: float, coins: int, time: float, reward: int, kind: String = "coins") -> String:
+func arena_edit(player_name: String, id: int, arena_name: String, radius: float, coins: int, time: float, reward: int, kind: String = "coins", win_pct: int = 0) -> String:
 	if not accounts.has(player_name):
 		return "no_account"
-	var res: Dictionary = arenas.validate_edit(world, seed_value, player_name, FWConst.is_admin(role_of(player_name)), id, arena_name, radius, coins, time, reward, kind)
+	var res: Dictionary = arenas.validate_edit(world, seed_value, player_name, FWConst.is_admin(role_of(player_name)), id, arena_name, radius, coins, time, reward, kind, win_pct)
 	if not bool(res["ok"]):
 		return str(res["error"])
 	var a: Dictionary = res["arena"]
