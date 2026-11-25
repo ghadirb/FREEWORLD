@@ -65,6 +65,7 @@ func _init() -> void:
 	test_arena_edit()
 	test_arena_parkour()
 	test_arena_win_rule()
+	test_arena_ratings()
 	test_disasters()
 	test_race()
 	test_car_race()
@@ -3786,3 +3787,28 @@ func test_arena_win_rule() -> void:
 	var cs2 = CityState.new(4244)
 	cs2.arenas.load_dict(cs.arenas.to_dict())
 	check(int(cs2.arenas.items[id]["win"]) == 100, "the threshold survives saving and loading")
+
+
+func test_arena_ratings() -> void:
+	print("== Arena ratings ==")
+	var cs = CityState.new(4244)
+	for n in ["maker", "fan", "rival", "ghost2"]:
+		_login(cs, n)
+	cs.accounts["maker"]["money"] = 1000
+	var at := _mg_land_pos(cs)
+	var id: int = int(cs.arena_create("maker", "Rated", at, 12.0, 8, 30.0, 0)["id"])
+	check(cs.arena_rate("maker", id, 5) == "arena_rate_own", "the creator cannot rate their own game")
+	check(cs.arena_rate("fan", id, 5) == "arena_rate_unplayed", "rating needs a played round first")
+	check(cs.arena_rate("nobody", id, 5) == "no_account", "unknown players cannot rate")
+	check(cs.arena_rate("fan", 999, 5) == "arena_missing", "a missing arena cannot be rated")
+	cs.minigame.arena_scores[id] = {"fan": 3, "rival": 1}
+	check(cs.arena_rate("fan", id, 0) == "arena_rate_bad" and cs.arena_rate("fan", id, 6) == "arena_rate_bad", "stars outside 1 to 5 are refused")
+	check(cs.arena_rate("fan", id, 5) == "", "a player who played can rate")
+	check(cs.arena_rate("rival", id, 2) == "", "a second player rates")
+	check(cs.arenas.rating_of(id) == [3.5, 2], "the average and the count are computed")
+	check(cs.arena_rate("fan", id, 1) == "" and cs.arenas.rating_of(id) == [1.5, 2], "a player can change their vote, never vote twice")
+	check(cs.arenas_public()[0]["rating"] == [1.5, 2], "the list carries the rating")
+	var cs2 = CityState.new(4244)
+	cs2.arenas.load_dict(cs.arenas.to_dict())
+	check(cs2.arenas.rating_of(id) == [1.5, 2], "ratings survive saving and loading")
+	check(cs.arena_remove("maker", id) == "" and cs.arenas.rating_of(id) == [0.0, 0], "deleting a game deletes its ratings")

@@ -79,6 +79,9 @@ var _arena_rows: VBoxContainer
 var _arena_create_btn: Button
 var _arena_kind: String = "coins"   # coins | parkour (پروتکل ۳۶)
 var _arena_kind_btn: Button
+var _arena_sort_pop: bool = false   # false: جدیدترین، true: محبوب‌ترین
+var _arena_sort_btn: Button
+var _arena_tip_shown: bool = false
 var _arena_edit_id: int = 0   # > 0: دکمهٔ اصلی «ذخیرهٔ تغییرات» همین میدان است
 var _mg_panel: PanelContainer
 var _mg_status: Label
@@ -202,6 +205,10 @@ func setup(game_client, game_view) -> void:
 	client.book_changed.connect(_fill_book)
 	client.book_changed.connect(_fill_npc)
 	client.arenas_changed.connect(_fill_arena_list)
+	client.arenas_changed.connect(func():
+		if not _arena_tip_shown:
+			_arena_tip_shown = true
+			toast(Loc.t("arena_tip"), Color("ffd24a")))
 	client.blueprint_loaded.connect(_on_bp_loaded)
 	client.inside_changed.connect(_on_inside_changed)
 	client.mine_changed.connect(_on_mine_changed)
@@ -1537,6 +1544,12 @@ func _build_arena_panel() -> void:
 	var close := UiTheme.button("✕", Vector2(64, 60))
 	close.pressed.connect(func(): _arena_panel.visible = false)
 	row.add_child(close)
+	_arena_sort_btn = UiTheme.button("", Vector2(0, 48))
+	_arena_sort_btn.pressed.connect(func():
+		Sfx.play(self, "click")
+		_arena_sort_pop = not _arena_sort_pop
+		_fill_arena_list())
+	v.add_child(_arena_sort_btn)
 	var sc := ScrollContainer.new()
 	sc.custom_minimum_size = Vector2(0, 200)
 	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
@@ -1596,7 +1609,18 @@ func _fill_arena_list() -> void:
 		_arena_rows.add_child(_label(Loc.t("arena_empty"), 18, Color("aab6c8")))
 		return
 	var is_admin: bool = FWConst.is_admin(client.role)
-	for a in client.arenas:
+	_arena_sort_btn.text = Loc.t("arena_sort_pop" if _arena_sort_pop else "arena_sort_new")
+	var shown: Array = client.arenas.duplicate()
+	if _arena_sort_pop:
+		shown.sort_custom(func(x, y):
+			var rx: Array = x.get("rating", [0.0, 0])
+			var ry: Array = y.get("rating", [0.0, 0])
+			if float(rx[0]) != float(ry[0]):
+				return float(rx[0]) > float(ry[0])
+			return int(rx[1]) > int(ry[1]))
+	else:
+		shown.sort_custom(func(x, y): return int(x["id"]) > int(y["id"]))
+	for a in shown:
 		var id: int = int(a["id"])
 		var mine: bool = str(a["owner"]) == client.my_name
 		var box := VBoxContainer.new()
@@ -1607,6 +1631,9 @@ func _fill_arena_list() -> void:
 			Loc.fmt("arena_info", [Loc.digits(str(a["coins"])), Loc.digits(str(int(a["time"]))), Loc.digits(str(a["reward"]))])]
 		if int(top[1]) > 0:
 			sub += "  ·  %s: %s %s" % [Loc.t("arena_top"), str(top[0]), Loc.digits(str(top[1]))]
+		var rt: Array = a.get("rating", [0.0, 0])
+		if int(rt[1]) > 0:
+			sub += "  ·  ⭐ %s (%s)" % [Loc.digits("%.1f" % float(rt[0])), Loc.digits(str(rt[1]))]
 		if int(a.get("win", 0)) > 0:
 			sub += "  ·  " + Loc.fmt("arena_goal", [Loc.digits(str(a["win"]))])
 		var bt: Array = a.get("best_time", ["", 0.0])
@@ -1626,6 +1653,19 @@ func _fill_arena_list() -> void:
 			client.arena_op("play", id)
 			_arena_panel.visible = false)
 		r.add_child(play)
+		if not mine:
+			var stars_row := HBoxContainer.new()
+			stars_row.add_theme_constant_override("separation", 4)
+			box.add_child(stars_row)
+			stars_row.add_child(_label(Loc.t("arena_rate"), 15, Color("aab6c8")))
+			for s in range(1, 6):
+				var sb := UiTheme.button("★" + Loc.digits(str(s)), Vector2(0, 40))
+				sb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+				sb.add_theme_font_size_override("font_size", 16)
+				sb.pressed.connect(func():
+					Sfx.play(self, "click")
+					client.arena_op("rate_%d" % s, id))
+				stars_row.add_child(sb)
 		if mine or is_admin:
 			var ed := UiTheme.button("✎", Vector2(64, 48))
 			ed.pressed.connect(func():

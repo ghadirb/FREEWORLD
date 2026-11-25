@@ -1692,6 +1692,16 @@ func arena_edit(player_name: String, id: int, arena_name: String, radius: float,
 	return ""
 
 
+func arena_rate(player_name: String, id: int, stars: int) -> String:
+	if not accounts.has(player_name):
+		return "no_account"
+	var played: bool = minigame.arena_scores.get(id, {}).has(player_name)
+	var err: String = arenas.rate(player_name, id, stars, played)
+	if err == "":
+		_log(player_name, "arena_rate", {"id": id, "stars": stars})
+	return err
+
+
 func arena_remove(player_name: String, id: int) -> String:
 	if not accounts.has(player_name):
 		return "no_account"

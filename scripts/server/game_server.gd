@@ -614,6 +614,17 @@ func on_arena_op(pid: int, op: String, id: int) -> void:
 				_notice(pid, str(res["error"]))
 				return
 			_send(pid, "s2c_minigame", cs.minigame.public_state(p["name"]))
+		"rate_1", "rate_2", "rate_3", "rate_4", "rate_5":
+			if not _allow_action(p):
+				_notice(pid, "rate_limited")
+				return
+			var rerr: String = cs.arena_rate(p["name"], id, int(op.substr(5)))
+			if rerr != "":
+				_notice(pid, rerr)
+				return
+			_dirty = true
+			_notice(pid, "arena_rated")
+			_broadcast_arenas()
 		"delete":
 			if not _allow_action(p):
 				_notice(pid, "rate_limited")

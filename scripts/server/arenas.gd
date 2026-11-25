@@ -8,6 +8,7 @@ const FWConst = preload("res://scripts/core/const.gd")
 
 var items: Dictionary = {}   # شناسه ← {id, name, owner, x, z, r, coins, time, reward}
 var next_id: int = 1
+var ratings: Dictionary = {}   # شناسهٔ میدان ← {نام بازیکن ← ستاره ۱ تا ۵} (پروتکل ۳۸)
 
 
 static func clean_name(raw: String) -> String:
@@ -162,6 +163,36 @@ func count_of(owner: String) -> int:
 	return n
 
 
+## امتیازدهی ۱ تا ۵ ستاره: فقط بازیکنی که این میدان را دست‌کم یک بار بازی کرده (has_played) و سازنده نیست؛
+## هر بازیکن یک رأی دارد و می‌تواند عوضش کند. خروجی: رشتهٔ خطا یا «».
+func rate(who: String, id: int, stars: int, has_played: bool) -> String:
+	if not items.has(id):
+		return "arena_missing"
+	if str(items[id]["owner"]) == who:
+		return "arena_rate_own"
+	if not has_played:
+		return "arena_rate_unplayed"
+	if stars < 1 or stars > 5:
+		return "arena_rate_bad"
+	var row: Dictionary = ratings.get(id, {})
+	if row.size() >= 500 and not row.has(who):
+		return "arena_rate_full"
+	row[who] = stars
+	ratings[id] = row
+	return ""
+
+
+## میانگین و تعداد رأی؛ بدون رأی: [0.0, 0].
+func rating_of(id: int) -> Array:
+	var row: Variant = ratings.get(id, {})
+	if not (row is Dictionary) or row.is_empty():
+		return [0.0, 0]
+	var sum := 0
+	for k in row:
+		sum += int(row[k])
+	return [snappedf(float(sum) / float(row.size()), 0.1), row.size()]
+
+
 ## حذف: فقط سازنده یا مدیر. خروجی: رشتهٔ خطا یا «».
 func remove(who: String, id: int, is_admin: bool) -> String:
 	if not items.has(id):
@@ -169,6 +200,7 @@ func remove(who: String, id: int, is_admin: bool) -> String:
 	if str(items[id]["owner"]) != who and not is_admin:
 		return "not_owner"
 	items.erase(id)
+	ratings.erase(id)
 	return ""
 
 
@@ -198,16 +230,17 @@ func list_public(arena_scores: Dictionary, arena_times: Dictionary = {}) -> Arra
 					best_name = str(k)
 		rows.append({"id": int(id), "name": a["name"], "owner": a["owner"], "x": a["x"], "z": a["z"], "r": a["r"],
 			"coins": a["coins"], "time": a["time"], "reward": a["reward"], "kind": clean_kind(a.get("kind", "coins")), "win": int(a.get("win", 0)),
-			"top": [top_name, top_score], "best_time": [best_name, best_time]})
+			"top": [top_name, top_score], "best_time": [best_name, best_time], "rating": rating_of(int(id))})
 	return rows
 
 
 func to_dict() -> Dictionary:
-	return {"next_id": next_id, "items": items.duplicate(true)}
+	return {"next_id": next_id, "items": items.duplicate(true), "ratings": ratings.duplicate(true)}
 
 
 func load_dict(d: Variant) -> void:
 	items.clear()
+	ratings.clear()
 	next_id = 1
 	if not (d is Dictionary):
 		return
@@ -232,4 +265,14 @@ func load_dict(d: Variant) -> void:
 				"reward": clampi(int(v.get("reward", 0)), 0, FWConst.ARENA_REWARD_MAX),
 			}
 			next_id = maxi(next_id, id + 1)
+	var rs: Variant = d.get("ratings", {})
+	if rs is Dictionary:
+		for k in rs:
+			var row: Variant = rs[k]
+			if row is Dictionary and items.has(int(k)):
+				var clean: Dictionary = {}
+				for pn in row:
+					if clean.size() < 500:
+						clean[str(pn)] = clampi(int(row[pn]), 1, 5)
+				ratings[int(k)] = clean
 	next_id = maxi(next_id, int(d.get("next_id", 1)))
