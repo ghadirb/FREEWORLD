@@ -293,7 +293,7 @@ func _minigame_step(dt: float) -> void:
 					_send(by_name[str(ev["owner"])], "s2c_money", cs.money_of(str(ev["owner"])))
 			if ev.has("arena"):
 				_broadcast_arenas()
-			_notice(pid, "minigame_end", {"score": ev["score"], "best": ev["best"], "new_best": ev["new_best"], "reward": ev["reward"]})
+			_notice(pid, "minigame_end", {"score": ev["score"], "best": ev["best"], "new_best": ev["new_best"], "reward": ev["reward"], "time": ev.get("time", 0.0), "new_time": ev.get("new_time", false)})
 			_dirty = true
 	# بازیکنی که خارج شد و دورش لغو شد، در حالت‌های بعدی وضعیت تازه می‌گیرد؛ نیازی به ارسال نیست.
 

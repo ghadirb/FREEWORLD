@@ -1575,6 +1575,9 @@ func _fill_arena_list() -> void:
 			Loc.fmt("arena_info", [Loc.digits(str(a["coins"])), Loc.digits(str(int(a["time"]))), Loc.digits(str(a["reward"]))])]
 		if int(top[1]) > 0:
 			sub += "  ·  %s: %s %s" % [Loc.t("arena_top"), str(top[0]), Loc.digits(str(top[1]))]
+		var bt: Array = a.get("best_time", ["", 0.0])
+		if float(bt[1]) > 0.0:
+			sub += "  ·  ⏱ %s %s" % [str(bt[0]), Loc.fmt("msg_parkour_time", [Loc.digits("%.1f" % float(bt[1]))])]
 		var subl := _label(sub, 15, Color("aab6c8"))
 		subl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		subl.custom_minimum_size = Vector2(520, 0)
@@ -2007,6 +2010,10 @@ func _on_notice(code: String, args: Dictionary) -> void:
 			var txt: String = Loc.fmt("msg_mg_end_reward", [Loc.digits(str(args["score"])), Loc.digits(str(args["reward"]))]) if int(args["reward"]) > 0 else Loc.fmt("msg_mg_end", [Loc.digits(str(args["score"]))])
 			if bool(args["new_best"]):
 				txt += " " + Loc.t("msg_mg_new_best")
+			if float(args.get("time", 0.0)) > 0.0:
+				txt += " " + Loc.fmt("msg_parkour_time", [Loc.digits("%.1f" % float(args["time"]))])
+				if bool(args.get("new_time", false)):
+					txt += " " + Loc.t("msg_parkour_new_time")
 			toast(txt, Color("ffd84a"))
 		"race_end":
 			var rtxt: String

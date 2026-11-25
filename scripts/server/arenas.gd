@@ -173,7 +173,7 @@ func remove(who: String, id: int, is_admin: bool) -> String:
 
 
 ## فهرست قابل ارسال؛ top برای هر میدان [نام, امتیاز] بهترین رکورد است (از minigame.arena_scores).
-func list_public(arena_scores: Dictionary) -> Array:
+func list_public(arena_scores: Dictionary, arena_times: Dictionary = {}) -> Array:
 	var rows: Array = []
 	var ids: Array = items.keys()
 	ids.sort()
@@ -187,9 +187,18 @@ func list_public(arena_scores: Dictionary) -> Array:
 				if int(sc[k]) > top_score or (int(sc[k]) == top_score and top_score > 0 and str(k) < top_name):
 					top_score = int(sc[k])
 					top_name = str(k)
+		var best_name := ""
+		var best_time := 0.0
+		var tm: Variant = arena_times.get(int(id), {})
+		if tm is Dictionary:
+			for k in tm:
+				var tv: float = float(tm[k])
+				if tv > 0.0 and (best_time <= 0.0 or tv < best_time or (tv == best_time and str(k) < best_name)):
+					best_time = tv
+					best_name = str(k)
 		rows.append({"id": int(id), "name": a["name"], "owner": a["owner"], "x": a["x"], "z": a["z"], "r": a["r"],
 			"coins": a["coins"], "time": a["time"], "reward": a["reward"], "kind": clean_kind(a.get("kind", "coins")),
-			"top": [top_name, top_score]})
+			"top": [top_name, top_score], "best_time": [best_name, best_time]})
 	return rows
 
 

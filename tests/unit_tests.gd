@@ -3719,6 +3719,25 @@ func test_arena_parkour() -> void:
 	check(steps == pts.size(), "the runner reaches every checkpoint in order")
 	check(not cs.minigame.runs.has("runner"), "the run ends after the last checkpoint")
 	check(int(cs.minigame.arena_scores[id]["runner"]) == pts.size(), "the checkpoint count is the record")
+	var tm: Dictionary = cs.minigame.arena_times.get(id, {})
+	check(tm.has("runner") and float(tm["runner"]) > 0.0, "finishing all checkpoints records a time")
+	check(float(cs.arenas_public()[0]["best_time"][1]) > 0.0 and str(cs.arenas_public()[0]["best_time"][0]) == "runner", "the list shows the fastest runner")
+	var t1: float = float(tm["runner"])
+	cs.arena_play("runner", id, at)
+	for _i in 3:
+		cs.minigame.step(5.0, {"runner": at}, 1)   # دور دوم کند: زمان بدتر ثبت نمی‌شود
+	var safety := 0
+	while cs.minigame.runs.has("runner") and safety < 40:
+		safety += 1
+		var cur2: Dictionary = cs.minigame.public_state("runner")
+		if not bool(cur2["active"]):
+			break
+		cs.minigame.step(0.1, {"runner": Vector2(float(cur2["coins"][0][0]), float(cur2["coins"][0][1]))}, 1)
+	check(float(cs.minigame.arena_times[id]["runner"]) <= t1, "a slower run never replaces the best time")
+	var d0: Dictionary = cs.minigame.to_dict()
+	var mg2 = cs.minigame.get_script().new()
+	mg2.load_dict(d0)
+	check(float(mg2.arena_times[id]["runner"]) == float(cs.minigame.arena_times[id]["runner"]), "times survive saving and loading")
 	check(first.distance_to(pts[0]) < 0.2, "the first checkpoint is the first of the layout")
 	var ed: String = cs.arena_edit("maker", id, "Run 2", 14.0, 8, 60.0, 1, "coins")
 	check(ed == "" and str(cs.arenas.items[id]["kind"]) == "coins", "the owner can switch the arena back to coin hunt")

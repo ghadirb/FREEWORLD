@@ -10,6 +10,7 @@ var runs: Dictionary = {}    # نام بازیکن ← {"t": float, "score": int
 var scores: Dictionary = {}  # نام بازیکن ← بهترین امتیاز
 var plays: Dictionary = {}   # نام بازیکن ← {"day": int, "n": int} تعداد دورهای جایزه‌دار امروز
 var arena_scores: Dictionary = {}   # شناسهٔ میدان ← {نام بازیکن ← بهترین امتیاز}
+var arena_times: Dictionary = {}    # شناسهٔ میدان پارکور ← {نام بازیکن ← سریع‌ترین زمان تمام‌کردن (ثانیه)}
 var _counter: int = 0
 
 
@@ -60,7 +61,7 @@ func start_arena(world, seed_value: int, player_name: String, arena: Dictionary)
 		# پارکور: فقط ایستگاه بعدی دیده می‌شود؛ با رسیدن به آن، بعدی ظاهر می‌شود.
 		coins = [targets[0]]
 		queue = targets.slice(1)
-	runs[player_name] = {"t": float(arena["time"]), "score": 0, "coins": coins, "queue": queue, "arena": int(arena["id"]),
+	runs[player_name] = {"t": float(arena["time"]), "score": 0, "coins": coins, "queue": queue, "limit": float(arena["time"]), "arena": int(arena["id"]),
 		"total": targets.size(), "owner": str(arena["owner"]), "per_coin": int(arena["reward"])}
 	return {"ok": true}
 
@@ -68,6 +69,7 @@ func start_arena(world, seed_value: int, player_name: String, arena: Dictionary)
 ## میدان حذف شد: رکوردها پاک و دورهای در حال اجرای آن لغو می‌شوند.
 func arena_removed(id: int) -> void:
 	arena_scores.erase(id)
+	arena_times.erase(id)
 	for nm in runs.keys():
 		if int(runs[nm].get("arena", 0)) == id:
 			runs.erase(nm)
@@ -144,8 +146,20 @@ func _finish_arena(player_name: String, run: Dictionary) -> Dictionary:
 	var reward := 0
 	if player_name != str(run["owner"]):
 		reward = score * int(run["per_coin"])
+	# پارکور: اگر همهٔ ایستگاه‌ها گرفته شد، زمان تمام‌کردن ثبت و سریع‌ترین زمان نگه داشته می‌شود.
+	var finish_time := 0.0
+	var new_time := false
+	if run.has("queue") and score >= int(run.get("total", 0)) and int(run.get("total", 0)) > 0:
+		finish_time = snappedf(maxf(float(run.get("limit", 0.0)) - float(run["t"]), 0.1), 0.1)
+		var tm: Dictionary = arena_times.get(id, {})
+		var prev: float = float(tm.get(player_name, 0.0))
+		if prev <= 0.0 or finish_time < prev:
+			if tm.size() < 500 or tm.has(player_name):
+				tm[player_name] = finish_time
+				new_time = true
+		arena_times[id] = tm
 	return {"name": player_name, "kind": "end", "score": score, "best": best, "new_best": new_best,
-		"reward": reward, "arena": id, "owner": str(run["owner"])}
+		"reward": reward, "arena": id, "owner": str(run["owner"]), "time": finish_time, "new_time": new_time}
 
 
 func board() -> Array:
@@ -172,15 +186,26 @@ func public_state(player_name: String) -> Dictionary:
 
 
 func to_dict() -> Dictionary:
-	return {"scores": scores.duplicate(), "plays": plays.duplicate(true), "arena_scores": arena_scores.duplicate(true)}
+	return {"scores": scores.duplicate(), "plays": plays.duplicate(true), "arena_scores": arena_scores.duplicate(true), "arena_times": arena_times.duplicate(true)}
 
 
 func load_dict(d: Variant) -> void:
 	scores.clear()
 	plays.clear()
 	arena_scores.clear()
+	arena_times.clear()
 	if not (d is Dictionary):
 		return
+	var atm: Variant = d.get("arena_times", {})
+	if atm is Dictionary:
+		for k in atm:
+			var trow: Variant = atm[k]
+			if trow is Dictionary and int(k) > 0 and arena_times.size() < FWConst.ARENA_MAX_TOTAL:
+				var tclean: Dictionary = {}
+				for pn in trow:
+					if tclean.size() < 500:
+						tclean[str(pn)] = clampf(float(trow[pn]), 0.1, FWConst.ARENA_TIME_MAX)
+				arena_times[int(k)] = tclean
 	var asc: Variant = d.get("arena_scores", {})
 	if asc is Dictionary:
 		for k in asc:

@@ -1661,7 +1661,7 @@ func minigame_start(player_name: String, pos: Vector2) -> Dictionary:
 
 ## --- میدان‌های ساخته‌شده توسط بازیکن (پروتکل ۳۱) ---
 func arenas_public() -> Array:
-	return arenas.list_public(minigame.arena_scores)
+	return arenas.list_public(minigame.arena_scores, minigame.arena_times)
 
 
 ## ساخت میدان در موقعیت بازیکن؛ هزینه ARENA_COST (در جهان خلاقانه رایگان).
