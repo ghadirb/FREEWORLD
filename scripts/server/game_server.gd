@@ -640,7 +640,7 @@ func on_arena_op(pid: int, op: String, id: int) -> void:
 				_notice(pid, str(res["error"]))
 				return
 			_send(pid, "s2c_minigame", cs.minigame.public_state(p["name"]))
-			_notice(pid, "arena_started", {"parkour": Arenas.clean_kind(cs.arenas.items[id].get("kind", "coins")) == "parkour"})
+			_notice(pid, "arena_started", {"parkour": Arenas.clean_kind(cs.arenas.items[id].get("kind", "coins")) == "parkour", "race": Arenas.clean_kind(cs.arenas.items[id].get("kind", "coins")) == "race"})
 		"prop_bonus", "prop_hazard", "prop_undo":
 			if not _allow_action(p):
 				_notice(pid, "rate_limited")
@@ -960,7 +960,7 @@ func on_move(pid: int, x: float, z: float, yaw: float, alt: float = 0.0) -> void
 	var now := Time.get_ticks_msec()
 	var dt: float = clampf(float(now - int(p["last_move"])) / 1000.0, 0.0, 0.5)
 	p["last_move"] = now
-	var speed_mult: float = FWConst.RACE_SPEED_MULT if cs.race.is_running(str(p["name"])) else 1.0
+	var speed_mult: float = FWConst.RACE_SPEED_MULT if cs.race.is_running(str(p["name"])) or cs.minigame.is_arena_race(str(p["name"])) else 1.0
 	if boating:
 		speed_mult = FWConst.BOAT_SPEED_MULT
 	elif driving:

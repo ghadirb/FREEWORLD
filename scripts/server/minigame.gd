@@ -57,14 +57,15 @@ func start_arena(world, seed_value: int, player_name: String, arena: Dictionary)
 		return {"ok": false, "error": "mg_no_space"}
 	var coins: Array = targets
 	var queue: Array = []
-	if Arenas.clean_kind(arena.get("kind", "coins")) == "parkour":
-		# پارکور: فقط ایستگاه بعدی دیده می‌شود؛ با رسیدن به آن، بعدی ظاهر می‌شود.
+	var kind_now: String = Arenas.clean_kind(arena.get("kind", "coins"))
+	if Arenas.is_ordered(kind_now):
+		# پارکور و مسابقه: فقط ایستگاه بعدی دیده می‌شود؛ با رسیدن به آن، بعدی ظاهر می‌شود.
 		coins = [targets[0]]
 		queue = targets.slice(1)
 	runs[player_name] = {"t": float(arena["time"]), "score": 0, "coins": coins, "win": int(arena.get("win", 0)), "obs": Arenas.make_obstacles(seed_value, arena) if Arenas.clean_kind(arena.get("kind", "coins")) == "parkour" else [], "clk": 0.0, "hit_cd": 0.0, "queue": queue, "limit": float(arena["time"]), "arena": int(arena["id"]),
 		"total": targets.size(), "owner": str(arena["owner"]), "per_coin": int(arena["reward"]),
 		"props": Arenas.clean_props(arena.get("props", []), arena), "prop_cd": 0.0,
-		"pk": Arenas.clean_kind(arena.get("kind", "coins")) == "parkour", "last": Vector2(float(arena["x"]), float(arena["z"]))}
+		"pk": Arenas.is_ordered(kind_now), "rc": kind_now == "race", "last": Vector2(float(arena["x"]), float(arena["z"]))}
 	return {"ok": true}
 
 
@@ -78,6 +79,11 @@ func arena_removed(id: int) -> void:
 
 
 ## نقطهٔ ذخیرهٔ دور پارکور (آخرین ایستگاه گرفته‌شده؛ در آغاز مرکز میدان) یا null. بازگشت ۳ ثانیه جریمه دارد.
+## بازیکن الان در دور مسابقهٔ ماشین یک میدان است؟ (سقف سرعت مثل مسابقهٔ ایستگاه‌ها بالاتر می‌رود)
+func is_arena_race(player_name: String) -> bool:
+	return runs.has(player_name) and bool(runs[player_name].get("rc", false))
+
+
 func respawn_point(player_name: String) -> Variant:
 	if not runs.has(player_name) or not bool(runs[player_name].get("pk", false)):
 		return null
@@ -226,6 +232,7 @@ func public_state(player_name: String) -> Dictionary:
 		out["t"] = snappedf(float(run["t"]), 0.1)
 		out["score"] = int(run["score"])
 		out["pk"] = bool(run.get("pk", false))
+		out["rc"] = bool(run.get("rc", false))
 		if not run.get("props", []).is_empty():
 			out["props"] = run["props"]
 		var cl: Array = []

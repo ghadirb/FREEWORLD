@@ -64,6 +64,7 @@ func _init() -> void:
 	test_arenas()
 	test_arena_edit()
 	test_arena_parkour()
+	test_arena_race()
 	test_arena_win_rule()
 	test_arena_ratings()
 	test_arena_obstacles()
@@ -3935,6 +3936,46 @@ func test_arena_props() -> void:
 			filled += 1
 	check(cs.arenas.items[id]["props"].size() <= FWConst.ARENA_PROPS_MAX, "the object limit holds (%d added)" % filled)
 	check(Arenas.clean_props([["bogus", 1, 1], ["bonus", 1e30, 0]], {"x": 0.0, "z": 0.0, "r": 10.0}).is_empty(), "bad objects are dropped on load")
+
+
+func test_arena_race() -> void:
+	print("== Car race arenas (ordered gates on a loop track) ==")
+	var cs = CityState.new(4244)
+	_login(cs, "maker")
+	_login(cs, "driver")
+	cs.accounts["maker"]["money"] = 1000
+	var at := _mg_land_pos(cs)
+	var res: Dictionary = cs.arena_create("maker", "Speedway", at, 20.0, 99, 60.0, 1, "race", 100, 5)
+	check(bool(res["ok"]), "a race arena can be built")
+	var id: int = int(res["id"])
+	var a: Dictionary = cs.arenas.items[id]
+	check(str(a["kind"]) == "race" and int(a["coins"]) == FWConst.ARENA_PARKOUR_MAX, "kind is kept and the gate count is clamped")
+	check(int(a["obs"]) == 0, "race arenas have no moving obstacles")
+	var gates: Array = Arenas.make_race_gates(cs.world, cs.seed_value, a)
+	check(gates.size() >= FWConst.ARENA_COINS_MIN, "gates are placed on land")
+	check(gates == Arenas.make_race_gates(cs.world, cs.seed_value, a), "gate layout is deterministic")
+	var center := Vector2(float(a["x"]), float(a["z"]))
+	var ring_ok := true
+	for g in gates:
+		var d: float = (g as Vector2).distance_to(center)
+		if d < float(a["r"]) * 0.7 or d > float(a["r"]) * 0.88:
+			ring_ok = false
+	check(ring_ok, "gates sit on a ring around the centre")
+	check(bool(cs.arena_play("driver", id, at)["ok"]), "a driver can start the race")
+	check(cs.minigame.is_arena_race("driver") and bool(cs.minigame.public_state("driver")["rc"]), "the run is flagged as a race (higher speed cap)")
+	check(not cs.minigame.is_arena_race("maker"), "other players are not flagged")
+	var steps := 0
+	var guard := 0
+	while cs.minigame.runs.has("driver") and guard < 40:
+		guard += 1
+		var cur: Dictionary = cs.minigame.public_state("driver")
+		var target := Vector2(float(cur["coins"][0][0]), float(cur["coins"][0][1]))
+		cs.minigame.step(0.1, {"driver": target}, 1)
+		steps += 1
+	check(steps == gates.size() and not cs.minigame.is_arena_race("driver"), "the driver passes every gate in order and the flag clears")
+	check(float(cs.minigame.arena_times.get(id, {}).get("driver", 0.0)) > 0.0, "finishing the track records a lap time")
+	var pr: Dictionary = Arenas.parse_code(Arenas.export_code(a))
+	check(bool(pr["ok"]) and str(pr["def"]["kind"]) == "race", "the share code keeps the race kind")
 
 
 func test_arena_share_code() -> void:

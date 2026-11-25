@@ -21,9 +21,16 @@ static func clean_name(raw: String) -> String:
 	return out.substr(0, FWConst.ARENA_NAME_MAX).strip_edges()
 
 
-## نوع میدان: «coins» (سکه‌یاب) یا «parkour» (ایستگاه‌ها به ترتیب)؛ هر مقدار ناشناخته سکه‌یاب است.
+## نوع میدان: «coins» (سکه‌یاب)، «parkour» (ایستگاه‌ها به ترتیب) یا «race» (مسابقهٔ ماشین: دروازه‌های ترتیبی روی پیست حلقه‌ای)؛
+## هر مقدار ناشناخته سکه‌یاب است.
 static func clean_kind(raw: Variant) -> String:
-	return "parkour" if str(raw) == "parkour" else "coins"
+	var k := str(raw)
+	return k if k == "parkour" or k == "race" else "coins"
+
+
+## نوع‌هایی که هدف‌هایشان به ترتیب ظاهر می‌شود (پارکور و مسابقه).
+static func is_ordered(kind: String) -> bool:
+	return kind == "parkour" or kind == "race"
 
 
 ## مانع متحرک فقط در پارکور (پروتکل ۳۹).
@@ -125,7 +132,7 @@ static func parse_code(code: String) -> Dictionary:
 
 
 static func clamp_count(kind: String, n: int) -> int:
-	var hi: int = FWConst.ARENA_PARKOUR_MAX if kind == "parkour" else FWConst.ARENA_COINS_MAX
+	var hi: int = FWConst.ARENA_PARKOUR_MAX if is_ordered(kind) else FWConst.ARENA_COINS_MAX
 	return clampi(n, FWConst.ARENA_COINS_MIN, hi)
 
 
@@ -150,9 +157,32 @@ static func make_checkpoints(world, seed_value: int, a: Dictionary) -> Array:
 	return out
 
 
-## اهداف دور بر اساس نوع میدان: سکه‌های پخش‌شده یا ایستگاه‌های مرتب.
+## دروازه‌های مسابقهٔ ماشین: یک پیست حلقه‌ای تقریباً گرد با فاصلهٔ ثابت از مرکز (نه موج‌دار مثل پارکور) تا با ماشین
+## روان رانده شود. هر دروازه بر یک زاویهٔ مرتب با کمی انحراف قطعی از Seed می‌افتد؛ دروازهٔ روی آب یا کوه رد می‌شود.
+static func make_race_gates(world, seed_value: int, a: Dictionary) -> Array:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash("%d:race:%d:%d" % [seed_value, int(a.get("id", 0)), int(a["coins"])])
+	var center := Vector2(float(a["x"]), float(a["z"]))
+	var r: float = float(a["r"])
+	var n: int = int(a["coins"])
+	var out: Array = []
+	for i in n:
+		var ang: float = TAU * (float(i) + rng.randf() * 0.2) / float(n)
+		var dist: float = r * lerpf(0.72, 0.86, rng.randf())
+		var c := center + Vector2(cos(ang), sin(ang)) * dist
+		var h: float = world.height_at(c.x, c.y)
+		if h < 0.5 or h > FWConst.MINIGAME_MAX_HEIGHT:
+			continue
+		out.append(Vector2(snappedf(c.x, 0.1), snappedf(c.y, 0.1)))
+	return out
+
+
+## اهداف دور بر اساس نوع میدان: سکه‌های پخش‌شده، ایستگاه‌های مرتب یا دروازه‌های پیست.
 static func make_targets(world, seed_value: int, player_name: String, counter: int, a: Dictionary) -> Array:
-	if clean_kind(a.get("kind", "coins")) == "parkour":
+	var kd := clean_kind(a.get("kind", "coins"))
+	if kd == "race":
+		return make_race_gates(world, seed_value, a)
+	if kd == "parkour":
 		return make_checkpoints(world, seed_value, a)
 	return make_coins(world, seed_value, player_name, counter, a)
 

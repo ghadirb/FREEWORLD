@@ -1276,7 +1276,7 @@ func _move_player(dt: float, input: Vector2) -> void:
 		_move_in_mine(dt, len, (cam.right_flat() * input.x + cam.forward_flat() * (-input.y)).normalized())
 		return
 	var dir: Vector3 = (cam.right_flat() * input.x + cam.forward_flat() * (-input.y)).normalized()
-	var speed_mult: float = FWConst.RACE_SPEED_MULT if client.race_active() else 1.0
+	var speed_mult: float = FWConst.RACE_SPEED_MULT if (client.race_active() or bool(client.minigame.get("rc", false))) else 1.0
 	if client.boating:
 		speed_mult = FWConst.BOAT_SPEED_MULT
 	elif client.driving:

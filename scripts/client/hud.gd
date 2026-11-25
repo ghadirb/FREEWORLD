@@ -79,7 +79,7 @@ var _arena_code: LineEdit   # کد اشتراک میدان (برون‌بری/د
 var _arena_spin: Dictionary = {}
 var _arena_rows: VBoxContainer
 var _arena_create_btn: Button
-var _arena_kind: String = "coins"   # coins | parkour (پروتکل ۳۶)
+var _arena_kind: String = "coins"   # coins | parkour | race (پروتکل ۳۶ و ۴۱)
 var _arena_kind_btn: Button
 var _arena_sort_pop: bool = false   # false: جدیدترین، true: محبوب‌ترین
 var _arena_sort_btn: Button
@@ -1551,7 +1551,7 @@ func _build_arena_panel() -> void:
 	_arena_kind_btn = UiTheme.button("", Vector2(0, 52))
 	_arena_kind_btn.pressed.connect(func():
 		Sfx.play(self, "click")
-		_arena_kind = "parkour" if _arena_kind == "coins" else "coins"
+		_arena_kind = {"coins": "parkour", "parkour": "race"}.get(_arena_kind, "coins")
 		_arena_kind_refresh())
 	v.add_child(_arena_kind_btn)
 	_arena_kind_refresh()
@@ -1602,6 +1602,7 @@ const ARENA_PRESETS := [
 	{"id": "quick", "kind": "coins", "r": 10, "n": 12, "t": 45, "rw": 1, "win": 0, "obs": 0},
 	{"id": "easy", "kind": "parkour", "r": 10, "n": 6, "t": 60, "rw": 1, "win": 100, "obs": 0},
 	{"id": "hard", "kind": "parkour", "r": 18, "n": 12, "t": 40, "rw": 2, "win": 100, "obs": 3},
+	{"id": "race", "kind": "race", "r": 20, "n": 10, "t": 45, "rw": 2, "win": 100, "obs": 0},
 ]
 
 
@@ -1663,7 +1664,7 @@ func _fill_arena_list() -> void:
 		var mine: bool = str(a["owner"]) == client.my_name
 		var box := VBoxContainer.new()
 		_arena_rows.add_child(box)
-		box.add_child(_label(("🏁 " if str(a.get("kind", "coins")) == "parkour" else "🪙 ") + str(a["name"]), 22, Color("ffd24a")))
+		box.add_child(_label(({"parkour": "🏁 ", "race": "🏎 "}.get(str(a.get("kind", "coins")), "🪙 ")) + str(a["name"]), 22, Color("ffd24a")))
 		var top: Array = a["top"]
 		var sub := "%s: %s  ·  %s" % [Loc.t("arena_owner"), str(a["owner"]),
 			Loc.fmt("arena_info", [Loc.digits(str(a["coins"])), Loc.digits(str(int(a["time"]))), Loc.digits(str(a["reward"]))])]
@@ -2233,7 +2234,7 @@ func _on_notice(code: String, args: Dictionary) -> void:
 			Sfx.play(self, "notify")
 			toast(Loc.t("msg_arena_rated"), Color("c8f08a"))
 		"arena_started":
-			toast(Loc.t("msg_arena_started_parkour" if bool(args.get("parkour", false)) else "msg_arena_started_coins"), Color("ffd84a"))
+			toast(Loc.t("msg_arena_started_race" if bool(args.get("race", false)) else ("msg_arena_started_parkour" if bool(args.get("parkour", false)) else "msg_arena_started_coins")), Color("ffd84a"))
 		"arena_respawned":
 			toast(Loc.fmt("msg_arena_respawned", [Loc.digits(str(int(FWConst.ARENA_RESPAWN_PENALTY)))]), Color("ffd84a"))
 		"arena_imported":
