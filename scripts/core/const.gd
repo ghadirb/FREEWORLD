@@ -1,7 +1,7 @@
 extends RefCounted
 ## ثابت‌های مشترک بین سرور و کلاینت.
 
-const PROTOCOL_VERSION := 39
+const PROTOCOL_VERSION := 40
 # ترافیک شبکه با DTLS رمز می‌شود (نسخهٔ ۴ به بعد). فقط برای عیب‌یابی خاموش شود.
 const USE_DTLS := true
 const DEFAULT_PORT := 7777
@@ -272,6 +272,7 @@ const ARENA_PLAY_MARGIN := 4.0
 const ARENA_OBS_MAX := 6          # حداکثر مانع متحرک در میدان پارکور (پروتکل ۳۹)
 const ARENA_OBS_HIT_RANGE := 1.2  # فاصلهٔ برخورد (متر)
 const ARENA_OBS_PENALTY := 4.0    # ثانیه‌ای که از زمان دور کم می‌شود
+const ARENA_CODE_MAX := 3000          # بیشینهٔ طول کد اشتراک میدان (پروتکل ۴۰)
 const ARENA_PROPS_MAX := 12          # اشیای سفارشی هر میدان: «جایزهٔ زمان» و «تله»
 const ARENA_PROP_SPACING := 2.0     # حداقل فاصلهٔ دو شیء
 const ARENA_PROP_RANGE := 1.6       # فاصلهٔ برخورد با شیء

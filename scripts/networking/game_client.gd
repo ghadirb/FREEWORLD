@@ -345,6 +345,11 @@ func arena_edit(id: int, arena_name: String, radius: float, coins: int, time: fl
 		_tx("c2s_arena_edit", [id, arena_name, radius, coins, time, reward, kind, win_pct, obstacles])
 
 
+func arena_import(code: String) -> void:
+	if is_logged_in:
+		_tx("c2s_arena_import", [code])
+
+
 func arena_op(op: String, id: int = 0) -> void:
 	if is_logged_in:
 		_tx("c2s_arena_op", [op, id])

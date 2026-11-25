@@ -5,6 +5,7 @@ const Story = preload("res://scripts/shared/story.gd")
 const Entitlements = preload("res://scripts/client/entitlements.gd")
 const Packs = preload("res://scripts/shared/blueprint_packs.gd")
 const FWConst = preload("res://scripts/core/const.gd")
+const Arenas = preload("res://scripts/server/arenas.gd")
 const Loc = preload("res://scripts/client/loc.gd")
 const Sfx = preload("res://scripts/client/sfx.gd")
 const BlockView = preload("res://scripts/client/block_view.gd")
@@ -74,6 +75,7 @@ var _mg_btn: Button
 var _arena_btn: Button
 var _arena_panel: PanelContainer
 var _arena_name: LineEdit
+var _arena_code: LineEdit   # کد اشتراک میدان (برون‌بری/درون‌ریزی)
 var _arena_spin: Dictionary = {}
 var _arena_rows: VBoxContainer
 var _arena_create_btn: Button
@@ -1521,6 +1523,19 @@ func _build_arena_panel() -> void:
 	_arena_name.max_length = FWConst.ARENA_NAME_MAX
 	_arena_name.custom_minimum_size = Vector2(0, 56)
 	v.add_child(_arena_name)
+	_arena_code = LineEdit.new()
+	_arena_code.placeholder_text = Loc.t("arena_code_hint")
+	_arena_code.custom_minimum_size = Vector2(0, 48)
+	v.add_child(_arena_code)
+	var imp := UiTheme.button(Loc.fmt("arena_import", [Loc.digits(str(FWConst.ARENA_COST))]), Vector2(0, 48))
+	imp.add_theme_font_size_override("font_size", 17)
+	imp.pressed.connect(func():
+		Sfx.play(self, "click")
+		var code := _arena_code.text.strip_edges()
+		if code == "":
+			code = DisplayServer.clipboard_get().strip_edges()
+		client.arena_import(code))
+	v.add_child(imp)
 	v.add_child(_label(Loc.t("arena_presets"), 17, Color("c8f08a")))
 	var prow := HBoxContainer.new()
 	prow.add_theme_constant_override("separation", 6)
@@ -1704,6 +1719,13 @@ func _fill_arena_list() -> void:
 				Sfx.play(self, "click")
 				client.arena_op("delete", id))
 			r.add_child(del)
+			var shr := UiTheme.button("📤", Vector2(64, 48))
+			shr.pressed.connect(func():
+				Sfx.play(self, "click")
+				_arena_code.text = Arenas.export_code(a)
+				DisplayServer.clipboard_set(_arena_code.text)
+				toast(Loc.t("msg_arena_code_copied"), Color("c8f08a")))
+			r.add_child(shr)
 			var ph := _label(Loc.t("arena_prop_hint"), 14, Color("aab6c8"))
 			ph.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 			ph.custom_minimum_size = Vector2(520, 0)
@@ -2214,6 +2236,8 @@ func _on_notice(code: String, args: Dictionary) -> void:
 			toast(Loc.t("msg_arena_started_parkour" if bool(args.get("parkour", false)) else "msg_arena_started_coins"), Color("ffd84a"))
 		"arena_respawned":
 			toast(Loc.fmt("msg_arena_respawned", [Loc.digits(str(int(FWConst.ARENA_RESPAWN_PENALTY)))]), Color("ffd84a"))
+		"arena_imported":
+			toast(Loc.t("msg_arena_imported"), Color("c8f08a"))
 		"arena_prop_ok":
 			toast(Loc.t("msg_arena_prop_ok"), Color("c8f08a"))
 		"arena_bonus":

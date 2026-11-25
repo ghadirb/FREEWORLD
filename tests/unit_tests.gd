@@ -69,6 +69,7 @@ func _init() -> void:
 	test_arena_obstacles()
 	test_arena_checkpoint_respawn()
 	test_arena_props()
+	test_arena_share_code()
 	test_disasters()
 	test_race()
 	test_car_race()
@@ -3934,3 +3935,41 @@ func test_arena_props() -> void:
 			filled += 1
 	check(cs.arenas.items[id]["props"].size() <= FWConst.ARENA_PROPS_MAX, "the object limit holds (%d added)" % filled)
 	check(Arenas.clean_props([["bogus", 1, 1], ["bonus", 1e30, 0]], {"x": 0.0, "z": 0.0, "r": 10.0}).is_empty(), "bad objects are dropped on load")
+
+
+func test_arena_share_code() -> void:
+	print("== Arena share code (between worlds) ==")
+	check(FWConst.PROTOCOL_VERSION >= 40, "protocol bumped for the arena import message")
+	var a_world = CityState.new(4244)
+	_login(a_world, "maker")
+	a_world.accounts["maker"]["money"] = 1000
+	var at := _mg_land_pos(a_world)
+	var id: int = int(a_world.arena_create("maker", "Shared Run", at, 14.0, 6, 70.0, 2, "parkour", 50, 2)["id"])
+	a_world.arena_prop("maker", id, "prop_bonus", at)
+	a_world.arena_prop("maker", id, "prop_hazard", at + Vector2(4.0, 0.0))
+	var code: String = Arenas.export_code(a_world.arenas.items[id])
+	check(code.begins_with("FWA1:") and code.length() < FWConst.ARENA_CODE_MAX, "the code has the expected prefix and size")
+	var pr: Dictionary = Arenas.parse_code(code)
+	check(bool(pr["ok"]) and str(pr["def"]["name"]) == "Shared Run" and str(pr["def"]["kind"]) == "parkour", "the code decodes to the same game")
+	check(pr["def"]["props"].size() == 2 and absf(float(pr["def"]["props"][1][1]) - 4.0) < 0.2, "objects are stored relative to the centre")
+	# جهان دیگر
+	var b_world = CityState.new(777)
+	_login(b_world, "friend")
+	b_world.accounts["friend"]["money"] = 1000
+	var bt := _mg_land_pos(b_world)
+	var res: Dictionary = b_world.arena_import("friend", code, bt)
+	check(bool(res["ok"]), "the code builds the game in another world")
+	var ib: Dictionary = b_world.arenas.items[int(res["id"])]
+	check(str(ib["name"]) == "Shared Run" and int(ib["win"]) == 50 and int(ib["obs"]) == 2 and str(ib["owner"]) == "friend", "settings are copied and the importer owns the copy")
+	check(int(b_world.money_of("friend")) == 1000 - FWConst.ARENA_COST, "importing costs the normal arena price")
+	check(ib["props"].size() >= 1, "objects are copied around the new centre")
+	# ورودی بد
+	for bad in ["", "hello", "FWA1:", "FWA1:@@@@", "FWA2:" + code.substr(5), "FWA1:" + Marshalls.raw_to_base64("{\"v\":1,\"n\":\"\"}".to_utf8_buffer()), "FWA1:" + "A".repeat(FWConst.ARENA_CODE_MAX)]:
+		check(str(b_world.arena_import("friend", bad, bt + Vector2(100.0, 0.0)).get("error", "")) == "arena_code", "bad code refused: %s" % bad.left(12))
+	var evil := {"v": 1, "n": "X", "k": "parkour", "r": 99999.0, "c": 9999999, "t": 1e12, "x": 999999, "w": 5000, "o": 500, "p": [["bonus", 1e9, 0], ["bogus", 1, 1]]}
+	var eres: Dictionary = b_world.arena_import("friend", "FWA1:" + Marshalls.raw_to_base64(JSON.stringify(evil).to_utf8_buffer()), bt + Vector2(100.0, 0.0))
+	if bool(eres["ok"]):
+		var ea: Dictionary = b_world.arenas.items[int(eres["id"])]
+		check(float(ea["r"]) <= FWConst.ARENA_R_MAX and int(ea["coins"]) <= FWConst.ARENA_PARKOUR_MAX and float(ea["time"]) <= FWConst.ARENA_TIME_MAX and int(ea["reward"]) <= FWConst.ARENA_REWARD_MAX and int(ea["win"]) <= FWConst.ARENA_WIN_MAX and int(ea["obs"]) <= FWConst.ARENA_OBS_MAX and ea["props"].is_empty(), "hostile numbers are clamped and bad objects dropped")
+	else:
+		check(true, "hostile code refused outright")

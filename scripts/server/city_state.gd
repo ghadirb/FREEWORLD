@@ -1703,6 +1703,26 @@ func arena_prop(player_name: String, id: int, op: String, pos: Vector2) -> Strin
 	return err
 
 
+## درون‌ریزی میدان از کد اشتراک در موقعیت بازیکن؛ هزینه و سقف‌ها مثل ساخت عادی. خروجی مثل arena_create.
+func arena_import(player_name: String, code: String, pos: Vector2) -> Dictionary:
+	var pr: Dictionary = Arenas.parse_code(code)
+	if not bool(pr["ok"]):
+		return pr
+	var d: Dictionary = pr["def"]
+	var res: Dictionary = arena_create(player_name, str(d["name"]), pos, float(d["r"]), int(d["coins"]), float(d["time"]), int(d["reward"]), str(d["kind"]), int(d["win"]), int(d["obs"]))
+	if not bool(res["ok"]):
+		return res
+	var a: Dictionary = arenas.items[int(res["id"])]
+	var abs_props: Array = []
+	for p in d["props"]:
+		var px: float = pos.x + float(p[1])
+		var pz: float = pos.y + float(p[2])
+		if world.height_at(px, pz) >= 0.5:
+			abs_props.append([str(p[0]), snappedf(px, 0.1), snappedf(pz, 0.1)])
+	a["props"] = Arenas.clean_props(abs_props, a)
+	return res
+
+
 func arena_rate(player_name: String, id: int, stars: int) -> String:
 	if not accounts.has(player_name):
 		return "no_account"

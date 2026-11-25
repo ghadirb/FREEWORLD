@@ -78,6 +78,52 @@ static func clean_props(raw: Variant, a: Dictionary) -> Array:
 	return out
 
 
+## کد اشتراک میدان: «FWA1:» + Base64 یک JSON کوچک. اشیا نسبت به مرکز میدان ذخیره می‌شوند تا هر جا قابل ساخت باشد.
+static func export_code(a: Dictionary) -> String:
+	var center := Vector2(float(a["x"]), float(a["z"]))
+	var props: Array = []
+	for p in (a.get("props", []) as Array):
+		props.append([str(p[0]), snappedf(float(p[1]) - center.x, 0.1), snappedf(float(p[2]) - center.y, 0.1)])
+	var d := {"v": 1, "n": str(a["name"]), "k": clean_kind(a.get("kind", "coins")), "r": float(a["r"]), "c": int(a["coins"]),
+		"t": float(a["time"]), "x": int(a["reward"]), "w": int(a.get("win", 0)), "o": int(a.get("obs", 0)), "p": props}
+	return "FWA1:" + Marshalls.raw_to_base64(JSON.stringify(d).to_utf8_buffer())
+
+
+## رمزگشایی کد اشتراک (ورودی نامطمئن): فقط مقادیر پاک‌سازی‌شده برمی‌گردد. خروجی {ok, def} یا {ok: false, error: "arena_code"}.
+static func parse_code(code: String) -> Dictionary:
+	var bad := {"ok": false, "error": "arena_code"}
+	var txt := code.strip_edges()
+	if txt.length() > FWConst.ARENA_CODE_MAX or not txt.begins_with("FWA1:"):
+		return bad
+	var raw := Marshalls.base64_to_raw(txt.substr(5))
+	if raw.is_empty():
+		return bad
+	var parsed: Variant = JSON.parse_string(raw.get_string_from_utf8())
+	if not (parsed is Dictionary) or int(parsed.get("v", 0)) != 1:
+		return bad
+	var nm := clean_name(str(parsed.get("n", "")))
+	if nm.is_empty():
+		return bad
+	var props: Array = []
+	var praw: Variant = parsed.get("p", [])
+	if praw is Array:
+		for p in praw:
+			if props.size() >= FWConst.ARENA_PROPS_MAX:
+				break
+			if p is Array and p.size() == 3 and PROP_TYPES.has(str(p[0])) and (p[1] is float or p[1] is int) and (p[2] is float or p[2] is int):
+				var dx := float(p[1])
+				var dz := float(p[2])
+				if is_finite(dx) and is_finite(dz) and absf(dx) <= FWConst.ARENA_R_MAX and absf(dz) <= FWConst.ARENA_R_MAX:
+					props.append([str(p[0]), dx, dz])
+	for k in ["r", "t"]:
+		var v: Variant = parsed.get(k, 0)
+		if not ((v is float or v is int) and is_finite(float(v))):
+			return bad
+	var kd := clean_kind(parsed.get("k", "coins"))
+	return {"ok": true, "def": {"name": nm, "kind": kd, "r": float(parsed["r"]), "coins": int(parsed.get("c", FWConst.ARENA_COINS_MIN)),
+		"time": float(parsed["t"]), "reward": int(parsed.get("x", 0)), "win": int(parsed.get("w", 0)), "obs": int(parsed.get("o", 0)), "props": props}}
+
+
 static func clamp_count(kind: String, n: int) -> int:
 	var hi: int = FWConst.ARENA_PARKOUR_MAX if kind == "parkour" else FWConst.ARENA_COINS_MAX
 	return clampi(n, FWConst.ARENA_COINS_MIN, hi)
