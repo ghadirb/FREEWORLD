@@ -1665,30 +1665,30 @@ func arenas_public() -> Array:
 
 
 ## ساخت میدان در موقعیت بازیکن؛ هزینه ARENA_COST (در جهان خلاقانه رایگان).
-func arena_create(player_name: String, arena_name: String, pos: Vector2, radius: float, coins: int, time: float, reward: int) -> Dictionary:
+func arena_create(player_name: String, arena_name: String, pos: Vector2, radius: float, coins: int, time: float, reward: int, kind: String = "coins") -> Dictionary:
 	if not accounts.has(player_name):
 		return {"ok": false, "error": "no_account"}
-	var res: Dictionary = arenas.validate_new(world, seed_value, player_name, arena_name, pos, radius, coins, time, reward)
+	var res: Dictionary = arenas.validate_new(world, seed_value, player_name, arena_name, pos, radius, coins, time, reward, kind)
 	if not bool(res["ok"]):
 		return res
 	if not _pay(accounts[player_name], FWConst.ARENA_COST):
 		return {"ok": false, "error": "arena_no_money"}
 	var a: Dictionary = arenas.add(res["arena"])
-	_log(player_name, "arena_create", {"id": a["id"], "name": a["name"], "coins": a["coins"], "reward": a["reward"]})
+	_log(player_name, "arena_create", {"id": a["id"], "name": a["name"], "kind": a["kind"], "coins": a["coins"], "reward": a["reward"]})
 	return {"ok": true, "id": a["id"], "money": money_of(player_name)}
 
 
 ## ویرایش رایگان میدان توسط سازنده یا مدیر. دورهای در حال اجرای همان میدان لغو می‌شوند چون چیدمان سکه‌ها عوض می‌شود.
-func arena_edit(player_name: String, id: int, arena_name: String, radius: float, coins: int, time: float, reward: int) -> String:
+func arena_edit(player_name: String, id: int, arena_name: String, radius: float, coins: int, time: float, reward: int, kind: String = "coins") -> String:
 	if not accounts.has(player_name):
 		return "no_account"
-	var res: Dictionary = arenas.validate_edit(world, seed_value, player_name, FWConst.is_admin(role_of(player_name)), id, arena_name, radius, coins, time, reward)
+	var res: Dictionary = arenas.validate_edit(world, seed_value, player_name, FWConst.is_admin(role_of(player_name)), id, arena_name, radius, coins, time, reward, kind)
 	if not bool(res["ok"]):
 		return str(res["error"])
 	var a: Dictionary = res["arena"]
 	arenas.apply_edit(a)
 	minigame.arena_removed(id)
-	_log(player_name, "arena_edit", {"id": id, "name": a["name"], "coins": a["coins"], "reward": a["reward"]})
+	_log(player_name, "arena_edit", {"id": id, "name": a["name"], "kind": a["kind"], "coins": a["coins"], "reward": a["reward"]})
 	return ""
 
 

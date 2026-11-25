@@ -77,6 +77,8 @@ var _arena_name: LineEdit
 var _arena_spin: Dictionary = {}
 var _arena_rows: VBoxContainer
 var _arena_create_btn: Button
+var _arena_kind: String = "coins"   # coins | parkour (پروتکل ۳۶)
+var _arena_kind_btn: Button
 var _arena_edit_id: int = 0   # > 0: دکمهٔ اصلی «ذخیرهٔ تغییرات» همین میدان است
 var _mg_panel: PanelContainer
 var _mg_status: Label
@@ -1492,6 +1494,13 @@ func _build_arena_panel() -> void:
 	_arena_name.max_length = FWConst.ARENA_NAME_MAX
 	_arena_name.custom_minimum_size = Vector2(0, 56)
 	v.add_child(_arena_name)
+	_arena_kind_btn = UiTheme.button("", Vector2(0, 52))
+	_arena_kind_btn.pressed.connect(func():
+		Sfx.play(self, "click")
+		_arena_kind = "parkour" if _arena_kind == "coins" else "coins"
+		_arena_kind_refresh())
+	v.add_child(_arena_kind_btn)
+	_arena_kind_refresh()
 	_arena_spin_row(v, "arena_radius", FWConst.ARENA_R_MIN, FWConst.ARENA_R_MAX, 12)
 	_arena_spin_row(v, "arena_coins", FWConst.ARENA_COINS_MIN, FWConst.ARENA_COINS_MAX, 12)
 	_arena_spin_row(v, "arena_time", FWConst.ARENA_TIME_MIN, FWConst.ARENA_TIME_MAX, 45)
@@ -1506,10 +1515,10 @@ func _build_arena_panel() -> void:
 		Sfx.play(self, "click")
 		if _arena_edit_id > 0:
 			client.arena_edit(_arena_edit_id, _arena_name.text, float(_arena_spin["arena_radius"].value), int(_arena_spin["arena_coins"].value),
-				float(_arena_spin["arena_time"].value), int(_arena_spin["arena_reward"].value))
+				float(_arena_spin["arena_time"].value), int(_arena_spin["arena_reward"].value), _arena_kind)
 		else:
 			client.arena_create(_arena_name.text, float(_arena_spin["arena_radius"].value), int(_arena_spin["arena_coins"].value),
-				float(_arena_spin["arena_time"].value), int(_arena_spin["arena_reward"].value))
+				float(_arena_spin["arena_time"].value), int(_arena_spin["arena_reward"].value), _arena_kind)
 		_arena_set_edit(0, {}))
 	row.add_child(cb)
 	var close := UiTheme.button("✕", Vector2(64, 60))
@@ -1526,9 +1535,14 @@ func _build_arena_panel() -> void:
 
 
 ## حالت ویرایش: فرم را با مقدار میدان پر می‌کند و دکمهٔ اصلی را «ذخیرهٔ تغییرات» می‌کند؛ id صفر = حالت ساخت.
+func _arena_kind_refresh() -> void:
+	_arena_kind_btn.text = Loc.t("arena_kind_" + _arena_kind)
+
+
 func _arena_set_edit(id: int, a: Dictionary) -> void:
 	_arena_edit_id = id
 	if id > 0:
+		_arena_kind = str(a.get("kind", "coins"))
 		_arena_name.text = str(a["name"])
 		_arena_spin["arena_radius"].value = float(a["r"])
 		_arena_spin["arena_coins"].value = float(a["coins"])
@@ -1536,6 +1550,7 @@ func _arena_set_edit(id: int, a: Dictionary) -> void:
 		_arena_spin["arena_reward"].value = float(a["reward"])
 		_arena_create_btn.text = Loc.t("arena_save")
 	else:
+		_arena_kind = "coins"
 		_arena_name.text = ""
 		_arena_create_btn.text = Loc.fmt("arena_create", [Loc.digits(str(FWConst.ARENA_COST))])
 
@@ -1554,7 +1569,7 @@ func _fill_arena_list() -> void:
 		var mine: bool = str(a["owner"]) == client.my_name
 		var box := VBoxContainer.new()
 		_arena_rows.add_child(box)
-		box.add_child(_label(str(a["name"]), 22, Color("ffd24a")))
+		box.add_child(_label(("🏁 " if str(a.get("kind", "coins")) == "parkour" else "🪙 ") + str(a["name"]), 22, Color("ffd24a")))
 		var top: Array = a["top"]
 		var sub := "%s: %s  ·  %s" % [Loc.t("arena_owner"), str(a["owner"]),
 			Loc.fmt("arena_info", [Loc.digits(str(a["coins"])), Loc.digits(str(int(a["time"]))), Loc.digits(str(a["reward"]))])]

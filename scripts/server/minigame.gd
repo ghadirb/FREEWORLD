@@ -51,11 +51,17 @@ func start_arena(world, seed_value: int, player_name: String, arena: Dictionary)
 	if runs.has(player_name):
 		return {"ok": false, "error": "mg_running"}
 	_counter += 1
-	var coins := Arenas.make_coins(world, seed_value, player_name, _counter, arena)
-	if coins.size() < FWConst.ARENA_COINS_MIN:
+	var targets := Arenas.make_targets(world, seed_value, player_name, _counter, arena)
+	if targets.size() < FWConst.ARENA_COINS_MIN:
 		return {"ok": false, "error": "mg_no_space"}
-	runs[player_name] = {"t": float(arena["time"]), "score": 0, "coins": coins, "arena": int(arena["id"]),
-		"total": coins.size(), "owner": str(arena["owner"]), "per_coin": int(arena["reward"])}
+	var coins: Array = targets
+	var queue: Array = []
+	if Arenas.clean_kind(arena.get("kind", "coins")) == "parkour":
+		# پارکور: فقط ایستگاه بعدی دیده می‌شود؛ با رسیدن به آن، بعدی ظاهر می‌شود.
+		coins = [targets[0]]
+		queue = targets.slice(1)
+	runs[player_name] = {"t": float(arena["time"]), "score": 0, "coins": coins, "queue": queue, "arena": int(arena["id"]),
+		"total": targets.size(), "owner": str(arena["owner"]), "per_coin": int(arena["reward"])}
 	return {"ok": true}
 
 
@@ -89,6 +95,9 @@ func step(dt: float, positions: Dictionary, day: int) -> Array:
 			if pos.distance_to(coins[i]) <= FWConst.MINIGAME_PICK_RANGE:
 				coins.remove_at(i)
 				run["score"] = int(run["score"]) + 1
+				var queue: Array = run.get("queue", [])
+				if not queue.is_empty():
+					coins.append(queue.pop_front())
 				events.append({"name": player_name, "kind": "coin"})
 			i -= 1
 		if float(run["t"]) <= 0.0 or coins.is_empty():

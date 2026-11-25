@@ -4,6 +4,7 @@ extends SceneTree
 const FWConst = preload("res://scripts/core/const.gd")
 const WorldGen = preload("res://scripts/world/world_generator.gd")
 const Placement = preload("res://scripts/shared/placement.gd")
+const Arenas = preload("res://scripts/server/arenas.gd")
 const CityState = preload("res://scripts/server/city_state.gd")
 const Persistence = preload("res://scripts/server/persistence.gd")
 const WorldSlots = preload("res://scripts/client/world_slots.gd")
@@ -62,6 +63,7 @@ func _init() -> void:
 	test_minigame()
 	test_arenas()
 	test_arena_edit()
+	test_arena_parkour()
 	test_disasters()
 	test_race()
 	test_car_race()
@@ -3675,3 +3677,52 @@ func test_two_storey_house() -> void:
 				break
 			py = s2
 		check(reach, "%s: one can walk from the front door to the back wall inside" % id)
+
+
+func test_arena_parkour() -> void:
+	print("== Parkour arenas (checkpoints in order) ==")
+	var cs = CityState.new(4244)
+	_login(cs, "maker")
+	_login(cs, "runner")
+	cs.accounts["maker"]["money"] = 1000
+	cs.accounts["runner"]["money"] = 0
+	var at := _mg_land_pos(cs)
+	var res: Dictionary = cs.arena_create("maker", "Run", at, 14.0, 99, 90.0, 2, "parkour")
+	check(bool(res["ok"]), "a parkour arena can be built")
+	var id: int = int(res["id"])
+	var a: Dictionary = cs.arenas.items[id]
+	check(str(a["kind"]) == "parkour", "the arena remembers its kind")
+	check(int(a["coins"]) == FWConst.ARENA_PARKOUR_MAX, "checkpoint count is clamped for parkour")
+	check(Arenas.clean_kind("bogus") == "coins", "unknown kinds fall back to coin hunt")
+	var pts: Array = Arenas.make_checkpoints(cs.world, cs.seed_value, a)
+	check(pts.size() >= FWConst.ARENA_COINS_MIN, "checkpoints are placed on land")
+	check(pts == Arenas.make_checkpoints(cs.world, cs.seed_value, a), "checkpoint layout is deterministic")
+	var pub: Array = cs.arenas_public()
+	check(str(pub[0]["kind"]) == "parkour", "the public list carries the kind")
+	check(bool(cs.arena_play("runner", id, at)["ok"]), "a runner can start the parkour")
+	var st: Dictionary = cs.minigame.public_state("runner")
+	check(st["coins"].size() == 1, "only the next checkpoint is visible")
+	var first := Vector2(float(st["coins"][0][0]), float(st["coins"][0][1]))
+	var ev: Array = cs.minigame.step(0.1, {"runner": Vector2(-9999.0, -9999.0)}, 1)
+	check(ev.is_empty(), "standing far away reaches nothing")
+	var steps := 0
+	var guard := 0
+	while cs.minigame.runs.has("runner") and guard < 40:
+		guard += 1
+		var cur: Dictionary = cs.minigame.public_state("runner")
+		if not bool(cur["active"]):
+			break
+		var target := Vector2(float(cur["coins"][0][0]), float(cur["coins"][0][1]))
+		check(cur["coins"].size() == 1, "one checkpoint at a time")
+		cs.minigame.step(0.1, {"runner": target}, 1)
+		steps += 1
+	check(steps == pts.size(), "the runner reaches every checkpoint in order")
+	check(not cs.minigame.runs.has("runner"), "the run ends after the last checkpoint")
+	check(int(cs.minigame.arena_scores[id]["runner"]) == pts.size(), "the checkpoint count is the record")
+	check(first.distance_to(pts[0]) < 0.2, "the first checkpoint is the first of the layout")
+	var ed: String = cs.arena_edit("maker", id, "Run 2", 14.0, 8, 60.0, 1, "coins")
+	check(ed == "" and str(cs.arenas.items[id]["kind"]) == "coins", "the owner can switch the arena back to coin hunt")
+	var d: Dictionary = cs.arenas.to_dict()
+	var arenas2 = Arenas.new()
+	arenas2.load_dict(d)
+	check(str(arenas2.items[id]["kind"]) == "coins", "kind survives saving and loading")

@@ -18,6 +18,44 @@ static func clean_name(raw: String) -> String:
 	return out.substr(0, FWConst.ARENA_NAME_MAX).strip_edges()
 
 
+## نوع میدان: «coins» (سکه‌یاب) یا «parkour» (ایستگاه‌ها به ترتیب)؛ هر مقدار ناشناخته سکه‌یاب است.
+static func clean_kind(raw: Variant) -> String:
+	return "parkour" if str(raw) == "parkour" else "coins"
+
+
+static func clamp_count(kind: String, n: int) -> int:
+	var hi: int = FWConst.ARENA_PARKOUR_MAX if kind == "parkour" else FWConst.ARENA_COINS_MAX
+	return clampi(n, FWConst.ARENA_COINS_MIN, hi)
+
+
+## ایستگاه‌های پارکور: دور میدان به ترتیب زاویه، با فاصلهٔ متغیر از مرکز تا مسیر موج‌دار شود. قطعی از Seed و شناسه.
+static func make_checkpoints(world, seed_value: int, a: Dictionary) -> Array:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash("%d:parkour:%d:%d" % [seed_value, int(a.get("id", 0)), int(a["coins"])])
+	var center := Vector2(float(a["x"]), float(a["z"]))
+	var r: float = float(a["r"])
+	var n: int = int(a["coins"])
+	var out: Array = []
+	for i in n:
+		for attempt in 4:
+			var ang: float = TAU * (float(i) + rng.randf() * 0.4) / float(n)
+			var dist: float = lerpf(r * 0.45, r * 0.95, rng.randf())
+			var c := center + Vector2(cos(ang), sin(ang)) * dist
+			var h: float = world.height_at(c.x, c.y)
+			if h < 0.5 or h > FWConst.MINIGAME_MAX_HEIGHT:
+				continue
+			out.append(Vector2(snappedf(c.x, 0.1), snappedf(c.y, 0.1)))
+			break
+	return out
+
+
+## اهداف دور بر اساس نوع میدان: سکه‌های پخش‌شده یا ایستگاه‌های مرتب.
+static func make_targets(world, seed_value: int, player_name: String, counter: int, a: Dictionary) -> Array:
+	if clean_kind(a.get("kind", "coins")) == "parkour":
+		return make_checkpoints(world, seed_value, a)
+	return make_coins(world, seed_value, player_name, counter, a)
+
+
 ## چیدمان قطعی سکه‌ها درون دایرهٔ میدان، فقط روی خشکی کم‌ارتفاع.
 static func make_coins(world, seed_value: int, player_name: String, counter: int, a: Dictionary) -> Array:
 	var rng := RandomNumberGenerator.new()
@@ -41,7 +79,7 @@ static func make_coins(world, seed_value: int, player_name: String, counter: int
 
 ## ویرایش میدان موجود (مکان ثابت می‌ماند): فقط سازنده یا مدیر. فاصله با میدان‌های دیگر و جای سکه‌ها دوباره
 ## بررسی می‌شود. خروجی {ok, arena} (میدان جدید، هنوز اعمال نشده) یا {ok: false, error}.
-func validate_edit(world, seed_value: int, who: String, is_admin: bool, id: int, arena_name: String, radius: float, coins: int, time: float, reward: int) -> Dictionary:
+func validate_edit(world, seed_value: int, who: String, is_admin: bool, id: int, arena_name: String, radius: float, coins: int, time: float, reward: int, kind: String = "coins") -> Dictionary:
 	if not items.has(id):
 		return {"ok": false, "error": "arena_missing"}
 	var old: Dictionary = items[id]
@@ -52,10 +90,11 @@ func validate_edit(world, seed_value: int, who: String, is_admin: bool, id: int,
 		return {"ok": false, "error": "arena_name"}
 	if not (is_finite(radius) and is_finite(time)):
 		return {"ok": false, "error": "arena_bounds"}
+	var kd := clean_kind(kind)
 	var a := {
-		"id": id, "name": nm, "owner": old["owner"], "x": old["x"], "z": old["z"],
+		"id": id, "name": nm, "owner": old["owner"], "x": old["x"], "z": old["z"], "kind": kd,
 		"r": clampf(radius, FWConst.ARENA_R_MIN, FWConst.ARENA_R_MAX),
-		"coins": clampi(coins, FWConst.ARENA_COINS_MIN, FWConst.ARENA_COINS_MAX),
+		"coins": clamp_count(kd, coins),
 		"time": clampf(time, FWConst.ARENA_TIME_MIN, FWConst.ARENA_TIME_MAX),
 		"reward": clampi(reward, 0, FWConst.ARENA_REWARD_MAX),
 	}
@@ -66,7 +105,7 @@ func validate_edit(world, seed_value: int, who: String, is_admin: bool, id: int,
 		var o: Dictionary = items[oid]
 		if Vector2(float(o["x"]), float(o["z"])).distance_to(pos) < float(o["r"]) + float(a["r"]) + FWConst.ARENA_SPACING:
 			return {"ok": false, "error": "arena_close"}
-	if make_coins(world, seed_value, str(a["owner"]), 0, a).size() < mini(int(a["coins"]), FWConst.ARENA_COINS_MIN):
+	if make_targets(world, seed_value, str(a["owner"]), 0, a).size() < mini(int(a["coins"]), FWConst.ARENA_COINS_MIN):
 		return {"ok": false, "error": "arena_land"}
 	return {"ok": true, "arena": a}
 
@@ -76,7 +115,7 @@ func apply_edit(a: Dictionary) -> void:
 
 
 ## بررسی یک میدان جدید؛ خروجی {ok, arena} یا {ok: false, error}.
-func validate_new(world, seed_value: int, owner: String, arena_name: String, pos: Vector2, radius: float, coins: int, time: float, reward: int) -> Dictionary:
+func validate_new(world, seed_value: int, owner: String, arena_name: String, pos: Vector2, radius: float, coins: int, time: float, reward: int, kind: String = "coins") -> Dictionary:
 	var nm := clean_name(arena_name)
 	if nm.is_empty():
 		return {"ok": false, "error": "arena_name"}
@@ -88,10 +127,11 @@ func validate_new(world, seed_value: int, owner: String, arena_name: String, pos
 		return {"ok": false, "error": "arena_bounds"}
 	if items.size() >= FWConst.ARENA_MAX_TOTAL or count_of(owner) >= FWConst.ARENA_MAX_PER_PLAYER:
 		return {"ok": false, "error": "arena_limit"}
+	var kd := clean_kind(kind)
 	var a := {
-		"id": 0, "name": nm, "owner": owner, "x": snappedf(pos.x, 0.1), "z": snappedf(pos.y, 0.1),
+		"id": 0, "name": nm, "owner": owner, "x": snappedf(pos.x, 0.1), "z": snappedf(pos.y, 0.1), "kind": kd,
 		"r": clampf(radius, FWConst.ARENA_R_MIN, FWConst.ARENA_R_MAX),
-		"coins": clampi(coins, FWConst.ARENA_COINS_MIN, FWConst.ARENA_COINS_MAX),
+		"coins": clamp_count(kd, coins),
 		"time": clampf(time, FWConst.ARENA_TIME_MIN, FWConst.ARENA_TIME_MAX),
 		"reward": clampi(reward, 0, FWConst.ARENA_REWARD_MAX),
 	}
@@ -102,7 +142,7 @@ func validate_new(world, seed_value: int, owner: String, arena_name: String, pos
 			return {"ok": false, "error": "arena_close"}
 	if world.height_at(pos.x, pos.y) < 0.5:
 		return {"ok": false, "error": "arena_land"}
-	if make_coins(world, seed_value, owner, 0, a).size() < mini(int(a["coins"]), FWConst.ARENA_COINS_MIN):
+	if make_targets(world, seed_value, owner, 0, a).size() < mini(int(a["coins"]), FWConst.ARENA_COINS_MIN):
 		return {"ok": false, "error": "arena_land"}
 	return {"ok": true, "arena": a}
 
@@ -148,7 +188,8 @@ func list_public(arena_scores: Dictionary) -> Array:
 					top_score = int(sc[k])
 					top_name = str(k)
 		rows.append({"id": int(id), "name": a["name"], "owner": a["owner"], "x": a["x"], "z": a["z"], "r": a["r"],
-			"coins": a["coins"], "time": a["time"], "reward": a["reward"], "top": [top_name, top_score]})
+			"coins": a["coins"], "time": a["time"], "reward": a["reward"], "kind": clean_kind(a.get("kind", "coins")),
+			"top": [top_name, top_score]})
 	return rows
 
 
@@ -171,11 +212,13 @@ func load_dict(d: Variant) -> void:
 			var nm := clean_name(str(v.get("name", "")))
 			if id <= 0 or nm.is_empty():
 				continue
+			var kd := clean_kind(v.get("kind", "coins"))
 			items[id] = {
+				"kind": kd,
 				"id": id, "name": nm, "owner": str(v.get("owner", "")).substr(0, 32),
 				"x": float(v.get("x", 0.0)), "z": float(v.get("z", 0.0)),
 				"r": clampf(float(v.get("r", FWConst.ARENA_R_MIN)), FWConst.ARENA_R_MIN, FWConst.ARENA_R_MAX),
-				"coins": clampi(int(v.get("coins", FWConst.ARENA_COINS_MIN)), FWConst.ARENA_COINS_MIN, FWConst.ARENA_COINS_MAX),
+				"coins": clamp_count(kd, int(v.get("coins", FWConst.ARENA_COINS_MIN))),
 				"time": clampf(float(v.get("time", FWConst.ARENA_TIME_MIN)), FWConst.ARENA_TIME_MIN, FWConst.ARENA_TIME_MAX),
 				"reward": clampi(int(v.get("reward", 0)), 0, FWConst.ARENA_REWARD_MAX),
 			}
