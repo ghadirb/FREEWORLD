@@ -85,6 +85,7 @@ func _init() -> void:
 	test_villages()
 	test_scenarios()
 	test_gallery_and_rooms()
+	test_two_storey_house()
 	test_climates()
 	test_story_book()
 	test_blueprint_packs()
@@ -3626,3 +3627,51 @@ func test_gallery_and_rooms() -> void:
 	check(cs.blocks.has(Vector3i(cx - 5, g.call(cx - 5, cz - 3), cz - 3)), "the manor bedroom has a bed")
 	check(cs.blocks.has(Vector3i(cx + 3, g.call(cx + 3, cz - 3) + 1, cz - 3)), "the manor library has a tall bookshelf")
 	check(cs.blocks.size() < FWConst.MAX_BLOCKS_TOTAL / 2, "a ready-made world stays far below the block cap (%d)" % cs.blocks.size())
+
+
+func test_two_storey_house() -> void:
+	print("[two-storey house]")
+	var worlds := {"island_castaway": Vector2i(-40, 0), "medieval_fort": Vector2i(-40, 0), "merchant_city": Vector2i(-40, 0), "frozen_north": Vector2i(-40, 0), "desert_caravan": Vector2i(-32, -24)}
+	for id in worlds:
+		var d: Dictionary = Scenarios.def(id)
+		var cs = CityState.new(int(d["seed"]))
+		ScenarioApply.apply(cs, id)
+		var cx: int = Scenarios.CENTER + worlds[id].x
+		var cz: int = Scenarios.CENTER + worlds[id].y
+		var sx := -5
+		var z0 := -3
+		var g := 0   # ترازِ کف = بلندترین زمین زیر عمارت (ScenarioApply زیرسازی را پر می‌کند)
+		for gx in range(cx - 8, cx + 9):
+			for gz in range(cz - 6, cz + 7):
+				g = maxi(g, ScenarioApply._ground_level(cs, gx, gz))
+		check(cs.blocks.has(Vector3i(cx + sx + 3, g + 3, cz + z0)), "%s: the top stair sits in the opening of the floor slab" % id)
+		check(not cs.blocks.has(Vector3i(cx + sx + 2, g + 3, cz + z0)), "%s: no ceiling slab covers the staircase" % id)
+		# از جلوی پله با گام‌های کوچک تا طبقهٔ بالا می‌رویم؛ هر گام باید با قاعدهٔ واقعی حرکت (STEP_UP) مجاز باشد.
+		var x := float(cx + sx - 1) + 0.5
+		var z := float(cz + z0) + 0.5
+		var y: float = cs.ground_height(x, z)
+		var ok := true
+		while x < float(cx + sx + 4) + 0.5:
+			x += 0.1
+			var sfc: float = cs.surface_at(x, z, y)
+			if is_nan(sfc) or sfc - y > FWConst.STEP_UP + 0.001:
+				ok = false
+				break
+			y = sfc
+		check(ok, "%s: a player can walk up the stairs step by step" % id)
+		check(y >= float(g) + 3.99, "%s: the stairs end on the upper floor (y=%.2f)" % [id, y])
+		check(cs.blocks.has(Vector3i(cx + sx + 1, g + 4, cz + z0 + 1)), "%s: the stairwell has a railing" % id)
+		check(cs.blocks.has(Vector3i(cx + 4, g + 7, cz)), "%s: the upper floor has its own roof" % id)
+		# درِ جلو تا پای پله باز است: از خانهٔ پشت در تا خانهٔ جلوی پله با گام‌های ۰٫۱
+		var px := float(cx) + 0.5
+		var pz := float(cz + 4) + 0.5
+		var py: float = cs.ground_height(px, pz)
+		var reach := true
+		while pz > float(cz + z0) + 0.5:
+			pz -= 0.1
+			var s2: float = cs.surface_at(px, pz, py)
+			if is_nan(s2) or s2 - py > FWConst.STEP_UP + 0.001:
+				reach = false
+				break
+			py = s2
+		check(reach, "%s: one can walk from the front door to the back wall inside" % id)

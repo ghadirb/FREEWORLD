@@ -46,12 +46,31 @@ static func _ground_level(cs, x: int, z: int) -> int:
 	return 0 if h < 0.2 else maxi(0, int(floor(h)))
 
 
+## ستون‌ها را می‌گذارد. ستونی که گروه تراز دارد (c[6..9] = مرکز و نیم‌ابعاد) از بلندترین زمین همان مستطیل شروع می‌شود
+## و زیر آن تا زمین با «dirt» پر می‌شود تا کف و پله‌ها هم‌تراز باشند.
 static func _place_columns(cs, cols: Array) -> int:
 	var placed := 0
+	var group_base: Dictionary = {}
 	for c in cols:
 		var x := int(c[0])
 		var z := int(c[1])
 		var base := _ground_level(cs, x, z)
+		if c.size() > 9:
+			var key := Vector2i(int(c[6]), int(c[7]))
+			if not group_base.has(key):
+				var top := 0
+				for gx in range(key.x - int(c[8]), key.x + int(c[8]) + 1):
+					for gz in range(key.y - int(c[9]), key.y + int(c[9]) + 1):
+						top = maxi(top, _ground_level(cs, gx, gz))
+				group_base[key] = top
+				for gx in range(key.x - int(c[8]), key.x + int(c[8]) + 1):
+					for gz in range(key.y - int(c[9]), key.y + int(c[9]) + 1):
+						var lv := _ground_level(cs, gx, gz)
+						for fy in range(lv, top):
+							if cs.blocks.size() < FWConst.MAX_BLOCKS_TOTAL and cs.check_block(FWConst.ROLE_WORLD_ADMIN, gx, fy, gz, "dirt") == "":
+								cs._add_block(Vector3i(gx, fy, gz), "dirt", 0, OWNER)
+								placed += 1
+			base = int(group_base[key])
 		for i in range(int(c[3])):
 			if cs.blocks.size() >= FWConst.MAX_BLOCKS_TOTAL:
 				return placed
@@ -59,7 +78,7 @@ static func _place_columns(cs, cols: Array) -> int:
 			var type := str(c[4])
 			if cs.check_block(FWConst.ROLE_WORLD_ADMIN, x, y, z, type) != "":
 				continue
-			cs._add_block(Vector3i(x, y, z), type, 0, OWNER)
+			cs._add_block(Vector3i(x, y, z), type, int(c[5]) if c.size() > 5 else 0, OWNER)
 			placed += 1
 	return placed
 

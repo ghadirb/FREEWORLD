@@ -36,21 +36,21 @@ const DEFS := {
 		"seed": 248, "premium": true, "creative": false,
 		"money": 50, "items": {"wood": 30, "stone": 6},
 		"hour": 6.0, "weather": "clear", "time_speed": 1.0, "forest_growth": true, "npcs": 2,
-		"structures": ["campfire", "hut", "stone_circle", "lighthouse", "fisher_hut", "well", "obelisk", "stable"],
+		"structures": ["campfire", "hut", "stone_circle", "lighthouse", "fisher_hut", "estate_wood@-40,0", "well", "obelisk", "stable"],
 		"trees": 12, "animals": {"rabbit": 6},
 	},
 	"medieval_fort": {
 		"seed": 108, "premium": true, "creative": false,
 		"money": 800, "items": {"stone": 160, "wood": 60, "brick": 20, "iron": 8, "glass": 6},
 		"hour": 17.0, "weather": "fog", "time_speed": 1.0, "forest_growth": false, "npcs": 4,
-		"structures": ["ruined_fort", "watch_tower", "cave_dome", "stone_keep", "well", "obelisk", "stable", "inn"],
+		"structures": ["ruined_fort", "watch_tower", "cave_dome", "stone_keep", "estate_stone@-40,0", "well", "obelisk", "stable", "inn"],
 		"trees": 6, "animals": {"deer": 6},
 	},
 	"merchant_city": {
 		"seed": 43, "premium": true, "creative": false,
 		"money": 5000, "items": {"wood": 60, "stone": 60, "brick": 30, "glass": 12, "clay": 20},
 		"hour": 8.0, "weather": "clear", "time_speed": 1.0, "forest_growth": false, "npcs": 6,
-		"structures": ["market_street", "lamp_street", "fountain_plaza", "warehouse", "manor", "inn", "townhouses", "guild_hall", "well", "stable"],
+		"structures": ["market_street", "lamp_street", "fountain_plaza", "warehouse", "manor", "inn", "townhouses", "guild_hall", "estate_stone@-40,0", "well", "stable"],
 		"trees": 6, "animals": {"sheep": 6},
 	},
 	# اقلیم‌های تازه: فقط ظاهر زمین و منابع عوض می‌شود (برف و کاج / شن و نخل)؛ بقیهٔ قوانین همان است.
@@ -58,14 +58,14 @@ const DEFS := {
 		"seed": 297, "premium": true, "creative": false, "climate": "winter",
 		"money": 400, "items": {"wood": 80, "stone": 30, "iron": 6, "brick": 6, "glass": 4},
 		"hour": 15.0, "weather": "fog", "time_speed": 1.0, "forest_growth": false, "npcs": 4,
-		"structures": ["lodge", "campfire", "watch_tower", "igloo", "hall_rooms", "ice_cabins", "well", "obelisk", "stable"],
+		"structures": ["lodge", "campfire", "watch_tower", "igloo", "hall_rooms", "ice_cabins", "estate_wood@-40,0", "well", "obelisk", "stable"],
 		"trees": 14, "animals": {"deer": 8, "rabbit": 6},
 	},
 	"desert_caravan": {
 		"seed": 326, "premium": true, "creative": false, "climate": "desert",
 		"money": 900, "items": {"clay": 30, "stone": 40, "wood": 30, "glass": 6, "brick": 12},
 		"hour": 11.0, "weather": "clear", "time_speed": 1.0, "forest_growth": false, "npcs": 5,
-		"structures": ["oasis_camp", "pyramid", "market_street", "caravanserai", "cave_dome_west", "adobe_quarter", "well", "obelisk", "stable", "inn"],
+		"structures": ["oasis_camp", "pyramid", "market_street", "caravanserai", "cave_dome_west", "adobe_quarter", "estate_brick@-32,-24", "well", "obelisk", "stable", "inn"],
 		"trees": 10, "animals": {"sheep": 6, "rabbit": 8},
 	},
 }
@@ -129,23 +129,24 @@ static func _ring(out: Array, cx: int, cz: int, r: int, y_off: int, n: int, type
 
 
 ## خانهٔ ساده: دیوار، در رو به +z، پنجره در دیوار پشتی و دو طرف؛ سقف ردیف‌به‌ردیف (هر بلوک به همسایه‌اش تکیه می‌کند).
-static func _house(out: Array, cx: int, cz: int, hw: int, hd: int, wall_h: int, wall: String) -> void:
+static func _house(out: Array, cx: int, cz: int, hw: int, hd: int, wall_h: int, wall: String, y0: int = 0, holes: Array = []) -> void:
 	for dx in range(-hw, hw + 1):
 		for dz in range(-hd, hd + 1):
 			if absi(dx) == hw or absi(dz) == hd:
-				if dx == 0 and dz == hd:
-					_col(out, cx + dx, cz + dz, 0, 1, "door")
-					_col(out, cx + dx, cz + dz, 1, 1, "door")
+				if dx == 0 and dz == hd and y0 == 0:
+					_col(out, cx + dx, cz + dz, y0, 1, "door")
+					_col(out, cx + dx, cz + dz, y0 + 1, 1, "door")
 					if wall_h > 2:
-						_col(out, cx + dx, cz + dz, 2, wall_h - 2, wall)
-				elif (dz == -hd and absi(dx) % 2 == 0 and absi(dx) < hw) or (absi(dx) == hw and dz == 0):
-					_col(out, cx + dx, cz + dz, 0, 1, wall)
-					_col(out, cx + dx, cz + dz, 1, 1, "window")
+						_col(out, cx + dx, cz + dz, y0 + 2, wall_h - 2, wall)
+				elif (dz == -hd and absi(dx) % 2 == 0 and absi(dx) < hw) or (absi(dx) == hw and dz == 0) or (y0 > 0 and dz == hd and dx == 0):
+					_col(out, cx + dx, cz + dz, y0, 1, wall)
+					_col(out, cx + dx, cz + dz, y0 + 1, 1, "window")
 					if wall_h > 2:
-						_col(out, cx + dx, cz + dz, 2, wall_h - 2, wall)
+						_col(out, cx + dx, cz + dz, y0 + 2, wall_h - 2, wall)
 				else:
-					_col(out, cx + dx, cz + dz, 0, wall_h, wall)
-			_col(out, cx + dx, cz + dz, wall_h, 1, "roof")
+					_col(out, cx + dx, cz + dz, y0, wall_h, wall)
+			if not holes.has(Vector2i(dx, dz)):
+				_col(out, cx + dx, cz + dz, y0 + wall_h, 1, "roof")
 
 
 ## مبلمان ساده داخل خانه‌ای که با _house ساخته شده: تخت دوبلوکی، چراغ، میز و صندلی؛ خانهٔ مقابل در (ستون وسط رو به +z) همیشه آزاد می‌ماند.
@@ -205,21 +206,68 @@ static func _room_house(out: Array, cx: int, cz: int, hw: int, hd: int, wall_h: 
 			if dz == 0:
 				continue   # درگاه میان دو اتاق
 			_col(out, cx + int(px), cz + dz, 0, wall_h, wall)
-	var rows := 2 if hd >= 3 else 1
 	var edges: Array = [-hw] + splits + [hw]
 	for i in range(rooms.size()):
 		var x0: int = int(edges[i]) + 1
-		var w: int = int(edges[i + 1]) - x0
-		var z0 := -hd + 1
-		for it in ROOM_ITEMS.get(str(rooms[i]), []):
-			if int(it[0]) >= w or int(it[1]) >= rows:
-				continue
-			_col(out, cx + x0 + int(it[0]), cz + z0 + int(it[1]), 0, int(it[2]), str(it[3]))
+		_furnish(out, cx, cz, x0, int(edges[i + 1]) - x0, -hd + 1, 2 if hd >= 3 else 1, str(rooms[i]), 0)
+
+
+## مبلمان یک اتاق: x0 ستون چپ (نسبت به cx)، w عرض، z0 ردیف پشتی (نسبت به cz)، y0 تراز کف.
+static func _furnish(out: Array, cx: int, cz: int, x0: int, w: int, z0: int, rows: int, kind: String, y0: int) -> void:
+	for it in ROOM_ITEMS.get(kind, []):
+		if int(it[0]) >= w or int(it[1]) >= rows:
+			continue
+		_col(out, cx + x0 + int(it[0]), cz + z0 + int(it[1]), y0, int(it[2]), str(it[3]))
+
+
+## خانهٔ دوطبقه با راه‌پله: اتاق چپ پله‌دار (چهار پلهٔ ۱‌بلوکی روی ردیف پشتی، رو به +x)، اتاق راست با مبلمان؛
+## سقف طبقهٔ همکف (دال) روی پله باز است، کنار چاه‌پله نرده می‌خورد، طبقهٔ بالا یک سردرگاه چراغ‌دار و اتاق خواب دارد.
+## hw باید ≥ 7 باشد (۶ خانه برای رسیدن/پله/خروج) و split ≥ 0 و ≠ 0 نیست تا درِ جلو آزاد بماند (۱ پیشنهادی).
+static func _stair_house(out: Array, cx: int, cz: int, hw: int, hd: int, wall: String, split: int, down_room: String, up_room: String) -> void:
+	var start := out.size()
+	var sx := -hw + 2          # ستون نخستین پله (خانهٔ -hw+1 جلوی پله برای رسیدن است)
+	var z0 := -hd + 1
+	var holes: Array = []
+	for i in range(4):
+		holes.append(Vector2i(sx + i, z0))
+	_house(out, cx, cz, hw, hd, 3, wall, 0, holes)                 # همکف + دال سقف (روی پله باز)
+	for dz in range(-hd + 1, hd):
+		if dz != 0:
+			_col(out, cx + split, cz + dz, 0, 3, wall)             # دیوار جداکنندهٔ همکف (درگاه در dz=0)
+	for i in range(4):
+		if i > 0:
+			_col(out, cx + sx + i, cz + z0, 0, i, "wood")
+		out.append([cx + sx + i, cz + z0, i, 1, "stairs", 16])     # facing=1: بالا رفتن به سمت +x
+	_furnish(out, cx, cz, split + 1, hw - 1 - split, z0, 2 if hd >= 3 else 1, down_room, 0)
+	_house(out, cx, cz, hw, hd, 3, wall, 4)                        # طبقهٔ بالا + سقف
+	for dz in range(-hd + 1, hd):
+		if dz != 0:
+			_col(out, cx + split, cz + dz, 4, 3, wall)
+	for i in range(4):
+		_col(out, cx + sx + i, cz + z0 + 1, 4, 1, "fence")        # نردهٔ لبهٔ چاه‌پله
+	_col(out, cx + sx - 1, cz + z0, 4, 1, "fence")
+	_col(out, cx + sx + 5, cz + z0, 4, 1, "lamp")                  # چراغ سردرگاه (خانهٔ خروج sx+4 آزاد می‌ماند)
+	_furnish(out, cx, cz, split + 1, hw - 1 - split, z0, 2 if hd >= 3 else 1, up_room, 4)
+	for dx in [-2, 2]:
+		_col(out, cx + dx, cz + hd + 1, 0, 3, "wood")              # ایوان
+		_col(out, cx + dx, cz + hd + 1, 3, 1, "lamp")
+	# گروه تراز: همهٔ ستون‌ها از یک تراز می‌آیند و زیرسازی ناهمواری زمین را پر می‌کند (ScenarioApply)
+	for i in range(start, out.size()):
+		if out[i].size() < 6:
+			out[i].append(0)
+		out[i].append_array([cx, cz, hw + 1, hd + 2])
 
 
 ## ستون‌های یک سازه. rng برای سازه‌های ویرانه‌ای (شکستگی) از Seed جهان می‌آید تا قطعی بماند.
 static func structure(kind: String, rng: RandomNumberGenerator) -> Array:
 	var out: Array = []
+	if kind.begins_with("estate_"):
+		# عمارت دوطبقه با راه‌پله: «estate_<جنس>@dx,dz» (جای هر جهان روی زمین تقریباً تخت انتخاب شده؛ زیرسازی خودکار پر می‌شود)
+		var parts := kind.split("@")
+		var at := (parts[1] if parts.size() > 1 else "-40,0").split(",")
+		var wall_t: String = str(parts[0]).trim_prefix("estate_")
+		_stair_house(out, CENTER + int(at[0]), CENTER + int(at[1]), 7, 4, wall_t, 1, "hall", "bedroom")
+		return out
 	match kind:
 		"farm_fence":
 			# زمین کشاورزی حصارکشی‌شده با دروازه، سمت غرب میدان
