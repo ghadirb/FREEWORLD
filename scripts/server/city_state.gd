@@ -13,6 +13,7 @@ const Blueprints = preload("res://scripts/server/blueprints.gd")
 const Arenas = preload("res://scripts/server/arenas.gd")
 const Civ = preload("res://scripts/server/civ.gd")
 const Wild = preload("res://scripts/server/wild.gd")
+const Cave = preload("res://scripts/server/cave.gd")
 const Mine = preload("res://scripts/shared/mine.gd")
 const RailNetwork = preload("res://scripts/shared/rail_network.gd")
 const Scenarios = preload("res://scripts/shared/scenarios.gd")
@@ -69,6 +70,7 @@ var race = Race.new()
 var blueprints = Blueprints.new()
 var arenas = Arenas.new()
 var civ = Civ.new()   # تمدن‌ها (پروتکل ۴۵)
+var caves = Cave.new()  # سیاه‌چال معدن‌ها (ذخیره نمی‌شود)
 var wild = Wild.new() # دشمنان وحشی (پروتکل ۴۷؛ ذخیره نمی‌شود)
 var _hurt_t: Dictionary = {}   # نام → ثانیه از آخرین آسیب (برای بهبود سلامت)
 ## ساخت بلوکی: Vector3i -> [نوع, رنگ, مالک]. block_cells شمارندهٔ بلوک در هر خانهٔ ۲×۲ شبکهٔ ساختمان است.
@@ -1125,7 +1127,7 @@ func eat(player_name: String, food: String) -> Dictionary:
 
 ## یک گام دشمنان وحشی. exposed = {نام: Vector2} بازیکنانی که بیرون‌اند و درگیر بازی‌ساز نیستند.
 ## خروجی: {"send": bool، "vitals": [نام‌ها]، "died": [نام‌ها]، "kills": [...]، "inv": [نام‌ها]، "money": [نام‌ها]}
-func wild_step(dt: float, exposed: Dictionary) -> Dictionary:
+func wild_step(dt: float, exposed: Dictionary, in_mine: Dictionary = {}) -> Dictionary:
 	var players: Array = []
 	var gear_cache := {}
 	for name in exposed:
@@ -1136,7 +1138,25 @@ func wild_step(dt: float, exposed: Dictionary) -> Dictionary:
 		players.append({"name": name, "pos": exposed[name], "dmg": int(FWConst.GEAR_WEAPON_DAMAGE[int(g["weapon"])]), "armor": float(FWConst.GEAR_ARMOR_REDUCE[int(g["armor"])])})
 	var sp := spawn_position()
 	var res: Dictionary = wild.step(dt, players, Wild.is_night(world_time), Callable(self, "_wild_land"), Vector2(sp.x, sp.z), not creative)
-	var out := {"send": bool(res["send"]), "vitals": [], "died": [], "kills": res["kills"], "inv": [], "money": []}
+	var out := {"send": bool(res["send"]), "vitals": [], "died": [], "kills": res["kills"], "inv": [], "money": [], "cave_send": []}
+	# سیاه‌چال معدن‌ها: in_mine = {نام: {"mine": شناسه، "pos": Vector2 محلی}}؛ در جهان خلاقانه دشمنی نیست.
+	var groups := {}
+	if not creative:
+		for name in in_mine:
+			if not accounts.has(name) or str(in_mine[name]["mine"]).begins_with("h"):
+				continue
+			var g2 := gear_of(accounts[name])
+			if not groups.has(in_mine[name]["mine"]):
+				groups[in_mine[name]["mine"]] = []
+			groups[in_mine[name]["mine"]].append({"name": name, "pos": in_mine[name]["pos"], "dmg": int(FWConst.GEAR_WEAPON_DAMAGE[int(g2["weapon"])]), "armor": float(FWConst.GEAR_ARMOR_REDUCE[int(g2["armor"])])})
+	caves.drop_empty(groups.keys())
+	caves.tick(dt)
+	for mid in groups:
+		var cres: Dictionary = caves.step(dt, str(mid), mine_layout(str(mid)), groups[mid])
+		res["hurt"].append_array(cres["hurt"])
+		out["kills"].append_array(cres["kills"])
+		if bool(cres["send"]):
+			out["cave_send"].append(str(mid))
 	for name in _hurt_t.keys():
 		_hurt_t[name] = float(_hurt_t[name]) + dt
 	for h in res["hurt"]:
@@ -1166,7 +1186,11 @@ func wild_step(dt: float, exposed: Dictionary) -> Dictionary:
 			if not out["inv"].has(kn):
 				out["inv"].append(kn)
 	# بهبود سلامت پس از چند ثانیه بدون آسیب
-	for name in exposed:
+	var heal_names: Array = exposed.keys()
+	for gm in groups.values():
+		for gp in gm:
+			heal_names.append(gp["name"])
+	for name in heal_names:
 		if not accounts.has(name):
 			continue
 		var a2: Dictionary = accounts[name]

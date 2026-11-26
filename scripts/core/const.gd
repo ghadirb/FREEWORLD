@@ -509,8 +509,16 @@ static func meta_valid(m: int) -> bool:
 ## در جهان خلاقانه، میدان مرکزی، داخل ساختمان/معدن و حین بازی‌ساز دشمنی نیست.
 const WILD_KINDS := {
 	"wolf": {"hp": 3, "speed": 3.6, "dmg": 6.0, "cd": 1.2, "reach": 1.4, "money": 6, "drop": "", "drop_chance": 0.0},
+	"skeleton": {"hp": 4, "speed": 2.8, "dmg": 8.0, "cd": 1.4, "reach": 1.4, "money": 12, "drop": "coal", "drop_chance": 0.3},
+	"warden": {"hp": 14, "speed": 2.3, "dmg": 14.0, "cd": 1.8, "reach": 1.8, "money": 120, "drop": "gold", "drop_chance": 1.0},
 	"ghoul": {"hp": 6, "speed": 2.3, "dmg": 11.0, "cd": 1.6, "reach": 1.5, "money": 18, "drop": "iron", "drop_chance": 0.3},
 }
+# سیاه‌چال‌های معدن: نگهبانان همیشگی (بی‌ارتباط با شب و روز)، نگهبان گنج‌ها و یک «نگهبان بزرگ» در عمیق‌ترین نقطه.
+const CAVE_MOBS := 6                 # اسکلت‌های پراکنده (علاوه بر نگهبان صندوق‌ها و نگهبان بزرگ)
+const CAVE_MIN_DEPTH := 4            # حداقل فاصلهٔ مسیر از ورودی برای زایش (ورودی امن است)
+const CAVE_AGGRO_TILES := 7          # دشمن فقط تا این‌قدر کاشی (مسیر واقعی) بازیکن را دنبال می‌کند
+const CAVE_RESPAWN := 600.0          # ثانیه تا بازگشت دشمن کشته‌شده
+const CAVE_ID_OFFSET := 100000       # شناسهٔ دشمن غار تا با دشمنان بیرون قاطی نشود
 const WILD_NIGHT_START := 20.0       # ساعت شروع شب
 const WILD_NIGHT_END := 5.0          # ساعت پایان شب
 const WILD_PER_PLAYER := 2           # حداکثر دشمن نزدیک هر بازیکن

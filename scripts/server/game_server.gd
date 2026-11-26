@@ -732,12 +732,24 @@ func _wild_step(dt: float) -> void:
 			continue
 		var pos: Vector3 = p["pos"]
 		exposed[p["name"]] = Vector2(pos.x, pos.z)
-	var res: Dictionary = cs.wild_step(dt, exposed)
+	var in_mine: Dictionary = {}
+	for pid2 in _auth_peers():
+		var q: Dictionary = peers[pid2]
+		if str(q.get("mine", "")) == "" or cs.minigame.is_running(q["name"]) or cs.race.is_running(q["name"]):
+			continue
+		var mp: Vector3 = q["mpos"]
+		in_mine[q["name"]] = {"mine": str(q["mine"]), "pos": Vector2(mp.x, mp.z)}
+	var res: Dictionary = cs.wild_step(dt, exposed, in_mine)
 	for n in res["died"]:
 		if by_name.has(n):
 			var dpid: int = by_name[n]
 			var acc: Dictionary = cs.accounts[n]
 			var tp := Vector3(float(acc["pos"][0]), float(acc["pos"][1]), float(acc["pos"][2]))
+			if str(peers[dpid].get("mine", "")) != "":   # مرگ در معدن: بیرون برو، سپس به میدان شهر
+				peers[dpid]["mine"] = ""
+				peers[dpid]["mpos"] = Vector3.ZERO
+				_send(dpid, "s2c_mine", "", PackedInt32Array())
+				_send(dpid, "s2c_wild", cs.wild.public())
 			peers[dpid]["pos"] = tp
 			peers[dpid]["last_move"] = Time.get_ticks_msec()
 			_send(dpid, "s2c_teleport", tp.x, tp.z)
@@ -754,7 +766,15 @@ func _wild_step(dt: float) -> void:
 	if not res["kills"].is_empty() or not res["died"].is_empty():
 		_dirty = true
 	if bool(res["send"]):
-		_broadcast("s2c_wild", cs.wild.public())
+		var wl: Array = cs.wild.public()
+		for pid3 in _auth_peers():
+			if str(peers[pid3].get("mine", "")) == "":
+				_send(pid3, "s2c_wild", wl)
+	for mid in res["cave_send"]:
+		var cl: Array = cs.caves.public(str(mid))
+		for pid4 in _auth_peers():
+			if str(peers[pid4].get("mine", "")) == str(mid):
+				_send(pid4, "s2c_wild", cl)
 
 
 func _work_step(dt: float) -> void:
@@ -1271,6 +1291,7 @@ func on_mine_enter(pid: int, mine_id: String) -> void:
 	# اگر قطع شود یا سرور ببندد، بازیکن جلوی ورودی معدن (روی زمین بیرون) برمی‌گردد.
 	p["pos"] = Vector3(float(e["ex"]), cs.ground_height(float(e["ex"]), float(e["ez"])), float(e["ez"]))
 	_send(pid, "s2c_mine", mine_id, cs.mine_depleted_list(mine_id))
+	_send(pid, "s2c_wild", cs.caves.public(mine_id))
 
 
 func on_mine_leave(pid: int) -> void:
@@ -1283,6 +1304,7 @@ func on_mine_leave(pid: int) -> void:
 	p["mine"] = ""
 	p["mpos"] = Vector3.ZERO
 	_send(pid, "s2c_mine", "", PackedInt32Array())
+	_send(pid, "s2c_wild", cs.wild.public())
 	var pos: Vector3 = p["pos"]
 	_send(pid, "s2c_teleport", pos.x, pos.z)
 

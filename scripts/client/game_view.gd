@@ -1882,6 +1882,15 @@ func _sync_wild() -> void:
 		gm.add_box(Vector3(0, 1.0, 0), Vector3(1.0, 1.6, 0.7), Color("3f6b3a"))
 		gm.add_box(Vector3(0, 2.0, 0), Vector3(0.65, 0.65, 0.65), Color("2c4d29"))
 		_wild_meshes["ghoul"] = gm.build()
+		var sk := MeshBuilder.new()   # اسکلت: قامت باریک و استخوانی
+		sk.add_box(Vector3(0, 0.9, 0), Vector3(0.45, 1.1, 0.3), Color("d8d4c4"))
+		sk.add_box(Vector3(0, 1.7, 0), Vector3(0.45, 0.45, 0.45), Color("ece8da"))
+		_wild_meshes["skeleton"] = sk.build()
+		var wd := MeshBuilder.new()   # نگهبان بزرگ: غول سنگی با چشم سرخ
+		wd.add_box(Vector3(0, 1.4, 0), Vector3(1.6, 2.2, 1.0), Color("4a4f5c"))
+		wd.add_box(Vector3(0, 2.9, 0), Vector3(1.0, 0.9, 0.9), Color("353944"))
+		wd.add_box(Vector3(0, 2.95, 0.46), Vector3(0.7, 0.14, 0.05), Color("ff3b30"))
+		_wild_meshes["warden"] = wd.build()
 	var alive: Dictionary = {}
 	for m in client.wild:
 		var id: int = int(m[0])
@@ -1892,12 +1901,19 @@ func _sync_wild() -> void:
 			n.material_override = _god_mat
 			n.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			add_child(n)
-			n.position = Vector3(float(m[2]), world.height_at(float(m[2]), float(m[3])), float(m[3]))
+			n.position = _wild_pos(float(m[2]), float(m[3]))
 			wild_nodes[id] = n
 	for id in wild_nodes.keys():
 		if not alive.has(id):
 			wild_nodes[id].queue_free()
 			wild_nodes.erase(id)
+
+
+## موقعیت دشمن: داخل معدن مختصات محلی معدن است؛ بیرون مختصات جهان.
+func _wild_pos(x: float, z: float) -> Vector3:
+	if client.mine_id != "":
+		return mine_view.to_world(x, z)
+	return Vector3(x, world.height_at(x, z), z)
 
 
 func _update_wild(dt: float) -> void:
@@ -1906,12 +1922,13 @@ func _update_wild(dt: float) -> void:
 		if n == null:
 			continue
 		var cur: Vector3 = n.position
-		var nx: float = lerpf(cur.x, float(m[2]), minf(dt * 8.0, 1.0))
-		var nz: float = lerpf(cur.z, float(m[3]), minf(dt * 8.0, 1.0))
-		var dir := Vector2(float(m[2]) - cur.x, float(m[3]) - cur.z)
+		var tgt: Vector3 = _wild_pos(float(m[2]), float(m[3]))
+		var nx: float = lerpf(cur.x, tgt.x, minf(dt * 8.0, 1.0))
+		var nz: float = lerpf(cur.z, tgt.z, minf(dt * 8.0, 1.0))
+		var dir := Vector2(tgt.x - cur.x, tgt.z - cur.z)
 		if dir.length() > 0.05:
 			n.rotation.y = atan2(dir.x, dir.y)
-		n.position = Vector3(nx, world.height_at(nx, nz), nz)
+		n.position = Vector3(nx, tgt.y if client.mine_id != "" else world.height_at(nx, nz), nz)
 
 
 func _update_foes(dt: float) -> void:

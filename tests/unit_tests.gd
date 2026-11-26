@@ -97,6 +97,7 @@ func _init() -> void:
 	test_hunger()
 	test_god_human()
 	test_residents()
+	test_cave()
 	test_batch_build()
 	test_blueprints()
 	test_terrain_shapes()
@@ -4812,3 +4813,107 @@ func test_residents() -> void:
 					texts_ok = false
 	Loc.lang = "fa"
 	check(texts_ok, "resident dialogue exists in Persian and English")
+
+
+func test_cave() -> void:
+	print("-- cave: dungeon guards in mines")
+	var Cave = load("res://scripts/server/cave.gd")
+	var cs = CityState.new(6401)
+	var es: Array = cs.world.mine_entrances()
+	check(not es.is_empty(), "world has mines for the cave test")
+	var mid: String = str(es[0]["id"])
+	var lay: Dictionary = cs.mine_layout(mid)
+	var a: Array = Cave.slots(lay, mid)
+	var b: Array = Cave.slots(cs.mine_layout(mid), mid)
+	check(a.size() >= 4 and JSON.stringify(a) == JSON.stringify(b), "cave slots are deterministic (%d)" % a.size())
+	check(str(a[0]["kind"]) == "warden", "slot 0 is the warden at the deepest point")
+	var spawn_ok := true
+	var entry: Vector2 = Mine.spawn_point(lay)
+	for sl in a:
+		var tp: Vector2 = sl["p"]
+		if not Mine.walkable(lay, tp.x, tp.y) or tp.distance_to(entry) < 6.0:
+			spawn_ok = false
+	check(spawn_ok, "guards stand on walkable tiles away from the entrance")
+	check(Cave.slots(cs.mine_layout("h10,10,0"), "h10,10,0").is_empty(), "village house rooms have no guards")
+	# مسیریابی کاشی‌به‌کاشی
+	var start: Vector2i = Vector2i(int(floor(entry.x / Mine.TILE)), int(floor(entry.y / Mine.TILE)))
+	var wt: Vector2 = a[0]["p"]
+	var goal := Vector2i(int(floor(wt.x / Mine.TILE)), int(floor(wt.y / Mine.TILE)))
+	var ns: Dictionary = Cave.next_step(lay, start, goal, 999)
+	check(int(ns["len"]) > 0 and Mine.tile_open(lay, (ns["next"] as Vector2i).x, (ns["next"] as Vector2i).y), "BFS finds a route through the maze")
+	check(int(Cave.next_step(lay, start, goal, 2)["len"]) < 0, "aggro range limits the route search")
+	# شبیه‌سازی
+	var cv = Cave.new()
+	check(cv.step(1.0, mid, lay, [])["changed"] == false and not cv.caves.has(mid), "empty mine has no state")
+	var pl := {"name": "p", "pos": entry, "dmg": 1, "armor": 0.0}
+	var r0: Dictionary = cv.step(0.1, mid, lay, [pl])
+	check(cv.caves.has(mid) and bool(r0["send"]) and cv.public(mid).size() == a.size(), "guards appear when a player enters")
+	# بازیکن کنار نگهبان بزرگ: او را می‌زند و آسیب می‌بیند
+	var near: Vector2 = (a[0]["p"] as Vector2) + Vector2(1.0, 0.0)
+	if not Mine.walkable(lay, near.x, near.y):
+		near = a[0]["p"]
+	pl["pos"] = near
+	pl["dmg"] = 100
+	var hurt := false
+	var killed := false
+	for i in 120:
+		var rr: Dictionary = cv.step(0.1, mid, lay, [pl])
+		if not rr["hurt"].is_empty():
+			hurt = true
+		for k in rr["kills"]:
+			if str(k["kind"]) == "warden":
+				killed = true
+				check(int(k["money"]) == int(FWConst.WILD_KINDS["warden"]["money"]) and str(k["drop"]) == "gold", "the warden pays coins and gold")
+		if killed:
+			break
+	check(killed, "a strong player kills the warden")
+	check(hurt or killed, "guards attack in melee range")
+	# رفتن و آمدن: نگهبان کشته‌شده بلافاصله برنمی‌گردد
+	cv.caves.erase(mid)
+	cv.step(0.1, mid, lay, [{"name": "p", "pos": entry, "dmg": 1, "armor": 0.0}])
+	var has_warden := false
+	for m in cv.public(mid):
+		if str(m[1]) == "warden":
+			has_warden = true
+	check(not has_warden, "a killed guard stays dead until the respawn timer ends")
+	cv.tick(FWConst.CAVE_RESPAWN + 1.0)
+	cv.caves.erase(mid)
+	cv.step(0.1, mid, lay, [{"name": "p", "pos": entry, "dmg": 1, "armor": 0.0}])
+	has_warden = false
+	for m in cv.public(mid):
+		if str(m[1]) == "warden":
+			has_warden = true
+	check(has_warden, "the guard returns after the respawn timer")
+	# تعقیب: اسکلت نزدیک ورودی دنبال بازیکن می‌آید و به او می‌رسد
+	var cv2 = Cave.new()
+	var sk: Dictionary = {}
+	for sl in a:
+		if str(sl["kind"]) == "skeleton":
+			sk = sl
+			break
+	var sk_tile := Vector2i(int(floor((sk["p"] as Vector2).x / Mine.TILE)), int(floor((sk["p"] as Vector2).y / Mine.TILE)))
+	var pl2 := {"name": "q", "pos": sk["p"] + Vector2(0, 0), "dmg": 0, "armor": 0.0}
+	# بازیکن چند کاشی دورتر از اسکلت روی مسیر باز
+	var far: Vector2 = sk["p"]
+	for d in Mine.DIRS:
+		var t2: Vector2i = sk_tile + d * 2
+		if Mine.tile_open(lay, t2.x, t2.y) and Mine.tile_open(lay, sk_tile.x + d.x, sk_tile.y + d.y):
+			far = Mine.tile_center(t2.x, t2.y)
+			break
+	pl2["pos"] = far
+	cv2.step(0.1, mid, lay, [pl2])
+	var got_hit := false
+	for i in 200:
+		var rr2: Dictionary = cv2.step(0.1, mid, lay, [pl2])
+		if not rr2["hurt"].is_empty():
+			got_hit = true
+			break
+	check(got_hit, "a skeleton chases the player along the corridor and strikes")
+	# سرور: ساختار نتیجه و خلاقانه
+	cs.provision_admin("boss", "x")
+	_login(cs, "p")
+	var rs: Dictionary = cs.wild_step(0.5, {}, {"p": {"mine": mid, "pos": entry}})
+	check(rs.has("cave_send") and cs.caves.caves.has(mid), "city state runs guards for players inside a mine")
+	cs.creative = true
+	cs.wild_step(0.5, {}, {"p": {"mine": mid, "pos": entry}})
+	check(not cs.caves.caves.has(mid), "creative worlds have no cave guards")
