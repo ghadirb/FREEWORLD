@@ -68,7 +68,7 @@ func start_arena(world, seed_value: int, player_name: String, arena: Dictionary)
 	runs[player_name] = {"t": limit, "score": 0, "diff": diff, "rmult": float(FWConst.ARENA_DIFF_REWARD[diff]), "pen": FWConst.ARENA_OBS_PENALTY * float(FWConst.ARENA_DIFF_PENALTY[diff]), "coins": coins, "win": int(arena.get("win", 0)), "obs": Arenas.make_obstacles(seed_value, arena, targets) if kind_now == "parkour" else [], "clk": 0.0, "hit_cd": 0.0, "queue": queue, "limit": limit, "arena": int(arena["id"]),
 		"total": int(arena["coins"]) if kind_now == "football" else targets.size(), "owner": str(arena["owner"]), "per_coin": int(arena["reward"]),
 		"props": Arenas.clean_props(arena.get("props", []), arena), "prop_cd": 0.0,
-		"pk": Arenas.is_ordered(kind_now), "rc": kind_now == "race", "adv": kind_now == "adventure", "last": Vector2(float(arena["x"]), float(arena["z"]))}
+		"pk": Arenas.is_ordered(kind_now), "rc": kind_now == "race", "bt": kind_now == "boat", "adv": kind_now == "adventure", "last": Vector2(float(arena["x"]), float(arena["z"]))}
 	if kind_now == "survival":
 		runs[player_name]["coins"] = []
 		runs[player_name]["foes"] = []
@@ -99,6 +99,11 @@ func arena_removed(id: int) -> void:
 ## بازیکن الان در دور مسابقهٔ ماشین یک میدان است؟ (سقف سرعت مثل مسابقهٔ ایستگاه‌ها بالاتر می‌رود)
 func is_arena_race(player_name: String) -> bool:
 	return runs.has(player_name) and bool(runs[player_name].get("rc", false))
+
+
+## بازیکن الان در دور مسابقهٔ قایق یک میدان است؟ (در این دور سوار/پیاده شدن قایق مجاز است)
+func is_arena_boat(player_name: String) -> bool:
+	return runs.has(player_name) and bool(runs[player_name].get("bt", false))
 
 
 func respawn_point(player_name: String) -> Variant:
@@ -343,6 +348,7 @@ func public_state(player_name: String) -> Dictionary:
 		out["score"] = int(run["score"])
 		out["pk"] = bool(run.get("pk", false))
 		out["rc"] = bool(run.get("rc", false))
+		out["bt"] = bool(run.get("bt", false))
 		out["diff"] = int(run.get("diff", FWConst.ARENA_DIFF_DEFAULT))
 		if bool(run.get("adv", false)):
 			out["adv"] = true

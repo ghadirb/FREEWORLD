@@ -66,6 +66,7 @@ func _init() -> void:
 	test_arena_edit()
 	test_arena_parkour()
 	test_arena_race()
+	test_arena_boat()
 	test_arena_football()
 	test_arena_survival()
 	test_arena_adventure()
@@ -4197,6 +4198,64 @@ func test_arena_race() -> void:
 	check(float(cs.minigame.arena_times.get(id, {}).get("driver", 0.0)) > 0.0, "finishing the track records a lap time")
 	var pr: Dictionary = Arenas.parse_code(Arenas.export_code(a))
 	check(bool(pr["ok"]) and str(pr["def"]["kind"]) == "race", "the share code keeps the race kind")
+
+
+func test_arena_boat() -> void:
+	print("== Boat race arenas (ordered gates on the water) ==")
+	var cs = CityState.new(4244)
+	_login(cs, "maker")
+	_login(cs, "sailor")
+	cs.accounts["maker"]["money"] = 1000
+	# جایی را پیدا کن که کنار آب است و زنجیرهٔ دروازهٔ کافی دارد (قطعی از Seed)
+	var at := Vector2(-1.0, -1.0)
+	for gx in range(-40, int(FWConst.CITY_SIZE) + 41, 20):
+		for gz in range(-40, int(FWConst.CITY_SIZE) + 41, 20):
+			if at.x >= 0.0 or cs.world.height_at(float(gx), float(gz)) < 0.5 or cs.world.height_at(float(gx), float(gz)) > FWConst.MINIGAME_MAX_HEIGHT:
+				continue
+			var probe := {"id": 1, "x": float(gx), "z": float(gz), "r": 16.0, "coins": 8, "diff": 2}
+			if Arenas.make_boat_gates(cs.world, cs.seed_value, probe).size() >= FWConst.ARENA_COINS_MIN:
+				at = Vector2(float(gx), float(gz))
+	check(at.x >= 0.0, "found a shore spot with enough water for a boat course")
+	if at.x < 0.0:
+		return
+	var res: Dictionary = cs.arena_create("maker", "Regatta", at, 16.0, 8, 60.0, 1, "boat", 100, 5, 2)
+	check(bool(res["ok"]), "a boat arena can be built")
+	var id: int = int(res["id"])
+	var a: Dictionary = cs.arenas.items[id]
+	check(str(a["kind"]) == "boat" and int(a["obs"]) == 0, "kind is kept and there are no moving obstacles")
+	var gates: Array = Arenas.make_boat_gates(cs.world, cs.seed_value, a)
+	check(gates.size() >= FWConst.ARENA_COINS_MIN and gates.size() <= int(a["coins"]), "gates are placed (at least the minimum)")
+	check(gates == Arenas.make_boat_gates(cs.world, cs.seed_value, a), "gate layout is deterministic")
+	var center := Vector2(float(a["x"]), float(a["z"]))
+	var wet := true
+	var spaced := true
+	for i in gates.size():
+		var g: Vector2 = gates[i]
+		if not Arenas.on_water(cs.world, g) or g.distance_to(center) < float(a["r"]) + FWConst.ARENA_COURSE_GAP - 0.5:
+			wet = false
+		if i > 0 and g.distance_to(gates[i - 1]) < 9.9:
+			spaced = false
+	check(wet, "every gate is on water outside the start arena")
+	check(spaced, "gates are spaced at least 10 m apart")
+	cs.creative = false
+	var nb: Dictionary = cs.arena_play("sailor", id, at)
+	check(not bool(nb["ok"]) and str(nb["error"]) == "need_boat", "a player without a boat cannot start the race")
+	cs.accounts["sailor"]["boat"] = true
+	check(bool(cs.arena_play("sailor", id, at)["ok"]), "a sailor with a boat can start")
+	check(cs.minigame.is_arena_boat("sailor") and bool(cs.minigame.public_state("sailor")["bt"]), "the run is flagged as a boat race")
+	check(not cs.minigame.is_arena_boat("maker") and not cs.minigame.is_arena_race("sailor"), "other players and the car flag are not affected")
+	var steps := 0
+	var guard := 0
+	while cs.minigame.runs.has("sailor") and guard < 40:
+		guard += 1
+		var cur: Dictionary = cs.minigame.public_state("sailor")
+		var target := Vector2(float(cur["coins"][0][0]), float(cur["coins"][0][1]))
+		cs.minigame.step(0.1, {"sailor": target}, 1)
+		steps += 1
+	check(steps == gates.size() and not cs.minigame.is_arena_boat("sailor"), "the sailor passes every gate in order and the flag clears")
+	check(float(cs.minigame.arena_times.get(id, {}).get("sailor", 0.0)) > 0.0, "finishing records a lap time")
+	var pr: Dictionary = Arenas.parse_code(Arenas.export_code(a))
+	check(bool(pr["ok"]) and str(pr["def"]["kind"]) == "boat", "the share code keeps the boat kind")
 
 
 func test_arena_football() -> void:

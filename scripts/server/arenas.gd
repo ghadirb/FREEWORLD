@@ -27,7 +27,7 @@ static func clean_name(raw: String) -> String:
 ## هر مقدار ناشناخته سکه‌یاب است.
 static func clean_kind(raw: Variant) -> String:
 	var k := str(raw)
-	return k if k == "parkour" or k == "race" or k == "football" or k == "survival" or k == "adventure" else "coins"
+	return k if k == "parkour" or k == "race" or k == "boat" or k == "football" or k == "survival" or k == "adventure" else "coins"
 
 
 ## سطح سختی: ۰ آسان، ۱ متوسط، ۲ سخت؛ هر مقدار نامعتبر متوسط است.
@@ -126,7 +126,7 @@ static func make_football_goal(world, seed_value: int, a: Dictionary) -> Array:
 
 ## نوع‌هایی که هدف‌هایشان به ترتیب ظاهر می‌شود (پارکور و مسابقه).
 static func is_ordered(kind: String) -> bool:
-	return kind == "parkour" or kind == "race" or kind == "adventure"
+	return kind == "parkour" or kind == "race" or kind == "boat" or kind == "adventure"
 
 
 ## مانع متحرک فقط در پارکور (پروتکل ۳۹).
@@ -318,6 +318,64 @@ static func make_race_gates(world, seed_value: int, a: Dictionary) -> Array:
 	return best
 
 
+## آب برای دروازهٔ قایق: ارتفاع زمین زیر آستانهٔ قایق و داخل مرز جهان (همان قاعدهٔ shared/boat.gd، بدون پل و بلوک).
+static func on_water(world, c: Vector2) -> bool:
+	var lo: float = -FWConst.WORLD_LIMIT
+	var hi: float = FWConst.CITY_SIZE + FWConst.WORLD_LIMIT
+	if c.x < lo or c.x > hi or c.y < lo or c.y > hi:
+		return false
+	return world.height_at(c.x, c.y) < FWConst.BOAT_MIN_H
+
+
+## دروازه‌های مسابقهٔ قایق: نقطه‌های آب در حلقهٔ بیرون میدان، به صورت زنجیره‌ای از نزدیک‌ترین آب به میدان که هر گام
+## دست‌کم ۱۰ متر دورتر است و مسیر مستقیم بین دو دروازه همه آب است. قطعی از Seed و شناسه؛ اگر آب کافی نباشد
+## زنجیرهٔ کوتاه‌تر برمی‌گردد و شروع دور با «mg_no_space» رد می‌شود.
+static func make_boat_gates(world, seed_value: int, a: Dictionary) -> Array:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash("%d:boat:%d:%d" % [seed_value, int(a.get("id", 0)), int(a["coins"])])
+	var center := Vector2(float(a["x"]), float(a["z"]))
+	var r: float = float(a["r"])
+	var n: int = int(a["coins"])
+	var diff := clean_diff(a.get("diff", FWConst.ARENA_DIFF_DEFAULT))
+	var inner: float = r + FWConst.ARENA_COURSE_GAP
+	var outer: float = r + course_range("boat", diff)
+	var cands: Array = []
+	for _i in 900:
+		var ang := rng.randf() * TAU
+		var dist := lerpf(inner, outer, sqrt(rng.randf()))
+		var c := center + Vector2(cos(ang), sin(ang)) * dist
+		if on_water(world, c):
+			cands.append(Vector2(snappedf(c.x, 0.1), snappedf(c.y, 0.1)))
+	var out: Array = []
+	if cands.is_empty():
+		return out
+	var cur: Vector2 = cands[0]
+	for c in cands:
+		if (c as Vector2).distance_to(center) < cur.distance_to(center):
+			cur = c
+	out.append(cur)
+	while out.size() < n:
+		var best := Vector2(INF, INF)
+		var bd := INF
+		for c in cands:
+			var d: float = cur.distance_to(c)
+			if d < 10.0 or d >= bd or out.has(c):
+				continue
+			var open := true
+			for f in [0.25, 0.5, 0.75]:
+				if not on_water(world, cur.lerp(c, f)):
+					open = false
+					break
+			if open:
+				best = c
+				bd = d
+		if not is_finite(best.x):
+			break
+		out.append(best)
+		cur = best
+	return out
+
+
 ## نقطه‌های زایش دشمن در مبارزه و بقا: ۸ نقطهٔ قطعی روی حلقهٔ ۸۵٪ شعاع که روی خشکی‌اند.
 static func make_survival_spawns(world, seed_value: int, a: Dictionary) -> Array:
 	var rng := RandomNumberGenerator.new()
@@ -371,6 +429,8 @@ static func make_targets(world, seed_value: int, player_name: String, counter: i
 		return make_adventure_stages(world, seed_value, a)
 	if kd == "race":
 		return make_race_gates(world, seed_value, a)
+	if kd == "boat":
+		return make_boat_gates(world, seed_value, a)
 	if kd == "parkour":
 		return make_checkpoints(world, seed_value, a)
 	return make_coins(world, seed_value, player_name, counter, a)

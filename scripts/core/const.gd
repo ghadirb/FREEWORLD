@@ -1,7 +1,7 @@
 extends RefCounted
 ## ثابت‌های مشترک بین سرور و کلاینت.
 
-const PROTOCOL_VERSION := 48
+const PROTOCOL_VERSION := 49
 # ترافیک شبکه با DTLS رمز می‌شود (نسخهٔ ۴ به بعد). فقط برای عیب‌یابی خاموش شود.
 const USE_DTLS := true
 const DEFAULT_PORT := 7777
@@ -326,8 +326,8 @@ const ARENA_DIFF_GOAL := [1.35, 1.0, 0.75]      # اندازهٔ دروازهٔ 
 const ARENA_DIFF_OBS_ADD := [-2, 0, 2]          # مانع متحرک اضافه یا کم نسبت به تنظیم سازنده
 # مسیر بازی بیرون از میدان: میدان فقط «نقطهٔ شروع» است و هدف‌ها در شهر پخش می‌شوند (سکه‌یاب، پارکور، مسابقه، ماجراجویی).
 const ARENA_COURSE_GAP := 8.0                   # کمینهٔ فاصلهٔ هدف از لبهٔ میدان
-const ARENA_COURSE_RANGE := {"coins": [60.0, 100.0, 150.0], "parkour": [90.0, 140.0, 200.0], "race": [55.0, 85.0, 120.0], "adventure": [80.0, 130.0, 190.0]}
-const ARENA_COURSE_SPEED := {"coins": 5.0, "parkour": 5.0, "race": 14.0, "adventure": 5.0}   # سرعت مرجع برای زمان سفر (متر بر ثانیه)
+const ARENA_COURSE_RANGE := {"coins": [60.0, 100.0, 150.0], "parkour": [90.0, 140.0, 200.0], "race": [55.0, 85.0, 120.0], "boat": [60.0, 100.0, 140.0], "adventure": [80.0, 130.0, 190.0]}
+const ARENA_COURSE_SPEED := {"coins": 5.0, "parkour": 5.0, "race": 14.0, "boat": 8.0, "adventure": 5.0}   # سرعت مرجع برای زمان سفر (متر بر ثانیه)
 const ARENA_TIME_CAP := 600.0                   # سقف زمان کل دور پس از افزودن زمان سفر
 const ARENA_PROP_BOUND := 260.0                 # دورترین فاصلهٔ شیء سفارشی از مرکز میدان
 const SURV_HP := 100.0            # سلامت بازیکن در دور مبارزه و بقا (پروتکل ۴۳)

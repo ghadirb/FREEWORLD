@@ -2007,6 +2007,8 @@ func arena_play(player_name: String, id: int, pos: Vector2) -> Dictionary:
 		return {"ok": false, "error": "arena_far"}
 	if race.is_running(player_name):
 		return {"ok": false, "error": "mg_running"}
+	if Arenas.clean_kind(a.get("kind", "coins")) == "boat" and not has_boat(accounts[player_name]):
+		return {"ok": false, "error": "need_boat"}
 	return minigame.start_arena(world, seed_value, player_name, a)
 
 
