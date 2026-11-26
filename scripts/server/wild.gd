@@ -75,7 +75,7 @@ func step(dt: float, players: Array, night: bool, land: Callable, center: Vector
 		if float(_atk_cd[pname]) > 0.0:
 			continue
 		var idx := -1
-		var best: float = FWConst.PLAYER_ATTACK_RANGE
+		var best: float = float(pl.get("range", FWConst.PLAYER_ATTACK_RANGE))
 		for j in mobs.size():
 			var dd: float = (mobs[j]["p"] as Vector2).distance_to(pl["pos"])
 			if dd < best:
@@ -83,7 +83,7 @@ func step(dt: float, players: Array, night: bool, land: Callable, center: Vector
 				idx = j
 		if idx < 0:
 			continue
-		_atk_cd[pname] = FWConst.PLAYER_ATTACK_CD
+		_atk_cd[pname] = float(pl.get("cd", FWConst.PLAYER_ATTACK_CD))
 		var tm: Dictionary = mobs[idx]
 		tm["hp"] = int(tm["hp"]) - int(pl["dmg"])
 		var away: Vector2 = (tm["p"] as Vector2) - (pl["pos"] as Vector2)

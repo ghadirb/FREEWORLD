@@ -1081,7 +1081,7 @@ func paint_block(player_name: String, x: int, y: int, z: int, color: int) -> Dic
 static func gear_of(acc: Dictionary) -> Dictionary:
 	var g: Variant = acc.get("gear", null)
 	if g is Dictionary:
-		return {"weapon": clampi(int(g.get("weapon", 0)), 0, 2), "armor": clampi(int(g.get("armor", 0)), 0, 2)}
+		return {"weapon": clampi(int(g.get("weapon", 0)), 0, FWConst.GEAR_WEAPON_DAMAGE.size() - 1), "armor": clampi(int(g.get("armor", 0)), 0, 2)}
 	return {"weapon": 0, "armor": 0}
 
 
@@ -1135,7 +1135,7 @@ func wild_step(dt: float, exposed: Dictionary, in_mine: Dictionary = {}) -> Dict
 			continue
 		var g := gear_of(accounts[name])
 		gear_cache[name] = g
-		players.append({"name": name, "pos": exposed[name], "dmg": int(FWConst.GEAR_WEAPON_DAMAGE[int(g["weapon"])]), "armor": float(FWConst.GEAR_ARMOR_REDUCE[int(g["armor"])])})
+		players.append({"name": name, "pos": exposed[name], "dmg": int(FWConst.GEAR_WEAPON_DAMAGE[int(g["weapon"])]), "range": float(FWConst.GEAR_WEAPON_RANGE[int(g["weapon"])]), "cd": float(FWConst.GEAR_WEAPON_CD[int(g["weapon"])]), "armor": float(FWConst.GEAR_ARMOR_REDUCE[int(g["armor"])])})
 	var sp := spawn_position()
 	var res: Dictionary = wild.step(dt, players, Wild.is_night(world_time), Callable(self, "_wild_land"), Vector2(sp.x, sp.z), not creative)
 	var out := {"send": bool(res["send"]), "vitals": [], "died": [], "kills": res["kills"], "inv": [], "money": [], "cave_send": []}
@@ -1148,7 +1148,7 @@ func wild_step(dt: float, exposed: Dictionary, in_mine: Dictionary = {}) -> Dict
 			var g2 := gear_of(accounts[name])
 			if not groups.has(in_mine[name]["mine"]):
 				groups[in_mine[name]["mine"]] = []
-			groups[in_mine[name]["mine"]].append({"name": name, "pos": in_mine[name]["pos"], "dmg": int(FWConst.GEAR_WEAPON_DAMAGE[int(g2["weapon"])]), "armor": float(FWConst.GEAR_ARMOR_REDUCE[int(g2["armor"])])})
+			groups[in_mine[name]["mine"]].append({"name": name, "pos": in_mine[name]["pos"], "dmg": int(FWConst.GEAR_WEAPON_DAMAGE[int(g2["weapon"])]), "range": float(FWConst.GEAR_WEAPON_RANGE[int(g2["weapon"])]), "cd": float(FWConst.GEAR_WEAPON_CD[int(g2["weapon"])]), "armor": float(FWConst.GEAR_ARMOR_REDUCE[int(g2["armor"])])})
 	caves.drop_empty(groups.keys())
 	caves.tick(dt)
 	for mid in groups:

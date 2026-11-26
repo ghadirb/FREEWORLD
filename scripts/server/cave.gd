@@ -164,7 +164,8 @@ func step(dt: float, mine_id: String, layout: Dictionary, players: Array) -> Dic
 		if float(_atk[pname]) > 0.0:
 			continue
 		var idx := -1
-		var bd: float = FWConst.PLAYER_ATTACK_RANGE
+		# راهروهای معدن تنگ‌اند؛ کمان نباید از پشت دیوار بزند.
+		var bd: float = minf(float(pl.get("range", FWConst.PLAYER_ATTACK_RANGE)), 5.0)
 		for j in mobs.size():
 			var dd2: float = (mobs[j]["p"] as Vector2).distance_to(pl["pos"])
 			if dd2 < bd:
@@ -172,7 +173,7 @@ func step(dt: float, mine_id: String, layout: Dictionary, players: Array) -> Dic
 				idx = j
 		if idx < 0:
 			continue
-		_atk[pname] = FWConst.PLAYER_ATTACK_CD
+		_atk[pname] = float(pl.get("cd", FWConst.PLAYER_ATTACK_CD))
 		var tm: Dictionary = mobs[idx]
 		tm["hp"] = int(tm["hp"]) - int(pl["dmg"])
 		out["changed"] = true

@@ -203,6 +203,9 @@ const RECIPES := {
 	# سلاح و زره (پروتکل ۴۷): مرحله‌به‌مرحله؛ هر ساخت یک سطح بالاتر از سطح فعلی را می‌دهد.
 	"club": {"in": {"wood": 5}, "gear": "weapon", "tier": 1},
 	"sword": {"in": {"iron": 3, "wood": 2}, "gear": "weapon", "tier": 2},
+	"spear": {"in": {"wood": 4, "iron": 2}, "gear": "weapon", "tier": 3},
+	"axe": {"in": {"iron": 5, "wood": 3, "stone": 2}, "gear": "weapon", "tier": 4},
+	"bow": {"in": {"wood": 8, "iron": 3}, "gear": "weapon", "tier": 5},
 	"vest": {"in": {"wood": 4, "stone": 4}, "gear": "armor", "tier": 1},
 	"plate": {"in": {"iron": 6}, "gear": "armor", "tier": 2},
 }
@@ -535,7 +538,11 @@ const PLAYER_HP_REGEN := 1.5         # در ثانیه، پس از ۶ ثانیه
 const PLAYER_HP_REGEN_DELAY := 6.0
 const PLAYER_ATTACK_RANGE := 2.6
 const PLAYER_ATTACK_CD := 0.7
-const GEAR_WEAPON_DAMAGE := [1, 2, 3]            # مشت، چماق، شمشیر (ضربه‌های هر حمله)
+## نردبان سلاح (هر ساخت فقط یک سطح بالاتر): مشت، چماق، شمشیر، نیزه، تبر، کمان.
+## برد و فاصلهٔ ضربه هم به سلاح بستگی دارد: نیزه بلندتر می‌زند، تبر کند و سنگین است، کمان از دور می‌زند.
+const GEAR_WEAPON_DAMAGE := [1, 2, 3, 4, 6, 5]      # ضربه‌های هر حمله
+const GEAR_WEAPON_RANGE := [2.6, 2.6, 2.6, 4.4, 2.6, 12.0]  # متر
+const GEAR_WEAPON_CD := [0.7, 0.7, 0.7, 0.9, 1.0, 1.1]      # ثانیه بین ضربه‌ها
 const GEAR_ARMOR_REDUCE := [0.0, 0.25, 0.5]      # بدون زره، جلیقه، زره آهنی
 const DEATH_MONEY_LOSS_FRAC := 0.1
 const DEATH_MONEY_LOSS_MAX := 50

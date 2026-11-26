@@ -95,6 +95,7 @@ func _init() -> void:
 	test_world_rules()
 	test_civilization()
 	test_wild()
+	test_weapons()
 	test_hunger()
 	test_god_human()
 	test_residents()
@@ -2771,6 +2772,7 @@ func test_world_rules() -> void:
 	check(wet.fire.is_empty(), "rain puts the fire out quickly")
 	# درخت‌های طبیعی Seed هم می‌سوزند و بعد دوباره می‌رویند.
 	var nat = CityState.new(31337)
+	nat._god_rng.seed = 4242  # seed ثابت: پخش آتش احتمالی است و تست نباید گاهی شکست بخورد
 	nat.provision_admin("maker", "secret-secret-1", FWConst.ROLE_CITY_ADMIN)
 	var spot := Vector2.ZERO
 	var cluster := 0
@@ -4575,6 +4577,81 @@ func test_wild() -> void:
 				texts_ok = false
 	Loc.lang = "fa"
 	check(texts_ok, "wild and gear texts exist in Persian and English")
+
+
+func _fire_once(tier: int, kind: String, dist: float, steps: Array) -> Array:
+	# یک دشمن در فاصلهٔ dist می‌گذارد و با سلاح سطح tier چند گام می‌رود؛ hp پس از هر گام را برمی‌گرداند.
+	var Wild = load("res://scripts/server/wild.gd")
+	var w = Wild.new()
+	w.rng.seed = 3
+	w.mobs.append({"id": 1, "kind": kind, "p": Vector2(200.0 + dist, 200.0), "hp": int(FWConst.WILD_KINDS[kind]["hp"]), "cd": 99.0})
+	var pl := {"name": "hero", "pos": Vector2(200, 200), "dmg": int(FWConst.GEAR_WEAPON_DAMAGE[tier]), "range": float(FWConst.GEAR_WEAPON_RANGE[tier]), "cd": float(FWConst.GEAR_WEAPON_CD[tier]), "armor": 1.0}
+	var land := func(_x: float, _z: float) -> bool: return true
+	var hp_after: Array = []
+	for dt in steps:
+		w.step(float(dt), [pl], true, land, Vector2(0, 0), true)
+		hp_after.append(int(w.mobs[0]["hp"]) if not w.mobs.is_empty() else 0)
+	return hp_after
+
+
+func test_weapons() -> void:
+	print("== More weapons: spear, axe, bow ==")
+	var n: int = FWConst.GEAR_WEAPON_DAMAGE.size()
+	check(n == 6 and FWConst.GEAR_WEAPON_RANGE.size() == n and FWConst.GEAR_WEAPON_CD.size() == n, "weapon tables have six matching rungs")
+	var rungs := {}
+	for key in FWConst.RECIPES:
+		var r: Dictionary = FWConst.RECIPES[key]
+		if str(r.get("gear", "")) == "weapon":
+			rungs[int(r["tier"])] = key
+	check(rungs.size() == 5 and rungs[1] == "club" and rungs[2] == "sword" and rungs[3] == "spear" and rungs[4] == "axe" and rungs[5] == "bow", "weapon ladder is club, sword, spear, axe, bow")
+	var dps_ok := true
+	for t in range(1, n):
+		if t == 5:
+			continue  # کمان با برد بلند، نه ضربهٔ در ثانیهٔ بیشتر، ارزش دارد
+		if float(FWConst.GEAR_WEAPON_DAMAGE[t]) / float(FWConst.GEAR_WEAPON_CD[t]) <= float(FWConst.GEAR_WEAPON_DAMAGE[t - 1]) / float(FWConst.GEAR_WEAPON_CD[t - 1]):
+			dps_ok = false
+	check(dps_ok, "each melee rung out-damages the previous one per second")
+	check(float(FWConst.GEAR_WEAPON_RANGE[5]) > 3.0 * float(FWConst.GEAR_WEAPON_RANGE[2]) and float(FWConst.GEAR_WEAPON_RANGE[3]) > float(FWConst.GEAR_WEAPON_RANGE[2]), "bow outranges everything and the spear outreaches the sword")
+	# برد واقعی در نبرد
+	check(_fire_once(1, "wolf", 4.0, [0.05])[0] == 3, "a club cannot reach 4 m")
+	check(_fire_once(3, "wolf", 4.0, [0.05])[0] <= 0, "a spear hits at 4 m")
+	check(_fire_once(3, "wolf", 8.0, [0.05])[0] == 3, "a spear cannot reach 8 m")
+	check(_fire_once(5, "wolf", 10.0, [0.05])[0] <= 0, "a bow kills a wolf from 10 m")
+	check(_fire_once(5, "wolf", 14.0, [0.05])[0] == 3, "a bow cannot reach 14 m")
+	# فاصلهٔ ضربه: کمان ۱٫۱ ثانیه، تبر ۱ ثانیه (غول ۶ جان دارد)
+	var bow_hp: Array = _fire_once(5, "ghoul", 9.0, [0.05, 0.5, 0.5, 0.2])
+	check(bow_hp[0] == 1 and bow_hp[1] == 1 and bow_hp[2] == 1, "the bow shoots once, then waits for its cooldown")
+	check(bow_hp[3] <= 0, "the bow shoots again after about 1.1 s")
+	check(_fire_once(4, "ghoul", 2.0, [0.05])[0] <= 0, "one axe swing kills a ghoul")
+	# ساخت و ذخیره
+	var cs = CityState.new(6161)
+	_login(cs, "smith")
+	var acc: Dictionary = cs.accounts["smith"]
+	acc["inv"]["iron"] = 30
+	acc["inv"]["wood"] = 40
+	acc["inv"]["stone"] = 10
+	check(cs.craft("smith", "bow", 1)["ok"] and int(cs.gear_of(acc)["weapon"]) == 5, "a bow can be crafted straight from a bare fist")
+	check(cs.craft("smith", "axe", 1)["error"] == "gear_have" and cs.craft("smith", "spear", 1)["error"] == "gear_have", "weaker weapons are refused after the bow")
+	var cs_b = CityState.new(6162)
+	_login(cs_b, "ranger")
+	var acc_b: Dictionary = cs_b.accounts["ranger"]
+	check(cs_b.craft("ranger", "spear", 1)["error"] == "no_items", "spear needs materials")
+	acc_b["inv"]["iron"] = 30
+	acc_b["inv"]["wood"] = 30
+	acc_b["inv"]["stone"] = 10
+	check(cs_b.craft("ranger", "spear", 1)["ok"] and cs_b.craft("ranger", "axe", 1)["ok"] and int(cs_b.gear_of(acc_b)["weapon"]) == 4, "spear then axe upgrade in order")
+	check(int(acc_b["inv"]["iron"]) == 30 - 2 - 5 and int(acc_b["inv"]["wood"]) == 30 - 4 - 3 and int(acc_b["inv"]["stone"]) == 8, "weapon materials are consumed")
+	var cs_c = CityState.from_dict(cs.to_dict())
+	check(cs_c != null and cs_c.vitals_public("smith")[1] == 5, "the bow survives saving and loading")
+	check(cs.gear_of({"gear": {"weapon": 99, "armor": 99}}) == {"weapon": 5, "armor": 2}, "corrupt gear tiers are clamped to the real ladder")
+	var texts_ok := true
+	for lang in ["fa", "en"]:
+		Loc.lang = lang
+		for k in ["craft_spear", "craft_axe", "craft_bow"]:
+			if Loc.t(k) == k:
+				texts_ok = false
+	Loc.lang = "fa"
+	check(texts_ok, "new weapon texts exist in Persian and English")
 
 
 func test_hunger() -> void:
