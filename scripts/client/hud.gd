@@ -2406,6 +2406,9 @@ func _on_notice(code: String, args: Dictionary) -> void:
 		"arena_rated":
 			Sfx.play(self, "notify")
 			toast(Loc.t("msg_arena_rated"), Color("c8f08a"))
+		"species_new":
+			Sfx.play(self, "notify")
+			toast(Loc.fmt("msg_species_new", [Loc.t("species_" + str(args.get("kind", "")))]), Color("ffd84a"))
 		"arena_started":
 			toast(Loc.t("msg_arena_started_island" if bool(args.get("island", false)) else "msg_arena_started_boat" if bool(args.get("boat", false)) else "msg_arena_started_adventure" if bool(args.get("adventure", false)) else "msg_arena_started_survival" if bool(args.get("survival", false)) else "msg_arena_started_football" if bool(args.get("football", false)) else "msg_arena_started_race" if bool(args.get("race", false)) else ("msg_arena_started_parkour" if bool(args.get("parkour", false)) else "msg_arena_started_coins")), Color("ffd84a"))
 		"arena_respawned":

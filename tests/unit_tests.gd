@@ -85,6 +85,7 @@ func _init() -> void:
 	test_group_race()
 	test_boat()
 	test_god_tools()
+	test_species_breeding()
 	test_stairs_and_floors()
 	test_p2p_trade()
 	test_world_slots()
@@ -2039,6 +2040,95 @@ func test_npc_friendship() -> void:
 	cs.world_time = 86399.0
 	cs.tick(1.0)
 	check(cs.day_count == cs2.day_count + 1, "day counter advances when the clock wraps")
+
+
+func _breed_land(cs) -> Vector2:
+	for i in range(40, 200, 3):
+		if cs.world.height_at(float(i), 70.0) > 1.5 and not cs.occupied.has(Placement.cell_key(i / 2, 35)):
+			return Vector2(float(i), 70.0)
+	return Vector2.ZERO
+
+
+func _breed_put(cs, kind: String, x: float, z: float, young: float = 0.0) -> int:
+	var id: int = cs.next_god_id
+	cs.next_god_id += 1
+	cs.god[id] = {"id": id, "kind": kind, "x": x, "z": z, "tx": x, "tz": z, "wait": 1.0, "young": young, "bcd": 0.0}
+	return id
+
+
+func _breed_count(cs, kind: String) -> int:
+	var n := 0
+	for id in cs.god:
+		if str(cs.god[id]["kind"]) == kind:
+			n += 1
+	return n
+
+
+func test_species_breeding() -> void:
+	print("== species breeding ==")
+	var cs = CityState.new(31337)
+	var land: Vector2 = _breed_land(cs)
+	check(land != Vector2.ZERO, "found land for breeding")
+	var a: int = _breed_put(cs, "sheep", land.x, land.y)
+	var b: int = _breed_put(cs, "sheep", land.x + 1.5, land.y)
+	check(not cs.breed_step(5.0), "nothing happens before the breeding interval")
+	var rounds := 0
+	while cs.god.size() <= 2 and rounds < 80:
+		rounds += 1
+		cs.breed_step(FWConst.BREED_INTERVAL)
+	check(cs.god.size() == 3, "two adult sheep close together get a lamb")
+	var baby: int = -1
+	for id in cs.god:
+		if id != a and id != b:
+			baby = id
+	check(str(cs.god[baby]["kind"]) == "sheep" and float(cs.god[baby]["young"]) > 0.0, "the newborn is a young sheep")
+	var pub: Array = cs.god_public()
+	var rows_young := 0
+	for row in pub:
+		if (row as Array).size() > 5:
+			rows_young += 1
+	check(rows_young == 1, "only the young animal is flagged in the public list")
+	var far_a: int = _breed_put(cs, "deer", land.x, land.y + 3.0)
+	check(float(cs.god[a]["bcd"]) > 0.0 and float(cs.god[b]["bcd"]) > 0.0, "parents rest after giving birth")
+	# توله تا بالغ شدن زاد و ولد نمی‌کند و بعد بالغ می‌شود
+	for k in 3:
+		cs.breed_step(FWConst.BREED_INTERVAL)
+	check(float(cs.god[baby]["young"]) == 0.0, "the young animal grows up")
+	# فاصله: دو حیوان دور از هم جفت نمی‌شوند
+	var cs2 = CityState.new(31337)
+	_breed_put(cs2, "rabbit", land.x, land.y)
+	_breed_put(cs2, "rabbit", land.x + 40.0, land.y)
+	for k in 40:
+		cs2.breed_step(FWConst.BREED_INTERVAL)
+	check(cs2.god.size() == 2, "distant animals do not breed")
+	# سقف: از سقف کل بیشتر نمی‌شود
+	var cs3 = CityState.new(31337)
+	for k in FWConst.BREED_CAP:
+		_breed_put(cs3, "sheep" if k % 2 == 0 else "deer", land.x + float(k % 5) * 0.5, land.y + float(k % 3) * 0.5)
+	var before: int = cs3.god.size()
+	for k in 30:
+		cs3.breed_step(FWConst.BREED_INTERVAL)
+	check(cs3.god.size() == before, "population cap stops breeding")
+	# گونهٔ ترکیبی: گوسفند و گوزن
+	var cs4 = CityState.new(31337)
+	_breed_put(cs4, "sheep", land.x, land.y)
+	_breed_put(cs4, "deer", land.x + 1.5, land.y)
+	var r4 := 0
+	while cs4.species_found.is_empty() and r4 < 3000:
+		r4 += 1
+		cs4.breed_step(FWConst.BREED_INTERVAL)
+	check(cs4.species_found.has("horned_sheep"), "crossing a sheep and a deer can discover the horned sheep")
+	check(cs4.species_events == ["horned_sheep"], "the discovery is queued once for announcement")
+	check(_breed_count(cs4, "horned_sheep") >= 1 and FWConst.is_animal("horned_sheep") and FWConst.animal_speed("horned_sheep") > 0.0, "the hybrid is a real animal with a speed")
+	check(not FWConst.GOD_ANIMALS.has("horned_sheep"), "hybrids cannot be placed with the god tool")
+	cs4.species_events.clear()
+	for k in 200:
+		cs4.breed_step(FWConst.BREED_INTERVAL)
+	check(cs4.species_events.is_empty(), "a species is only announced the first time")
+	cs4.god[cs4.god.keys()[0]]["young"] = 20.0
+	var cs5 = CityState.from_dict(JSON.parse_string(JSON.stringify(cs4.to_dict())))
+	check(cs5 != null and cs5.species_found.has("horned_sheep") and _breed_count(cs5, "horned_sheep") == _breed_count(cs4, "horned_sheep"), "hybrids and the discovery survive save/load")
+	check(float(cs5.god[cs4.god.keys()[0]]["young"]) == 20.0, "a young animal stays young after save/load")
 
 
 func test_god_tools() -> void:

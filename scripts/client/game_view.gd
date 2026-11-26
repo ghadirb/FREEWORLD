@@ -1690,6 +1690,26 @@ func _god_mesh(kind: String) -> ArrayMesh:
 			mb.add_box(Vector3(0, 0.4, 0.25), Vector3(0.22, 0.22, 0.22), Color("d9cfc0"))
 			mb.add_box(Vector3(-0.06, 0.65, 0.25), Vector3(0.06, 0.28, 0.06), Color("d9cfc0"))
 			mb.add_box(Vector3(0.06, 0.65, 0.25), Vector3(0.06, 0.28, 0.06), Color("d9cfc0"))
+		"horned_sheep":
+			mb.add_box(Vector3(0, 0.6, 0), Vector3(0.65, 0.6, 1.1), Color("e8dcc4"))
+			mb.add_box(Vector3(0, 0.95, 0.65), Vector3(0.32, 0.4, 0.32), Color("7a5a3a"))
+			mb.add_box(Vector3(-0.14, 1.28, 0.65), Vector3(0.06, 0.3, 0.06), Color("4a3524"))
+			mb.add_box(Vector3(0.14, 1.28, 0.65), Vector3(0.06, 0.3, 0.06), Color("4a3524"))
+			for lx in [-0.2, 0.2]:
+				for lz in [-0.4, 0.4]:
+					mb.add_box(Vector3(lx, 0.17, lz), Vector3(0.11, 0.34, 0.11), Color("4a3524"))
+		"jackalope":
+			mb.add_box(Vector3(0, 0.25, 0), Vector3(0.32, 0.32, 0.5), Color("b08a5c"))
+			mb.add_box(Vector3(0, 0.45, 0.28), Vector3(0.24, 0.24, 0.24), Color("b08a5c"))
+			mb.add_box(Vector3(-0.07, 0.72, 0.28), Vector3(0.06, 0.3, 0.06), Color("b08a5c"))
+			mb.add_box(Vector3(0.07, 0.72, 0.28), Vector3(0.06, 0.3, 0.06), Color("b08a5c"))
+			mb.add_box(Vector3(-0.05, 0.85, 0.3), Vector3(0.04, 0.4, 0.04), Color("5a3d22"))
+			mb.add_box(Vector3(0.05, 0.85, 0.3), Vector3(0.04, 0.4, 0.04), Color("5a3d22"))
+		"wool_rabbit":
+			mb.add_box(Vector3(0, 0.3, 0), Vector3(0.42, 0.4, 0.55), Color("f6f2ea"))
+			mb.add_box(Vector3(0, 0.5, 0.3), Vector3(0.24, 0.24, 0.24), Color("f6f2ea"))
+			mb.add_box(Vector3(-0.06, 0.78, 0.3), Vector3(0.06, 0.3, 0.06), Color("e0d6c6"))
+			mb.add_box(Vector3(0.06, 0.78, 0.3), Vector3(0.06, 0.3, 0.06), Color("e0d6c6"))
 		"tree":
 			_god_meshes[kind] = streamer._tree_mesh
 			return streamer._tree_mesh
@@ -1766,6 +1786,7 @@ func _sync_god() -> void:
 			god_nodes[id] = node
 		node.set_meta("tx", gx)
 		node.set_meta("tz", gz)
+		node.scale = Vector3.ONE * (0.6 if e.size() > 5 and int(e[5]) == 1 else 1.0)   # توله کوچک‌تر است
 		var burning: bool = e.size() > 4 and int(e[4]) == 1
 		var flame: Node = node.get_node_or_null("Fire")
 		if burning and flame == null:
@@ -2064,14 +2085,14 @@ func _update_god(dt: float) -> void:
 		var flame: Node3D = node.get_node_or_null("Fire")
 		if flame != null:
 			flame.scale = Vector3.ONE * (1.0 + 0.25 * sin(flick * 14.0 + node.position.x))
-		if not FWConst.GOD_ANIMALS.has(str(node.get_meta("kind"))):
+		if not FWConst.is_animal(str(node.get_meta("kind"))):
 			continue
 		var tx: float = float(node.get_meta("tx"))
 		var tz: float = float(node.get_meta("tz"))
 		var cur := Vector2(node.position.x, node.position.z)
 		var tgt := Vector2(tx, tz)
 		if cur.distance_to(tgt) > 0.02:
-			var nxt: Vector2 = cur.move_toward(tgt, float(FWConst.GOD_ANIMALS[str(node.get_meta("kind"))]) * 1.3 * dt)
+			var nxt: Vector2 = cur.move_toward(tgt, FWConst.animal_speed(str(node.get_meta("kind"))) * 1.3 * dt)
 			node.rotation.y = lerp_angle(node.rotation.y, atan2(nxt.x - cur.x, nxt.y - cur.y), minf(dt * 8.0, 1.0))
 			node.position = Vector3(nxt.x, world.height_at(nxt.x, nxt.y) - 0.05, nxt.y)
 

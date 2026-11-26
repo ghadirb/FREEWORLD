@@ -233,9 +233,15 @@ func _process(delta: float) -> void:
 		_dirty = true
 	NpcSim.step(cs, dt)
 	cs.god_step(dt)
-	if cs.fire_step(dt) or cs.growth_step(dt):
+	var born: bool = cs.breed_step(dt)
+	if cs.fire_step(dt) or cs.growth_step(dt) or born:
 		_broadcast("s2c_god", cs.god_public())
 		_dirty = true
+	if not cs.species_events.is_empty():
+		for sk in cs.species_events:
+			for spid in _auth_peers():
+				_notice(spid, "species_new", {"kind": str(sk)})
+		cs.species_events.clear()
 	_flush_fire()
 	_god_acc += dt
 	if _god_acc >= 1.0:

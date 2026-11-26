@@ -48,6 +48,9 @@ var scenario_applied: bool = false
 var day_count: int = 0
 var god: Dictionary = {}
 var next_god_id: int = 1
+var species_found: Dictionary = {}    # گونه‌های ترکیبی کشف‌شده (پروتکل ۵۱)
+var species_events: Array = []        # گونه‌های تازه‌کشف‌شده که هنوز اعلام نشده‌اند
+var _breed_acc: float = 0.0
 var _god_rng := RandomNumberGenerator.new()
 var weather: String = "clear"
 var disaster: Dictionary = {"kind": "", "t": 0.0}   # حادثهٔ جاری؛ موقت و ذخیره‌نشده
@@ -1582,7 +1585,7 @@ func _god_spot_ok(x: float, z: float) -> bool:
 func god_step(dt: float) -> void:
 	for id in god:
 		var g: Dictionary = god[id]
-		if not FWConst.GOD_ANIMALS.has(str(g["kind"])):
+		if not FWConst.is_animal(str(g["kind"])):
 			continue
 		var pos := Vector2(float(g["x"]), float(g["z"]))
 		var target := Vector2(float(g["tx"]), float(g["tz"]))
@@ -1595,7 +1598,7 @@ func god_step(dt: float) -> void:
 				g["tz"] = pos.y + sin(a) * r
 				g["wait"] = 2.0 + _god_rng.randf() * 5.0
 			continue
-		var step: Vector2 = pos.move_toward(target, float(FWConst.GOD_ANIMALS[str(g["kind"])]) * dt)
+		var step: Vector2 = pos.move_toward(target, FWConst.animal_speed(str(g["kind"])) * dt)
 		if _god_spot_ok(step.x, step.y):
 			g["x"] = step.x
 			g["z"] = step.y
@@ -1610,13 +1613,94 @@ func god_public() -> Array:
 	ids.sort()
 	for id in ids:
 		var g: Dictionary = god[id]
-		out.append([int(id), str(g["kind"]), snappedf(float(g["x"]), 0.05), snappedf(float(g["z"]), 0.05), 1 if fire.has(id) else 0])
+		var row: Array = [int(id), str(g["kind"]), snappedf(float(g["x"]), 0.05), snappedf(float(g["z"]), 0.05), 1 if fire.has(id) else 0]
+		if float(g.get("young", 0.0)) > 0.0:
+			row.append(1)   # توله: کلاینت کوچک‌ترش می‌کشد
+		out.append(row)
 	return out
+
+
+## پرورش گونه (پروتکل ۵۱). هر BREED_INTERVAL ثانیه یک دورهٔ جفت‌گیری: توله‌ها بزرگ می‌شوند، والدین استراحت می‌کنند
+## و جفت‌های بالغ نزدیک شانس بچه‌دار شدن دارند. true اگر فهرست god عوض شد. ترتیب بررسی بر اساس شناسه و تصادف از _god_rng
+## است، پس برای یک Seed و زمان یکسان قطعی است.
+func breed_step(dt: float) -> bool:
+	_breed_acc += dt
+	if _breed_acc < FWConst.BREED_INTERVAL:
+		return false
+	_breed_acc = 0.0
+	var ids: Array = []
+	var total := 0
+	var per_kind := {}
+	for id in god:
+		var g: Dictionary = god[id]
+		var k := str(g["kind"])
+		if not FWConst.is_animal(k):
+			continue
+		g["young"] = maxf(float(g.get("young", 0.0)) - FWConst.BREED_INTERVAL, 0.0)
+		g["bcd"] = maxf(float(g.get("bcd", 0.0)) - FWConst.BREED_INTERVAL, 0.0)
+		ids.append(id)
+		total += 1
+		per_kind[k] = int(per_kind.get(k, 0)) + 1
+	ids.sort()
+	var changed := false
+	for i in ids.size():
+		var a: Dictionary = god[ids[i]]
+		if float(a["young"]) > 0.0 or float(a["bcd"]) > 0.0:
+			continue
+		var ap := Vector2(float(a["x"]), float(a["z"]))
+		for j in range(i + 1, ids.size()):
+			var b: Dictionary = god[ids[j]]
+			if float(b["young"]) > 0.0 or float(b["bcd"]) > 0.0:
+				continue
+			if ap.distance_to(Vector2(float(b["x"]), float(b["z"]))) > FWConst.BREED_RANGE:
+				continue
+			var ka := str(a["kind"])
+			var kb := str(b["kind"])
+			var child := ka
+			var chance: float = float(FWConst.BREED_CHANCE.get(ka, 0.2))
+			if ka != kb:
+				var pair: Array = [ka, kb]
+				pair.sort()
+				child = str(FWConst.HYBRID_PARENTS.get("+".join(pair), ""))
+				chance = FWConst.BREED_HYBRID_CHANCE
+			if child == "":
+				continue
+			if total >= FWConst.BREED_CAP or god.size() >= FWConst.GOD_MAX or int(per_kind.get(child, 0)) >= FWConst.BREED_SPECIES_CAP:
+				continue
+			if _god_rng.randf() >= chance:
+				continue
+			if _spawn_animal_near(child, ap.x, ap.y):
+				a["bcd"] = FWConst.BREED_COOLDOWN
+				b["bcd"] = FWConst.BREED_COOLDOWN
+				total += 1
+				per_kind[child] = int(per_kind.get(child, 0)) + 1
+				changed = true
+				if FWConst.GOD_HYBRIDS.has(child) and not species_found.has(child):
+					species_found[child] = true
+					species_events.append(child)
+				break
+	return changed
+
+
+## یک توله کنار (x, z) می‌گذارد؛ true اگر جای مناسب پیدا شد.
+func _spawn_animal_near(kind: String, x: float, z: float) -> bool:
+	for _try in range(6):
+		var a := _god_rng.randf() * TAU
+		var r := 0.8 + _god_rng.randf() * 1.4
+		var tx := x + cos(a) * r
+		var tz := z + sin(a) * r
+		if not _in_world(tx, tz) or not _god_spot_ok(tx, tz):
+			continue
+		var id := next_god_id
+		next_god_id += 1
+		god[id] = {"id": id, "kind": kind, "x": tx, "z": tz, "tx": tx, "tz": tz, "wait": 1.0, "young": FWConst.BREED_MATURE, "bcd": FWConst.BREED_COOLDOWN}
+		return true
+	return false
 
 
 func god_has_animals() -> bool:
 	for id in god:
-		if FWConst.GOD_ANIMALS.has(str(god[id]["kind"])):
+		if FWConst.is_animal(str(god[id]["kind"])):
 			return true
 	return false
 
@@ -2692,6 +2776,7 @@ func to_dict() -> Dictionary:
 		"day_count": day_count,
 		"god": god.values(),
 		"next_god_id": next_god_id,
+		"species_found": species_found.keys(),
 		"wheat_price": wheat_price,
 		"time_speed": time_speed,
 		"creative": creative,
@@ -2848,14 +2933,22 @@ static func from_dict(d: Dictionary):
 	cs.scenario_applied = bool(d.get("scenario_applied", false))
 	cs.set_climate(Scenarios.climate(cs.scenario))
 	cs.next_god_id = maxi(1, int(d.get("next_god_id", 1)))
+	var sf = d.get("species_found", [])
+	if sf is Array:
+		for k in sf:
+			if FWConst.GOD_HYBRIDS.has(str(k)):
+				cs.species_found[str(k)] = true
 	var gl = d.get("god", [])
 	if gl is Array:
 		for g in gl:
 			if g is Dictionary and g.has("id") and g.has("kind") and g.has("x") and g.has("z") and cs.god.size() < FWConst.GOD_MAX:
 				var gk := str(g["kind"])
-				if FWConst.GOD_STATIC.has(gk) or FWConst.GOD_ANIMALS.has(gk):
+				if FWConst.GOD_STATIC.has(gk) or FWConst.is_animal(gk):
 					var gid := int(g["id"])
 					cs.god[gid] = {"id": gid, "kind": gk, "x": float(g["x"]), "z": float(g["z"]), "tx": float(g["x"]), "tz": float(g["z"]), "wait": 1.0}
+					if FWConst.is_animal(gk):
+						cs.god[gid]["young"] = clampf(float(g.get("young", 0.0)), 0.0, FWConst.BREED_MATURE)
+						cs.god[gid]["bcd"] = clampf(float(g.get("bcd", 0.0)), 0.0, FWConst.BREED_COOLDOWN)
 					cs.next_god_id = maxi(cs.next_god_id, gid + 1)
 	cs.minigame.load_dict(d.get("minigame", {}))
 	cs.race.load_dict(d.get("race", {}))

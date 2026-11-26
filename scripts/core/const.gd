@@ -1,7 +1,7 @@
 extends RefCounted
 ## ثابت‌های مشترک بین سرور و کلاینت.
 
-const PROTOCOL_VERSION := 50
+const PROTOCOL_VERSION := 51
 # ترافیک شبکه با DTLS رمز می‌شود (نسخهٔ ۴ به بعد). فقط برای عیب‌یابی خاموش شود.
 const USE_DTLS := true
 const DEFAULT_PORT := 7777
@@ -388,6 +388,18 @@ const RACE_REWARDED_RUNS := 3
 const GOD_STATIC := ["tree", "rock"]
 const GOD_ANIMALS := {"sheep": 1.0, "deer": 2.2, "rabbit": 1.7}   # سرعت راه رفتن
 const GOD_MAX := 150
+# پرورش گونه (پروتکل ۵۱): حیوانات هم‌گونهٔ بالغ و نزدیک به هم بچه می‌آورند؛ جفت‌گیری دو گونهٔ متفاوت با شانس کم
+# گونهٔ ترکیبی تازه می‌سازد (کشف می‌شود و برای همه اعلام می‌شود). توله‌ها کوچک‌اند و بعد از بلوغ می‌توانند زاد و ولد کنند.
+const GOD_HYBRIDS := {"horned_sheep": 1.3, "jackalope": 2.0, "wool_rabbit": 1.2}   # گونه‌های ترکیبی ← سرعت راه رفتن
+const HYBRID_PARENTS := {"deer+sheep": "horned_sheep", "deer+rabbit": "jackalope", "rabbit+sheep": "wool_rabbit"}   # نام والدین (الفبایی) ← گونهٔ ترکیبی
+const BREED_INTERVAL := 20.0          # ثانیه بین دو دورهٔ جفت‌گیری
+const BREED_RANGE := 5.0              # فاصلهٔ لازم دو والد (متر)
+const BREED_COOLDOWN := 60.0          # استراحت والدین بعد از هر زایمان
+const BREED_MATURE := 60.0            # ثانیه تا بالغ شدن توله
+const BREED_CHANCE := {"sheep": 0.3, "deer": 0.2, "rabbit": 0.45, "horned_sheep": 0.2, "jackalope": 0.2, "wool_rabbit": 0.3}
+const BREED_HYBRID_CHANCE := 0.1      # شانس گونهٔ ترکیبی برای جفت‌گیری دو گونهٔ متفاوت
+const BREED_CAP := 60                 # سقف کل حیوانات جهان برای زاد و ولد
+const BREED_SPECIES_CAP := 30         # سقف هر گونه
 const GOD_REMOVE_RANGE := 3.0
 ## حذف دائمی منبع طبیعی (درخت/سنگ/معدن) با نگه‌داشتن: زمان رویش بی‌نهایت در لایهٔ depleted.
 const CLEARED_FOREVER := 1.0e12
@@ -469,6 +481,14 @@ const MINE_ORES := {
 
 static func role_rank(role: String) -> int:
 	return ROLES.find(role)
+
+
+static func is_animal(kind: String) -> bool:
+	return GOD_ANIMALS.has(kind) or GOD_HYBRIDS.has(kind)
+
+
+static func animal_speed(kind: String) -> float:
+	return float(GOD_ANIMALS[kind]) if GOD_ANIMALS.has(kind) else float(GOD_HYBRIDS.get(kind, 1.0))
 
 
 static func is_livestock(type: String) -> bool:
