@@ -4,6 +4,7 @@ extends RefCounted
 
 const FWConst = preload("res://scripts/core/const.gd")
 const WorldGen = preload("res://scripts/world/world_generator.gd")
+const Residents = preload("res://scripts/server/residents.gd")
 const Placement = preload("res://scripts/shared/placement.gd")
 const NpcNav = preload("res://scripts/server/npc_nav.gd")
 const Minigame = preload("res://scripts/server/minigame.gd")
@@ -38,6 +39,8 @@ var creative: bool = false
 var undo_stacks: Dictionary = {}  # نام بازیکن -> پشتهٔ واگرد (فقط در حافظه)
 ## روستاها یک بار حیوان گرفته‌اند (برای جهان‌های قدیمی هم یک بار اجرا می‌شود).
 var villages_seeded: bool = false
+var villagers_seeded: bool = false   # ساکنان خانه‌های روستا یک بار ساخته شده‌اند
+var house_seen: Dictionary = {}       # شناسهٔ خانهٔ بازیکن -> روزی که اول بار دیده شد (برای مهاجران)
 ## جهان آماده (docs/SCENARIOS.md): شناسهٔ سناریو و اینکه سازه‌هایش ساخته شده‌اند. خالی = جهان معمولی.
 var scenario: String = ""
 var scenario_applied: bool = false
@@ -1230,7 +1233,7 @@ func god_action(actor: String, action: String, kind: String, x: float, z: float)
 		_log(actor, "god_remove", {"kind": k})
 		return {"ok": true}
 	if action == "add" and kind == FWConst.GOD_HUMAN:
-		if npcs.size() >= FWConst.NPC_MAX:
+		if Residents.count_capped(self) >= FWConst.NPC_MAX:
 			return {"ok": false, "error": "npc_full"}
 		if not _god_spot_ok(x, z):
 			return {"ok": false, "error": "bad_place"}
@@ -1240,6 +1243,7 @@ func god_action(actor: String, action: String, kind: String, x: float, z: float)
 		npcs.append({
 			"id": nid, "name": FWConst.NPC_NAMES[(nid - 1) % FWConst.NPC_NAMES.size()],
 			"x": x, "z": z, "state": "idle", "money": 100, "paid_day": -1, "placed": true,
+			"job": "", "home_b": -1, "home_v": "", "vx": 0.0, "vz": 0.0,
 		})
 		_log(actor, "god_add", {"kind": FWConst.GOD_HUMAN})
 		return {"ok": true, "npc": true}
@@ -1654,6 +1658,8 @@ func npc_interact(player_name: String, npc_id: int, item: String, pos: Vector2) 
 	acc["stats"][stat_key] = int(acc["stats"].get(stat_key, 0)) + 1
 	var role := Story.role_of(scenario, npc_id)
 	var dlg: Dictionary = Book.dialogue(self, player_name, role, friend_level(np)) if kind == "talk" else {"line": "", "hint": "", "entry": ""}
+	if kind == "talk" and role == "villager" and FWConst.RESIDENT_JOBS.has(str(npc.get("job", ""))):
+		dlg["line"] = "dlg_job_%s_%d" % [str(npc["job"]), clampi(friend_level(np), 0, 2)]
 	return {"ok": true, "kind": kind, "npc": str(npc["name"]), "npc_id": npc_id, "points": np, "level": friend_level(np),
 		"reward": reward, "item": item, "money": int(acc["money"]),
 		"role": role, "line": dlg["line"], "hint": dlg["hint"], "entry": dlg["entry"]}
@@ -1770,11 +1776,15 @@ func npc_buy(player_name: String, npc_id: int, item: String, n: int, pos: Vector
 	if pos.distance_to(Vector2(float(npc["x"]), float(npc["z"]))) > FWConst.NPC_TALK_RANGE:
 		return {"ok": false, "error": "too_far"}
 	var left := _npc_stock_left(npc, item)
+	if str(npc.get("job", "")) == "miner" and (item == "stone" or item == "coal"):
+		left += FWConst.NPC_STOCK_PER_DAY * (FWConst.RESIDENT_MINER_STOCK - 1)
 	if left < 1:
 		return {"ok": false, "error": "npc_out_of_stock"}
 	var acc: Dictionary = accounts[player_name]
 	var lv := friend_level(friendship_of(acc, npc_id))
 	var unit := FWConst.npc_buy_price(item, lv)
+	if str(npc.get("job", "")) == "seller":
+		unit = maxi(1, int(floor(float(unit) * FWConst.RESIDENT_SELLER_DISCOUNT)))
 	var count := mini(n, left)
 	if not creative:
 		count = mini(count, int(acc["money"]) / unit)
@@ -2535,6 +2545,7 @@ func tick(delta: float) -> void:
 	world_time = fposmod(world_time + delta * FWConst.TIME_SCALE * time_speed, 86400.0)
 	if world_time < prev_time:
 		day_count += 1
+		Residents.daily(self, day_count)
 	wheat_price = minf(FWConst.WHEAT_BASE_PRICE, wheat_price + FWConst.WHEAT_RECOVER_PER_SEC * delta)
 	bread_price = move_toward(bread_price, FWConst.BREAD_BASE_PRICE, FWConst.BREAD_RECOVER_PER_SEC * delta)
 	for id in buildings:
@@ -2659,6 +2670,8 @@ func to_dict() -> Dictionary:
 		"time_speed": time_speed,
 		"creative": creative,
 		"villages_seeded": villages_seeded,
+		"villagers_seeded": villagers_seeded,
+		"house_seen": house_seen,
 		"scenario": scenario,
 		"scenario_applied": scenario_applied,
 		"weather": weather,
@@ -2800,6 +2813,11 @@ static func from_dict(d: Dictionary):
 	cs.day_count = int(d.get("day_count", 0))
 	cs.creative = bool(d.get("creative", false))
 	cs.villages_seeded = bool(d.get("villages_seeded", false))
+	cs.villagers_seeded = bool(d.get("villagers_seeded", false))
+	var hs = d.get("house_seen", {})
+	if hs is Dictionary:
+		for k in hs:
+			cs.house_seen[str(k)] = int(hs[k])
 	cs.scenario = str(d.get("scenario", ""))
 	cs.scenario_applied = bool(d.get("scenario_applied", false))
 	cs.set_climate(Scenarios.climate(cs.scenario))
@@ -2895,6 +2913,10 @@ static func from_dict(d: Dictionary):
 				"stock_day": int(n.get("stock_day", -1)),
 				"sold": _load_sold(n.get("sold", null)),
 				"placed": bool(n.get("placed", false)),
+				"job": str(n.get("job", "")) if FWConst.RESIDENT_JOBS.has(str(n.get("job", ""))) else "",
+				"home_b": int(n.get("home_b", -1)), "home_v": str(n.get("home_v", "")),
+				"vx": float(n.get("vx", 0.0)), "vz": float(n.get("vz", 0.0)),
+				"wk_day": int(n.get("wk_day", -1)),
 			})
 	var bl = d.get("blocks", [])
 	cs.track_nav = false

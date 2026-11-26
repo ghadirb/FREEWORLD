@@ -865,6 +865,8 @@ func _tap(pos: Vector2) -> void:
 		var best_npc := -1
 		var best_t := 1.0e9
 		for nid in npc_avatars:
+			if not npc_avatars[nid].visible:
+				continue
 			var c: Vector3 = npc_avatars[nid].position + Vector3(0, 1.0, 0)
 			var t := (c - ro).dot(rd)
 			if t > 0.0 and (c - (ro + rd * t)).length() <= 1.1 and t < best_t:
@@ -2048,6 +2050,13 @@ func _sync_remote(_dt: float) -> void:
 		if not client.players.has(pname):
 			avatars[pname].queue_free()
 			avatars.erase(pname)
+	var live := {}
+	for n in client.npcs:
+		live[int(n[0])] = true
+	for dead in npc_avatars.keys():
+		if not live.has(dead):   # از محدودهٔ همگام‌سازی بیرون رفته یا حذف شده
+			npc_avatars[dead].queue_free()
+			npc_avatars.erase(dead)
 	for n in client.npcs:
 		var nid := int(n[0])
 		var nv = npc_avatars.get(nid)
@@ -2062,6 +2071,7 @@ func _sync_remote(_dt: float) -> void:
 		if Vector2(old.x, old.z).distance_to(Vector2(npos.x, npos.z)) > 0.05:
 			nv.target_yaw = atan2(npos.x - old.x, npos.z - old.z)
 		nv.target = npos
+		nv.visible = n.size() < 6 or int(n[5]) == 0   # ساکن خوابیده «داخل خانه» است
 		nv.sub_label.text = Loc.t("state_" + str(n[3]))
 
 

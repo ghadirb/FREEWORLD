@@ -7,6 +7,7 @@ const FWConst = preload("res://scripts/core/const.gd")
 const CityState = preload("res://scripts/server/city_state.gd")
 const Persistence = preload("res://scripts/server/persistence.gd")
 const NpcSim = preload("res://scripts/server/npc_sim.gd")
+const Residents = preload("res://scripts/server/residents.gd")
 const Book = preload("res://scripts/server/book.gd")
 const Arenas = preload("res://scripts/server/arenas.gd")
 const ScenarioApply = preload("res://scripts/server/scenario_apply.gd")
@@ -82,6 +83,7 @@ func start(port: int, seed_value: int, data_dir: String, admins: Array, tls_dir:
 		cs.provision_admin(str(a[0]), str(a[1]))
 	NpcSim.ensure_npcs(cs)
 	cs.seed_village_life()
+	Residents.seed_villagers(cs)
 	if port > 0:
 		var peer := ENetMultiplayerPeer.new()
 		var err: int = peer.create_server(port, FWConst.MAX_PLAYERS + 6)
@@ -858,9 +860,9 @@ func _players_public() -> Dictionary:
 
 func _broadcast_tick() -> void:
 	var pl := _players_public()
-	var np := NpcSim.public_list(cs)
 	for pid in _auth_peers():
-		_send(pid, "s2c_tick", cs.world_time, snappedf(cs.wheat_price, 0.01), pl, np)
+		var pp: Vector3 = peers[pid]["pos"]
+		_send(pid, "s2c_tick", cs.world_time, snappedf(cs.wheat_price, 0.01), pl, NpcSim.public_list_near(cs, pp.x, pp.z))
 
 
 func _broadcast_stocks() -> void:
@@ -966,7 +968,7 @@ func on_login(pid: int, player_name: String, token: String, proto: int) -> void:
 		"climate": cs.world.climate,
 	}
 	_send(pid, "s2c_login_result", true, "", info)
-	_send(pid, "s2c_snapshot", cs.all_buildings_public(), NpcSim.public_list(cs), _players_public())
+	_send(pid, "s2c_snapshot", cs.all_buildings_public(), NpcSim.public_list_near(cs, pos.x, pos.z), _players_public())
 	for batch in cs.block_batches():
 		_send(pid, "s2c_blocks", batch)
 	_send(pid, "s2c_depleted", cs.depleted_flat())

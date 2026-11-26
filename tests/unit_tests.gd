@@ -96,6 +96,7 @@ func _init() -> void:
 	test_wild()
 	test_hunger()
 	test_god_human()
+	test_residents()
 	test_batch_build()
 	test_blueprints()
 	test_terrain_shapes()
@@ -4681,3 +4682,133 @@ func test_god_human() -> void:
 				texts_ok = false
 	Loc.lang = "fa"
 	check(texts_ok, "human tool texts exist in Persian and English")
+
+
+func test_residents() -> void:
+	print("-- residents: village houses and migrants")
+	var NpcSim = load("res://scripts/server/npc_sim.gd")
+	var Residents = load("res://scripts/server/residents.gd")
+	var cs = CityState.new(6301)
+	NpcSim.ensure_npcs(cs)
+	var base: int = cs.npcs.size()
+	var n1: int = Residents.seed_villagers(cs)
+	check(n1 > 0 and Residents.seed_villagers(cs) == 0, "village residents are seeded once (%d)" % n1)
+	check(Residents.count_villagers(cs) == n1 and n1 <= FWConst.VILLAGER_MAX, "village residents respect their own cap")
+	var homes := {}
+	var all_jobs := true
+	for n in cs.npcs:
+		if Residents.is_villager(n):
+			homes[str(n["home_v"])] = true
+			if not FWConst.RESIDENT_JOBS.has(str(n["job"])):
+				all_jobs = false
+			if cs.world.house_site(str(n["home_v"])).is_empty():
+				all_jobs = false
+	check(homes.size() == n1 and all_jobs, "each resident has a unique real village house and a job")
+	check(Residents.count_capped(cs) == base, "villagers do not use the NPC_MAX budget")
+	# شبیه‌سازی: شب کنار خانه می‌خوابند و پنهان می‌شوند؛ ظهر سر کارند
+	var v: Dictionary = {}
+	for n in cs.npcs:
+		if Residents.is_villager(n):
+			v = n
+			break
+	cs.world_time = 3.0 * 3600.0
+	for i in 400:
+		NpcSim.step(cs, 0.5)
+	check(str(v["state"]) == "sleep" and Residents.is_inside(v) == 1, "a villager sleeps in the house at night")
+	var door: Dictionary = cs.world.house_site(str(v["home_v"]))
+	check(Vector2(float(v["x"]), float(v["z"])).distance_to(Vector2(float(door["ex"]), float(door["ez"]))) < 1.5, "sleeping villager is at their own door")
+	cs.world_time = 11.0 * 3600.0
+	for i in 600:
+		NpcSim.step(cs, 0.5)
+	check(str(v["state"]) == "work" and Residents.is_inside(v) == 0, "a villager works in the village by day")
+	# اقتصاد: کشاورز گندم می‌دهد، نانوا آرد را نان می‌کند، همه غذا می‌خورند
+	var cs2 = CityState.new(6302)
+	cs2.market["flour"] = 10.0
+	cs2.market["bread"] = 5.0
+	var farmer := {"job": "farmer"}
+	Residents.work_daily(cs2, farmer, 5)
+	check(float(cs2.market["wheat"]) == FWConst.RESIDENT_WHEAT_PER_DAY, "a farmer resident adds wheat to the market")
+	Residents.work_daily(cs2, farmer, 5)
+	check(float(cs2.market["wheat"]) == FWConst.RESIDENT_WHEAT_PER_DAY, "resident work happens once per day")
+	var baker := {"job": "baker"}
+	var bread0: float = float(cs2.market["bread"])
+	Residents.work_daily(cs2, baker, 5)
+	check(float(cs2.market["flour"]) == 8.0 and float(cs2.market["bread"]) > bread0 - 1.0 and float(cs2.market["bread"]) < bread0 + 3.0, "a baker resident turns flour into bread")
+	cs2.creative = true
+	var w0: float = float(cs2.market["wheat"])
+	Residents.work_daily(cs2, {"job": "farmer"}, 6)
+	check(float(cs2.market["wheat"]) == w0, "creative worlds leave the market alone")
+	# مهاجران
+	var cs3 = CityState.new(6303)
+	_login(cs3, "owner")
+	cs3.accounts["owner"]["money"] = 5000
+	NpcSim.ensure_npcs(cs3)
+	cs3.place_building("owner", 1, "house", 12, 14)
+	var house: Dictionary = _first_of(cs3, "house")
+	var hid: int = int(house["id"])
+	for g in ["bread", "egg", "milk"]:
+		cs3.market[g] = 20.0
+	var before: int = cs3.npcs.size()
+	Residents.daily(cs3, 1)
+	check(cs3.npcs.size() == before, "no migrant on the first day (house just seen)")
+	Residents.daily(cs3, 2)
+	check(cs3.npcs.size() == before, "no migrant without a bed")
+	cs3.furn_place("owner", hid, "bed", -2.1, -2.8, 0)
+	var ok_day: int = Residents.daily(cs3, 3)
+	check(ok_day == 1 and cs3.npcs.size() == before + 1, "a furnished house with food gets one migrant")
+	var mg: Dictionary = cs3.npcs[cs3.npcs.size() - 1]
+	check(int(mg["home_b"]) == hid and FWConst.RESIDENT_JOBS.has(str(mg["job"])), "the migrant lives in that house and has a job")
+	check(Residents.daily(cs3, 4) == 0 and cs3.npcs.size() == before + 1, "one house holds one resident")
+	cs3.world_time = 3.0 * 3600.0
+	for i in 400:
+		NpcSim.step(cs3, 0.5)
+	var back = CityState.from_dict(cs3.to_dict())
+	var kept := false
+	for n in back.npcs:
+		if int(n.get("home_b", -1)) == hid and str(n.get("job", "")) == str(mg["job"]):
+			kept = true
+	check(back != null and kept and back.house_seen.has(str(hid)), "migrants and house bookkeeping survive save and load")
+	cs3.buildings.erase(hid)
+	Residents.daily(cs3, 5)
+	check(int(mg["home_b"]) == -1, "a resident whose house is gone becomes homeless but stays")
+	# بدون غذا مهاجر نمی‌آید؛ خلاقانه هم نه
+	var cs4 = CityState.new(6304)
+	_login(cs4, "o")
+	cs4.accounts["o"]["money"] = 5000
+	cs4.place_building("o", 1, "house", 12, 14)
+	var h4: Dictionary = _first_of(cs4, "house")
+	cs4.furn_place("o", int(h4["id"]), "bed", -2.1, -2.8, 0)
+	Residents.daily(cs4, 1)
+	var n4: int = cs4.npcs.size()
+	Residents.daily(cs4, 3)
+	check(cs4.npcs.size() == n4, "no migrant without food in the market")
+	# گفتگو و معامله
+	var cs5 = CityState.new(6305)
+	_login(cs5, "t")
+	cs5.accounts["t"]["money"] = 1000
+	cs5.npcs.append({"id": 60, "name": "x", "x": 5.0, "z": 5.0, "state": "idle", "money": 100, "paid_day": -1, "job": "seller", "home_b": -1, "home_v": "", "vx": 0.0, "vz": 0.0})
+	cs5.npcs.append({"id": 61, "name": "y", "x": 5.0, "z": 6.0, "state": "idle", "money": 100, "paid_day": -1, "job": "miner", "home_b": -1, "home_v": "", "vx": 0.0, "vz": 0.0})
+	cs5.npcs.append({"id": 62, "name": "z", "x": 6.0, "z": 5.0, "state": "idle", "money": 100, "paid_day": -1})
+	var tk: Dictionary = cs5.npc_interact("t", 60, "", Vector2(5.0, 5.0))
+	check(bool(tk["ok"]) and str(tk["line"]) == "dlg_job_seller_%d" % int(tk["level"]), "residents talk about their job")
+	var plain_price: int = int(cs5.npc_buy("t", 62, "stone", 1, Vector2(6.0, 5.0))["total"])
+	var seller_price: int = int(cs5.npc_buy("t", 60, "stone", 1, Vector2(5.0, 5.0))["total"])
+	check(seller_price < plain_price, "a seller resident sells cheaper (%d < %d)" % [seller_price, plain_price])
+	var left_plain: int = cs5._npc_stock_left(cs5.npcs[2], "stone")
+	var bought := 0
+	for i in 25:
+		var r: Dictionary = cs5.npc_buy("t", 61, "stone", 1, Vector2(5.0, 6.0))
+		if bool(r["ok"]):
+			bought += 1
+	check(bought > FWConst.NPC_STOCK_PER_DAY and left_plain <= FWConst.NPC_STOCK_PER_DAY, "a miner resident has a larger daily stone stock (%d)" % bought)
+	var near_all: Array = NpcSim.public_list_near(cs, FWConst.CITY_SIZE * 0.5, FWConst.CITY_SIZE * 0.5)
+	check(near_all.size() < cs.npcs.size() and near_all.size() >= base, "tick lists only nearby NPCs (%d of %d)" % [near_all.size(), cs.npcs.size()])
+	var texts_ok := true
+	for lang in ["fa", "en"]:
+		Loc.lang = lang
+		for j in FWConst.RESIDENT_JOBS:
+			for lv in 3:
+				if Loc.t("dlg_job_%s_%d" % [j, lv]) == "dlg_job_%s_%d" % [j, lv]:
+					texts_ok = false
+	Loc.lang = "fa"
+	check(texts_ok, "resident dialogue exists in Persian and English")

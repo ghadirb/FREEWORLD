@@ -4,6 +4,7 @@ extends RefCounted
 
 const FWConst = preload("res://scripts/core/const.gd")
 const NpcNav = preload("res://scripts/server/npc_nav.gd")
+const Residents = preload("res://scripts/server/residents.gd")
 
 
 static func hour_of(cs) -> float:
@@ -64,6 +65,9 @@ static func target_for(cs, npc: Dictionary, activity: String) -> Variant:
 	match activity:
 		"sleep", "wake", "commute_home":
 			var home = _pick(_list(cs, "house"), idx)
+			var hb: int = int(npc.get("home_b", -1))
+			if hb >= 0 and cs.buildings.has(hb):
+				home = cs.buildings[hb]
 			return cs.door_point(home) if home != null else plaza
 		"commute_work", "work":
 			var farms := _list(cs, "farm")
@@ -146,6 +150,9 @@ static func step(cs, dt: float) -> void:
 	var day := int(floor(cs.world_time / 86400.0))
 	var activity := activity_for_hour(h)
 	for npc in cs.npcs:
+		if Residents.is_villager(npc):
+			_step_villager(cs, npc, activity, day, dt)
+			continue
 		var target: Vector2 = target_for(cs, npc, activity)
 		var pos := Vector2(npc["x"], npc["z"])
 		var dist: float = pos.distance_to(target)
@@ -159,6 +166,8 @@ static func step(cs, dt: float) -> void:
 				npc["state"] = "walk"
 		if arrived:
 			npc["state"] = activity
+			if activity == "work" and str(npc.get("job", "")) != "":
+				Residents.work_daily(cs, npc, day)
 			if activity == "work":
 				var b = _work_building(cs, npc)
 				if b != null and b["type"] == "farm":
@@ -169,6 +178,23 @@ static func step(cs, dt: float) -> void:
 	_daily_income(cs, day)
 
 
+## ساکن روستا: بدون مسیریابی شهری؛ مستقیم و آهسته به مقصد می‌رود و آب را دور می‌زند.
+static func _step_villager(cs, npc: Dictionary, activity: String, day: int, dt: float) -> void:
+	var target: Vector2 = Residents.village_target(cs, npc, activity)
+	var pos := Vector2(npc["x"], npc["z"])
+	var dist: float = pos.distance_to(target)
+	if dist > 0.6:
+		var nxt: Vector2 = pos + (target - pos).normalized() * minf(FWConst.NPC_SPEED * dt, dist)
+		if cs.world.height_at(nxt.x, nxt.y) >= -0.3 and not cs.world.village_solid_at(nxt.x, nxt.y, 0.2):
+			npc["x"] = nxt.x
+			npc["z"] = nxt.y
+		npc["state"] = "walk"
+		return
+	npc["state"] = activity
+	if activity == "work":
+		Residents.work_daily(cs, npc, day)
+
+
 ## هر NPC روزی NPC_DAILY_INCOME سکه درآمد دارد (سقف NPC_MAX_MONEY) تا چرخهٔ خرید متوقف نشود.
 static func _daily_income(cs, day: int) -> void:
 	for npc in cs.npcs:
@@ -177,8 +203,20 @@ static func _daily_income(cs, day: int) -> void:
 			npc["money"] = mini(int(npc["money"]) + FWConst.NPC_DAILY_INCOME, FWConst.NPC_MAX_MONEY)
 
 
+## فقط NPCهای نزدیک (x, z)؛ ساکنان روستاهای دور برای این بازیکن فرستاده نمی‌شوند.
+static func public_list_near(cs, x: float, z: float, radius: float = FWConst.NPC_SYNC_RADIUS) -> Array:
+	var out: Array = []
+	var r2 := radius * radius
+	for n in cs.npcs:
+		var dx: float = float(n["x"]) - x
+		var dz: float = float(n["z"]) - z
+		if dx * dx + dz * dz <= r2:
+			out.append([n["id"], snappedf(n["x"], 0.1), snappedf(n["z"], 0.1), n["state"], n["name"], Residents.is_inside(n)])
+	return out
+
+
 static func public_list(cs) -> Array:
 	var out: Array = []
 	for n in cs.npcs:
-		out.append([n["id"], snappedf(n["x"], 0.1), snappedf(n["z"], 0.1), n["state"], n["name"]])
+		out.append([n["id"], snappedf(n["x"], 0.1), snappedf(n["z"], 0.1), n["state"], n["name"], Residents.is_inside(n)])
 	return out
