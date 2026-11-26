@@ -11,6 +11,7 @@ const Race = preload("res://scripts/server/race.gd")
 const Blueprints = preload("res://scripts/server/blueprints.gd")
 const Arenas = preload("res://scripts/server/arenas.gd")
 const Civ = preload("res://scripts/server/civ.gd")
+const Wild = preload("res://scripts/server/wild.gd")
 const Mine = preload("res://scripts/shared/mine.gd")
 const RailNetwork = preload("res://scripts/shared/rail_network.gd")
 const Scenarios = preload("res://scripts/shared/scenarios.gd")
@@ -65,6 +66,8 @@ var race = Race.new()
 var blueprints = Blueprints.new()
 var arenas = Arenas.new()
 var civ = Civ.new()   # تمدن‌ها (پروتکل ۴۵)
+var wild = Wild.new() # دشمنان وحشی (پروتکل ۴۷؛ ذخیره نمی‌شود)
+var _hurt_t: Dictionary = {}   # نام → ثانیه از آخرین آسیب (برای بهبود سلامت)
 ## ساخت بلوکی: Vector3i -> [نوع, رنگ, مالک]. block_cells شمارندهٔ بلوک در هر خانهٔ ۲×۲ شبکهٔ ساختمان است.
 var blocks: Dictionary = {}
 var block_cells: Dictionary = {}
@@ -144,6 +147,8 @@ func authenticate(player_name: String, token: String) -> Dictionary:
 		"job": 0,
 		"work_acc": 0.0,
 		"energy": FWConst.ENERGY_MAX,
+		"hp": FWConst.PLAYER_HP_MAX,
+		"gear": {"weapon": 0, "armor": 0},
 		"inv": Scenarios.start_items(scenario),
 		"book": {},
 		"stats": {},
@@ -170,6 +175,8 @@ func provision_admin(player_name: String, secret: String, role: String = FWConst
 		"job": 0,
 		"work_acc": 0.0,
 		"energy": FWConst.ENERGY_MAX,
+		"hp": FWConst.PLAYER_HP_MAX,
+		"gear": {"weapon": 0, "armor": 0},
 		"inv": Scenarios.start_items(scenario),
 		"book": {},
 		"stats": {},
@@ -1059,6 +1066,89 @@ func paint_block(player_name: String, x: int, y: int, z: int, color: int) -> Dic
 
 
 ## برداشت از درخت/سنگ/خاک رس. pos موقعیت بازیکن است (برای فاصله).
+static func gear_of(acc: Dictionary) -> Dictionary:
+	var g: Variant = acc.get("gear", null)
+	if g is Dictionary:
+		return {"weapon": clampi(int(g.get("weapon", 0)), 0, 2), "armor": clampi(int(g.get("armor", 0)), 0, 2)}
+	return {"weapon": 0, "armor": 0}
+
+
+static func _load_gear(v: Variant) -> Dictionary:
+	return gear_of({"gear": v})
+
+
+## وضعیت سلامت و تجهیزات برای کلاینت: [hp، سطح سلاح، سطح زره]
+func vitals_public(player_name: String) -> Array:
+	if not accounts.has(player_name):
+		return [int(FWConst.PLAYER_HP_MAX), 0, 0]
+	var acc: Dictionary = accounts[player_name]
+	var g := gear_of(acc)
+	return [int(ceil(float(acc.get("hp", FWConst.PLAYER_HP_MAX)))), int(g["weapon"]), int(g["armor"])]
+
+
+## یک گام دشمنان وحشی. exposed = {نام: Vector2} بازیکنانی که بیرون‌اند و درگیر بازی‌ساز نیستند.
+## خروجی: {"send": bool، "vitals": [نام‌ها]، "died": [نام‌ها]، "kills": [...]، "inv": [نام‌ها]، "money": [نام‌ها]}
+func wild_step(dt: float, exposed: Dictionary) -> Dictionary:
+	var players: Array = []
+	var gear_cache := {}
+	for name in exposed:
+		if not accounts.has(name):
+			continue
+		var g := gear_of(accounts[name])
+		gear_cache[name] = g
+		players.append({"name": name, "pos": exposed[name], "dmg": int(FWConst.GEAR_WEAPON_DAMAGE[int(g["weapon"])]), "armor": float(FWConst.GEAR_ARMOR_REDUCE[int(g["armor"])])})
+	var sp := spawn_position()
+	var res: Dictionary = wild.step(dt, players, Wild.is_night(world_time), Callable(self, "_wild_land"), Vector2(sp.x, sp.z), not creative)
+	var out := {"send": bool(res["send"]), "vitals": [], "died": [], "kills": res["kills"], "inv": [], "money": []}
+	for name in _hurt_t.keys():
+		_hurt_t[name] = float(_hurt_t[name]) + dt
+	for h in res["hurt"]:
+		var n: String = h["name"]
+		var acc: Dictionary = accounts[n]
+		acc["hp"] = float(acc.get("hp", FWConst.PLAYER_HP_MAX)) - float(h["amount"])
+		_hurt_t[n] = 0.0
+		if not out["vitals"].has(n):
+			out["vitals"].append(n)
+		if float(acc["hp"]) <= 0.0:
+			acc["hp"] = FWConst.PLAYER_HP_MAX
+			var loss: int = mini(int(float(acc["money"]) * FWConst.DEATH_MONEY_LOSS_FRAC), FWConst.DEATH_MONEY_LOSS_MAX)
+			acc["money"] = int(acc["money"]) - loss
+			acc["pos"] = [sp.x, sp.y, sp.z]
+			_log(n, "wild_death", {"loss": loss})
+			out["died"].append(n)
+			out["money"].append(n)
+	for k in res["kills"]:
+		var kn: String = k["name"]
+		if not accounts.has(kn):
+			continue
+		accounts[kn]["money"] = int(accounts[kn]["money"]) + int(k["money"])
+		if not out["money"].has(kn):
+			out["money"].append(kn)
+		if str(k["drop"]) != "":
+			_inv_add(accounts[kn], str(k["drop"]), 1)
+			if not out["inv"].has(kn):
+				out["inv"].append(kn)
+	# بهبود سلامت پس از چند ثانیه بدون آسیب
+	for name in exposed:
+		if not accounts.has(name):
+			continue
+		var a2: Dictionary = accounts[name]
+		var hp: float = float(a2.get("hp", FWConst.PLAYER_HP_MAX))
+		if hp < FWConst.PLAYER_HP_MAX and float(_hurt_t.get(name, 999.0)) >= FWConst.PLAYER_HP_REGEN_DELAY:
+			var before := int(ceil(hp))
+			a2["hp"] = minf(FWConst.PLAYER_HP_MAX, hp + FWConst.PLAYER_HP_REGEN * dt)
+			if int(ceil(float(a2["hp"]))) != before and not out["vitals"].has(name):
+				out["vitals"].append(name)
+	return out
+
+
+func _wild_land(x: float, z: float) -> bool:
+	var half := FWConst.CITY_SIZE * 0.5
+	if absf(x - half) > FWConst.WORLD_LIMIT or absf(z - half) > FWConst.WORLD_LIMIT:
+		return false
+	return world.height_at(x, z) >= FWConst.GOD_MIN_HEIGHT
+
+
 func tool_tier(acc: Dictionary, tool: String) -> int:
 	if creative:
 		return 2
@@ -2217,6 +2307,22 @@ func craft(player_name: String, recipe: String, times: int) -> Dictionary:
 		acc[key] = true
 		_log(player_name, "unlock", {"what": key})
 		return {"ok": true, "unlock": key}
+	if r.has("gear"):
+		var slot: String = str(r["gear"])
+		var tier: int = int(r["tier"])
+		if times != 1:
+			return {"ok": false, "error": "bad_request"}
+		var gear: Dictionary = gear_of(acc)
+		if int(gear.get(slot, 0)) >= tier:
+			return {"ok": false, "error": "gear_have"}
+		if not has_items(acc["inv"], r["in"]):
+			return {"ok": false, "error": "no_items"}
+		for item in r["in"]:
+			acc["inv"][item] = int(acc["inv"][item]) - int(r["in"][item])
+		gear[slot] = tier
+		acc["gear"] = gear
+		_log(player_name, "gear", {"slot": slot, "tier": tier})
+		return {"ok": true, "gear": recipe}
 	if r.has("upgrade"):
 		var tl: String = str(r["upgrade"])
 		if times != 1:
@@ -2684,6 +2790,8 @@ static func from_dict(d: Dictionary):
 			"job": int(a.get("job", 0)),
 			"work_acc": float(a.get("work_acc", 0.0)),
 			"energy": clampf(float(a.get("energy", FWConst.ENERGY_MAX)), 0.0, FWConst.ENERGY_MAX),
+			"hp": clampf(float(a.get("hp", FWConst.PLAYER_HP_MAX)), 1.0, FWConst.PLAYER_HP_MAX),
+			"gear": _load_gear(a.get("gear", null)),
 			"inv": _load_inv(a.get("inv", null)),
 			"tools": _load_tools(a.get("tools", null)),
 			"boat": bool(a.get("boat", false)),

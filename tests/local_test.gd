@@ -315,6 +315,23 @@ func _run() -> void:
 	await create_timer(1.2).timeout   # سقف نرخ درخواست در سرور
 	c.civ_op("remove", idb, 0, 0.0, 0.0)
 	ok(await wait_until(func(): return c.civ["k"].is_empty(), 3.0), "all kingdoms can be removed")
+	# دشمنان وحشی (پروتکل ۴۷): شب + بیرون از میدان امن ← دشمن پیدا می‌شود و به کلاینت می‌رسد؛ صبح محو می‌شود
+	ok(await wait_until(func(): return c.hp == 100, 3.0), "vitals reach the client on login")
+	var sp7: Vector3 = server.cs.spawn_position()
+	var field_pos := Vector3(sp7.x + 60.0, server.cs.world.height_at(sp7.x + 60.0, sp7.z), sp7.z)
+	server.cs.world_time = 23.0 * 3600.0
+	server.cs.time_speed = 0.0
+	server.cs.creative = false
+	# کلاینت موقعیتش را مدام می‌فرستد؛ پس موقعیت سرور را در هر بررسی دوباره در زمین باز می‌گذاریم.
+	ok(await wait_until(func():
+		server.peers[1]["pos"] = field_pos
+		return not c.wild.is_empty(), 15.0), "a night enemy appears and reaches the client")
+	server.cs.world_time = 12.0 * 3600.0
+	ok(await wait_until(func(): return c.wild.is_empty(), 4.0), "enemies leave at daytime on the client")
+	server.cs.accounts[c.my_name]["inv"]["wood"] = 5
+	await create_timer(1.2).timeout   # سقف نرخ درخواست در سرور
+	c.craft("club", 1)
+	ok(await wait_until(func(): return c.weapon_tier == 1, 3.0), "crafting a club reaches the client as weapon tier 1")
 	c.disconnect_from_server()
 	server.stop()
 	server.queue_free()

@@ -59,6 +59,8 @@ var _ball_node: MeshInstance3D   # توپ فوتبال بازی‌ساز (پرو
 var _ball_mesh: ArrayMesh
 var foe_nodes: Array = []      # دشمن‌های مبارزه و بقا (پروتکل ۴۳)
 var _foe_mesh: ArrayMesh
+var wild_nodes: Dictionary = {}   # دشمنان وحشی جهان (پروتکل ۴۷): شناسه ← گره
+var _wild_meshes: Dictionary = {}
 var train_nodes: Array = []   # برای هر خط ریل: [گرهٔ لوکوموتیو، گره‌های واگن‌ها...]
 var _train_line_count: int = -1
 var _train_mesh_loco: ArrayMesh
@@ -153,6 +155,7 @@ func setup(game_client, quality_level: int) -> void:
 	client.god_changed.connect(_sync_god)
 	client.fire_changed.connect(_sync_nfire)
 	client.minigame_changed.connect(_sync_coins)
+	client.wild_changed.connect(_sync_wild)
 	client.arenas_changed.connect(_sync_arenas)
 	client.civ_changed.connect(_sync_civ)
 	client.arenas_changed.connect(_sync_props)
@@ -1227,6 +1230,7 @@ func _process(delta: float) -> void:
 	_update_ball()
 	var dt := minf(delta, 0.1)
 	_update_foes(dt)
+	_update_wild(dt)
 	var kb := _keyboard_vector()
 	if not (get_viewport().gui_get_focus_owner() is LineEdit):
 		if Input.is_key_pressed(KEY_Q):
@@ -1861,6 +1865,51 @@ func _sync_foes() -> void:
 		n.position = Vector3(float(f0[0]), world.height_at(float(f0[0]), float(f0[1])), float(f0[1]))
 	while foe_nodes.size() > foes.size():
 		foe_nodes.pop_back().queue_free()
+
+
+## دشمنان وحشی: گره‌ها را با فهرست سرور هماهنگ می‌کند (ساخت/حذف)؛ حرکت نرم در _update_wild.
+func _sync_wild() -> void:
+	if _god_mat == null:
+		_god_mat = MeshBuilder.material()
+	if _wild_meshes.is_empty():
+		var wm := MeshBuilder.new()   # گرگ: بدن کشیده و خاکستری
+		wm.add_box(Vector3(0, 0.5, 0), Vector3(0.5, 0.55, 1.1), Color("7a7a82"))
+		wm.add_box(Vector3(0, 0.75, 0.6), Vector3(0.4, 0.4, 0.45), Color("5c5c63"))
+		_wild_meshes["wolf"] = wm.build()
+		var gm := MeshBuilder.new()   # غول: قامت بلند و سبز تیره
+		gm.add_box(Vector3(0, 1.0, 0), Vector3(1.0, 1.6, 0.7), Color("3f6b3a"))
+		gm.add_box(Vector3(0, 2.0, 0), Vector3(0.65, 0.65, 0.65), Color("2c4d29"))
+		_wild_meshes["ghoul"] = gm.build()
+	var alive: Dictionary = {}
+	for m in client.wild:
+		var id: int = int(m[0])
+		alive[id] = true
+		if not wild_nodes.has(id):
+			var n := MeshInstance3D.new()
+			n.mesh = _wild_meshes.get(str(m[1]), _wild_meshes["wolf"])
+			n.material_override = _god_mat
+			n.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			add_child(n)
+			n.position = Vector3(float(m[2]), world.height_at(float(m[2]), float(m[3])), float(m[3]))
+			wild_nodes[id] = n
+	for id in wild_nodes.keys():
+		if not alive.has(id):
+			wild_nodes[id].queue_free()
+			wild_nodes.erase(id)
+
+
+func _update_wild(dt: float) -> void:
+	for m in client.wild:
+		var n: Node3D = wild_nodes.get(int(m[0]))
+		if n == null:
+			continue
+		var cur: Vector3 = n.position
+		var nx: float = lerpf(cur.x, float(m[2]), minf(dt * 8.0, 1.0))
+		var nz: float = lerpf(cur.z, float(m[3]), minf(dt * 8.0, 1.0))
+		var dir := Vector2(float(m[2]) - cur.x, float(m[3]) - cur.z)
+		if dir.length() > 0.05:
+			n.rotation.y = atan2(dir.x, dir.y)
+		n.position = Vector3(nx, world.height_at(nx, nz), nz)
 
 
 func _update_foes(dt: float) -> void:

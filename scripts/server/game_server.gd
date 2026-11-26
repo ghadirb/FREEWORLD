@@ -242,6 +242,7 @@ func _process(delta: float) -> void:
 	_work_step(dt)
 	_minigame_step(dt)
 	_race_step(dt)
+	_wild_step(dt)
 	if cs.civ_step(dt):
 		_broadcast("s2c_civ", cs.civ_public())
 		_dirty = true
@@ -718,6 +719,42 @@ func on_minigame_start(pid: int) -> void:
 	_send(pid, "s2c_minigame", cs.minigame.public_state(p["name"]))
 
 
+## دشمنان وحشی (پروتکل ۴۷): فقط بازیکنان بیرون از ساختمان/معدن، بدون بازی‌ساز، مسابقه یا پرواز در معرض‌اند.
+func _wild_step(dt: float) -> void:
+	var exposed: Dictionary = {}
+	for pid in _auth_peers():
+		var p: Dictionary = peers[pid]
+		if _indoors(p) or float(p.get("alt", 0.0)) > FWConst.FLY_MIN_ALT or bool(p.get("boat", false)):
+			continue
+		if cs.minigame.is_running(p["name"]) or cs.race.is_running(p["name"]):
+			continue
+		var pos: Vector3 = p["pos"]
+		exposed[p["name"]] = Vector2(pos.x, pos.z)
+	var res: Dictionary = cs.wild_step(dt, exposed)
+	for n in res["died"]:
+		if by_name.has(n):
+			var dpid: int = by_name[n]
+			var acc: Dictionary = cs.accounts[n]
+			var tp := Vector3(float(acc["pos"][0]), float(acc["pos"][1]), float(acc["pos"][2]))
+			peers[dpid]["pos"] = tp
+			peers[dpid]["last_move"] = Time.get_ticks_msec()
+			_send(dpid, "s2c_teleport", tp.x, tp.z)
+			_notice(dpid, "wild_died")
+	for n in res["vitals"]:
+		if by_name.has(n):
+			_send(by_name[n], "s2c_vitals", cs.vitals_public(n))
+	for n in res["money"]:
+		if by_name.has(n):
+			_send(by_name[n], "s2c_money", cs.money_of(n))
+	for n in res["inv"]:
+		if by_name.has(n):
+			_push_inv(by_name[n], n)
+	if not res["kills"].is_empty() or not res["died"].is_empty():
+		_dirty = true
+	if bool(res["send"]):
+		_broadcast("s2c_wild", cs.wild.public())
+
+
 func _work_step(dt: float) -> void:
 	var positions: Dictionary = {}
 	for pid in _auth_peers():
@@ -935,6 +972,8 @@ func on_login(pid: int, player_name: String, token: String, proto: int) -> void:
 	_send(pid, "s2c_minigame", cs.minigame.public_state(player_name))
 	_send(pid, "s2c_arenas", cs.arenas_public())
 	_send(pid, "s2c_civ", cs.civ_public())
+	_send(pid, "s2c_vitals", cs.vitals_public(player_name))
+	_send(pid, "s2c_wild", cs.wild.public())
 	_send(pid, "s2c_disaster", cs.disaster_public())
 	_send(pid, "s2c_race", cs.race.public_state(player_name))
 	_send(pid, "s2c_book", Book.public_state(cs, player_name))
@@ -1652,6 +1691,9 @@ func on_craft(pid: int, recipe: String, times: int) -> void:
 		_notice(pid, "unlocked", {"what": res["unlock"]})
 	elif res.has("upgrade"):
 		_notice(pid, "upgraded", {"tool": res["upgrade"]})
+	elif res.has("gear"):
+		_send(pid, "s2c_vitals", cs.vitals_public(p["name"]))
+		_notice(pid, "gear_made", {"item": res["gear"]})
 	else:
 		_notice(pid, "crafted", {"item": res["item"], "count": res["count"]})
 	_dirty = true

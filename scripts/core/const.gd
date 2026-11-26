@@ -1,7 +1,7 @@
 extends RefCounted
 ## ثابت‌های مشترک بین سرور و کلاینت.
 
-const PROTOCOL_VERSION := 46
+const PROTOCOL_VERSION := 47
 # ترافیک شبکه با DTLS رمز می‌شود (نسخهٔ ۴ به بعد). فقط برای عیب‌یابی خاموش شود.
 const USE_DTLS := true
 const DEFAULT_PORT := 7777
@@ -173,6 +173,11 @@ const RECIPES := {
 	"horse": {"in": {}, "money": 300, "unlock": "horse"},
 	# ماشین (پروتکل ۲۷): یک‌بار با سکه و آهن؛ سریع‌ترین وسیلهٔ خشکی.
 	"car": {"in": {"iron": 6}, "money": 1200, "unlock": "car"},
+	# سلاح و زره (پروتکل ۴۷): مرحله‌به‌مرحله؛ هر ساخت یک سطح بالاتر از سطح فعلی را می‌دهد.
+	"club": {"in": {"wood": 5}, "gear": "weapon", "tier": 1},
+	"sword": {"in": {"iron": 3, "wood": 2}, "gear": "weapon", "tier": 2},
+	"vest": {"in": {"wood": 4, "stone": 4}, "gear": "armor", "tier": 1},
+	"plate": {"in": {"iron": 6}, "gear": "armor", "tier": 2},
 }
 const HORSE_SPEED_MULT := 1.9
 const CAR_SPEED_MULT := 3.0
@@ -471,3 +476,31 @@ static func meta_facing(m: int) -> int:
 
 static func meta_valid(m: int) -> bool:
 	return m >= 0 and m < META_MAX and m % 16 < COLOR_COUNT
+
+
+## دشمنان وحشی در جهان آزاد (پروتکل ۴۷): شب‌ها نزدیک بازیکن‌ها پیدا می‌شوند و با سپیده‌دم می‌روند.
+## در جهان خلاقانه، میدان مرکزی، داخل ساختمان/معدن و حین بازی‌ساز دشمنی نیست.
+const WILD_KINDS := {
+	"wolf": {"hp": 3, "speed": 3.6, "dmg": 6.0, "cd": 1.2, "reach": 1.4, "money": 6, "drop": "", "drop_chance": 0.0},
+	"ghoul": {"hp": 6, "speed": 2.3, "dmg": 11.0, "cd": 1.6, "reach": 1.5, "money": 18, "drop": "iron", "drop_chance": 0.3},
+}
+const WILD_NIGHT_START := 20.0       # ساعت شروع شب
+const WILD_NIGHT_END := 5.0          # ساعت پایان شب
+const WILD_PER_PLAYER := 2           # حداکثر دشمن نزدیک هر بازیکن
+const WILD_GLOBAL_MAX := 12
+const WILD_SPAWN_EVERY := 5.0        # ثانیه
+const WILD_SPAWN_MIN := 24.0
+const WILD_SPAWN_MAX := 38.0
+const WILD_DESPAWN_DIST := 70.0
+const WILD_SAFE_RADIUS := 45.0       # دور میدان مرکزی/نقطهٔ زایش امن است
+const WILD_AGGRO := 45.0             # دشمن فقط تا این فاصله بازیکن را دنبال می‌کند (بیشتر از فاصلهٔ زایش)
+const WILD_SEND_EVERY := 0.25
+const PLAYER_HP_MAX := 100.0
+const PLAYER_HP_REGEN := 1.5         # در ثانیه، پس از ۶ ثانیه بدون آسیب
+const PLAYER_HP_REGEN_DELAY := 6.0
+const PLAYER_ATTACK_RANGE := 2.6
+const PLAYER_ATTACK_CD := 0.7
+const GEAR_WEAPON_DAMAGE := [1, 2, 3]            # مشت، چماق، شمشیر (ضربه‌های هر حمله)
+const GEAR_ARMOR_REDUCE := [0.0, 0.25, 0.5]      # بدون زره، جلیقه، زره آهنی
+const DEATH_MONEY_LOSS_FRAC := 0.1
+const DEATH_MONEY_LOSS_MAX := 50

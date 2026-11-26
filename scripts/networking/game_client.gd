@@ -34,6 +34,8 @@ signal teleported(pos: Vector2)
 signal ticked
 signal god_changed
 signal civ_changed
+signal wild_changed
+signal vitals_changed
 signal fire_changed
 signal minigame_changed
 signal disaster_changed
@@ -358,6 +360,26 @@ func arena_op(op: String, id: int = 0) -> void:
 
 ## تمدن‌ها (پروتکل ۴۵): k = [[id, نام، رنگ، جمعیت، ظرفیت، طاعون، قحطی، سکونتگاه‌ها]]، rel = [[الف، ب، ۱ جنگ | ۲ اتحاد]]، log = رویدادها
 var civ: Dictionary = {"k": [], "rel": [], "log": []}
+
+
+## دشمنان وحشی (پروتکل ۴۷): [[id، نوع، x، z، hp]] و سلامت/تجهیزات [hp، سطح سلاح، سطح زره]
+var wild: Array = []
+var hp: int = 100
+var weapon_tier: int = 0
+var armor_tier: int = 0
+
+
+func on_wild(list: Array) -> void:
+	wild = list
+	wild_changed.emit()
+
+
+func on_vitals(v: Array) -> void:
+	if v.size() >= 3:
+		hp = int(v[0])
+		weapon_tier = int(v[1])
+		armor_tier = int(v[2])
+		vitals_changed.emit()
 
 
 func on_civ(data: Dictionary) -> void:

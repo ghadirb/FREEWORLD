@@ -222,6 +222,7 @@ func setup(game_client, game_view) -> void:
 	client.inside_changed.connect(_on_inside_changed)
 	client.mine_changed.connect(_on_mine_changed)
 	client.energy_changed.connect(_refresh_stats)
+	client.vitals_changed.connect(_refresh_stats)
 	client.job_changed.connect(func(): if _info.visible and _info_id >= 0: _fill_info(_info_id))
 	client.chat_received.connect(_on_chat)
 	client.role_changed.connect(func(_r): _refresh_role())
@@ -2332,6 +2333,12 @@ func _on_notice(code: String, args: Dictionary) -> void:
 		"upgraded":
 			Sfx.play(self, "coin")
 			toast(Loc.fmt("msg_upgraded", [Loc.t("tool_" + str(args["tool"]))]), Color("ffd84a"))
+		"gear_made":
+			Sfx.play(self, "place")
+			toast(Loc.fmt("msg_gear_made", [Loc.t("craft_" + str(args["item"]))]), Color("c8f08a"))
+		"wild_died":
+			Sfx.play(self, "error")
+			toast(Loc.t("msg_wild_died"), Color("ff9a8a"))
 		"rested":
 			Sfx.play(self, "coin")
 			toast(Loc.t("msg_rested"), Color("c8f08a"))
@@ -2411,7 +2418,7 @@ func _on_notice(code: String, args: Dictionary) -> void:
 
 func _refresh_stats() -> void:
 	_money.text = Loc.t("creative_badge") if client.creative else "%s %s" % [Loc.digits(str(client.money)), Loc.t("coins")]
-	_clock.text = "%s   %s: %s" % [Loc.clock(client.world_time), Loc.t("energy"), Loc.digits(str(client.energy))]
+	_clock.text = "%s   %s: %s   %s: %s" % [Loc.clock(client.world_time), Loc.t("energy"), Loc.digits(str(client.energy)), Loc.t("health"), Loc.digits(str(client.hp))]
 	_price.text = "%s: %s  |  %s: %s" % [Loc.t("wheat_price"), Loc.digits("%.1f" % client.wheat_price),
 		Loc.t("bread_price"), Loc.digits("%.1f" % client.bread_price)]
 	_price.text += "  |  %s: %s  |  %s: %s" % [Loc.t("egg_price"), Loc.digits("%.1f" % client.egg_price),

@@ -93,6 +93,7 @@ func _init() -> void:
 	test_clear_resource()
 	test_world_rules()
 	test_civilization()
+	test_wild()
 	test_batch_build()
 	test_blueprints()
 	test_terrain_shapes()
@@ -4379,3 +4380,112 @@ func test_arena_difficulty() -> void:
 	a2.load_dict(cs.arenas.to_dict())
 	check(int(a2.items[ids[1]]["diff"]) == 2, "difficulty survives saving and loading")
 	check(FWConst.PROTOCOL_VERSION >= 46, "protocol bumped for the arena difficulty field")
+
+
+func test_wild() -> void:
+	print("== Wild enemies, weapons and armor ==")
+	var Wild = load("res://scripts/server/wild.gd")
+	var land := func(_x: float, _z: float) -> bool: return true
+	var center := Vector2(0, 0)
+	check(Wild.is_night(23.0 * 3600.0) and Wild.is_night(2.0 * 3600.0) and not Wild.is_night(12.0 * 3600.0), "night is 20:00 to 05:00")
+	var w = Wild.new()
+	w.rng.seed = 7
+	var me := {"name": "hero", "pos": Vector2(200, 200), "dmg": 1, "armor": 0.0}
+	# روز: دشمنی نیست
+	for i in range(20):
+		w.step(1.0, [me], false, land, center, true)
+	check(w.mobs.is_empty(), "no enemies spawn in daylight")
+	# جهان بدون دشمن (خلاقانه)
+	for i in range(20):
+		w.step(1.0, [me], true, land, center, false)
+	check(w.mobs.is_empty(), "no enemies when the world is peaceful")
+	# شب: دشمن زایش می‌شود ولی از سقف هر بازیکن بیشتر نمی‌شود
+	for i in range(60):
+		w.step(1.0, [{"name": "hero", "pos": Vector2(200, 200), "dmg": 0, "armor": 1.0}], true, land, center, true)
+	check(w.mobs.size() >= 1 and w.mobs.size() <= FWConst.WILD_PER_PLAYER, "night spawns respect the per-player cap (%d)" % w.mobs.size())
+	for m in w.mobs:
+		var d: float = (m["p"] as Vector2).distance_to(Vector2(200, 200))
+		check(d <= FWConst.WILD_SPAWN_MAX + 1.0 or d < FWConst.WILD_AGGRO, "enemies stay near the player")
+	# زره کامل: آسیب صفر؛ بدون زره: آسیب می‌خورد
+	var hurt_full := 0.0
+	var hurt_none := 0.0
+	for i in range(400):
+		var r1: Dictionary = w.step(0.25, [{"name": "hero", "pos": Vector2(200, 200), "dmg": 0, "armor": 1.0}], true, land, center, true)
+		for h in r1["hurt"]:
+			hurt_full += float(h["amount"])
+		var r2: Dictionary = w.step(0.25, [{"name": "hero", "pos": Vector2(200, 200), "dmg": 0, "armor": 0.0}], true, land, center, true)
+		for h in r2["hurt"]:
+			hurt_none += float(h["amount"])
+	check(hurt_full == 0.0 and hurt_none > 0.0, "armor reduces damage (full %.1f vs none %.1f)" % [hurt_full, hurt_none])
+	# بازیکن با شمشیر دشمن را می‌کشد و پاداش می‌گیرد
+	var kills := 0
+	var money := 0
+	for i in range(1200):
+		var r3: Dictionary = w.step(0.25, [{"name": "hero", "pos": Vector2(200, 200), "dmg": 3, "armor": 0.5}], true, land, center, true)
+		for k in r3["kills"]:
+			kills += 1
+			money += int(k["money"])
+	check(kills >= 1 and money >= 6, "an armed player kills enemies and earns coins (%d kills)" % kills)
+	# صبح: همه محو می‌شوند
+	w.step(1.0, [me], false, land, center, true)
+	check(w.mobs.is_empty(), "enemies vanish at dawn")
+	# دور میدان مرکزی امن است
+	var w2 = Wild.new()
+	w2.rng.seed = 11
+	for i in range(80):
+		w2.step(1.0, [{"name": "hero", "pos": Vector2(5, 5), "dmg": 0, "armor": 1.0}], true, land, center, true)
+	var safe_ok := true
+	for m in w2.mobs:
+		if (m["p"] as Vector2).distance_to(center) < FWConst.WILD_SAFE_RADIUS * 0.5:
+			safe_ok = false
+	check(safe_ok, "enemies do not enter the town square")
+	# ساخت تجهیزات و ذخیره
+	var cs = CityState.new(5151)
+	_login(cs, "smith")
+	var acc: Dictionary = cs.accounts["smith"]
+	check(cs.gear_of(acc) == {"weapon": 0, "armor": 0}, "new players have no gear")
+	check(cs.craft("smith", "sword", 1)["error"] == "no_items", "sword needs materials")
+	acc["inv"]["iron"] = 20
+	acc["inv"]["wood"] = 20
+	acc["inv"]["stone"] = 20
+	check(cs.craft("smith", "sword", 1)["ok"] and int(cs.gear_of(acc)["weapon"]) == 2, "an iron sword is crafted")
+	check(cs.craft("smith", "club", 1)["error"] == "gear_have", "a weaker weapon is refused after a better one")
+	check(cs.craft("smith", "vest", 1)["ok"] and cs.craft("smith", "plate", 1)["ok"] and int(cs.gear_of(acc)["armor"]) == 2, "armor goes vest then iron plate")
+	check(cs.craft("smith", "sword", 2)["error"] == "bad_request", "gear can only be crafted one at a time")
+	check(cs.vitals_public("smith") == [100, 2, 2], "vitals report hp and gear tiers")
+	var cs2 = CityState.from_dict(cs.to_dict())
+	check(cs2 != null and cs2.vitals_public("smith") == [100, 2, 2], "gear and health survive save and load")
+	# مرگ: سلامت پر، بازگشت به میدان، جریمهٔ محدود
+	var cs3 = CityState.new(5152)
+	_login(cs3, "victim")
+	cs3.accounts["victim"]["money"] = 1000
+	cs3.accounts["victim"]["hp"] = 1.0
+	cs3.world_time = 23.0 * 3600.0
+	var sp3: Vector3 = cs3.spawn_position()
+	var field := Vector2(sp3.x + 60.0, sp3.z)   # خشکی بیرون از میدان امن
+	var died := false
+	for i in range(4000):
+		var r4: Dictionary = cs3.wild_step(0.25, {"victim": field})
+		if not r4["died"].is_empty():
+			died = true
+			break
+		cs3.accounts["victim"]["hp"] = 1.0
+	check(died, "enemies can defeat an unarmored player")
+	check(float(cs3.accounts["victim"]["hp"]) == FWConst.PLAYER_HP_MAX and int(cs3.accounts["victim"]["money"]) >= 1000 - FWConst.DEATH_MONEY_LOSS_MAX, "death restores health and costs a capped amount")
+	# خلاقانه: هیچ دشمنی
+	var cs4 = CityState.new(5153)
+	_login(cs4, "maker")
+	cs4.creative = true
+	cs4.world_time = 23.0 * 3600.0
+	for i in range(100):
+		cs4.wild_step(1.0, {"maker": Vector2(cs4.spawn_position().x + 60.0, cs4.spawn_position().z)})
+	check(cs4.wild.mobs.is_empty(), "creative worlds have no enemies")
+	# متن‌ها
+	var texts_ok := true
+	for lang in ["fa", "en"]:
+		Loc.lang = lang
+		for k in ["health", "craft_club", "craft_sword", "craft_vest", "craft_plate", "msg_gear_made", "msg_wild_died", "err_gear_have"]:
+			if Loc.t(k) == k:
+				texts_ok = false
+	Loc.lang = "fa"
+	check(texts_ok, "wild and gear texts exist in Persian and English")

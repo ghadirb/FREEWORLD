@@ -467,6 +467,18 @@ func s2c_notice(code: String, args: Dictionary) -> void:
 
 
 @rpc("authority", "call_remote", "reliable")
+func s2c_wild(list: Array) -> void:
+	if client:
+		client.on_wild(list)
+
+
+@rpc("authority", "call_remote", "reliable")
+func s2c_vitals(v: Array) -> void:
+	if client:
+		client.on_vitals(v)
+
+
+@rpc("authority", "call_remote", "reliable")
 func s2c_civ(data: Dictionary) -> void:
 	if client:
 		client.on_civ(data)
