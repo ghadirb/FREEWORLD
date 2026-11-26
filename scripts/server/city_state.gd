@@ -1207,12 +1207,42 @@ func god_action(actor: String, action: String, kind: String, x: float, z: float)
 			if d <= best_d:
 				best_d = d
 				best = id
+		# انسان‌هایی که خودِ مدیر گذاشته (placed) هم قابل حذف‌اند؛ نزدیک‌ترین هدف برنده است.
+		var best_npc := -1
+		var best_nd := best_d if best < 0 else best_d - 0.0001
+		for i in npcs.size():
+			if not bool(npcs[i].get("placed", false)):
+				continue
+			var nd := Vector2(float(npcs[i]["x"]), float(npcs[i]["z"])).distance_to(Vector2(x, z))
+			if nd <= best_nd:
+				best_nd = nd
+				best_npc = i
+		if best_npc >= 0:
+			var gone: Dictionary = npcs[best_npc]
+			npc_paths.erase(gone["id"])
+			npcs.remove_at(best_npc)
+			_log(actor, "god_remove", {"kind": FWConst.GOD_HUMAN})
+			return {"ok": true, "npc": true}
 		if best < 0:
 			return {"ok": false, "error": "no_target"}
 		var k: String = str(god[best]["kind"])
 		god.erase(best)
 		_log(actor, "god_remove", {"kind": k})
 		return {"ok": true}
+	if action == "add" and kind == FWConst.GOD_HUMAN:
+		if npcs.size() >= FWConst.NPC_MAX:
+			return {"ok": false, "error": "npc_full"}
+		if not _god_spot_ok(x, z):
+			return {"ok": false, "error": "bad_place"}
+		var nid := 1
+		for n in npcs:
+			nid = maxi(nid, int(n["id"]) + 1)
+		npcs.append({
+			"id": nid, "name": FWConst.NPC_NAMES[(nid - 1) % FWConst.NPC_NAMES.size()],
+			"x": x, "z": z, "state": "idle", "money": 100, "paid_day": -1, "placed": true,
+		})
+		_log(actor, "god_add", {"kind": FWConst.GOD_HUMAN})
+		return {"ok": true, "npc": true}
 	if action != "add" or not (FWConst.GOD_STATIC.has(kind) or FWConst.GOD_ANIMALS.has(kind)):
 		return {"ok": false, "error": "bad_request"}
 	if god.size() >= FWConst.GOD_MAX:
@@ -2864,6 +2894,7 @@ static func from_dict(d: Dictionary):
 				"goods_day": int(n.get("goods_day", -1)),
 				"stock_day": int(n.get("stock_day", -1)),
 				"sold": _load_sold(n.get("sold", null)),
+				"placed": bool(n.get("placed", false)),
 			})
 	var bl = d.get("blocks", [])
 	cs.track_nav = false

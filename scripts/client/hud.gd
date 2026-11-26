@@ -934,7 +934,7 @@ func _build_god_panel() -> void:
 	row.add_theme_constant_override("h_separation", 8)
 	row.add_theme_constant_override("v_separation", 8)
 	v.add_child(row)
-	for k in FWConst.GOD_STATIC + FWConst.GOD_ANIMALS.keys() + FWConst.GOD_SHAPES + FWConst.GOD_POWERS + ["remove"]:
+	for k in FWConst.GOD_STATIC + FWConst.GOD_ANIMALS.keys() + [FWConst.GOD_HUMAN] + FWConst.GOD_SHAPES + FWConst.GOD_POWERS + ["remove"]:
 		var b := UiTheme.button(Loc.t("god_" + str(k)), Vector2(120, 70))
 		b.add_theme_font_size_override("font_size", 22)
 		b.toggle_mode = true

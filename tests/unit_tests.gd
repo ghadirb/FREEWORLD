@@ -95,6 +95,7 @@ func _init() -> void:
 	test_civilization()
 	test_wild()
 	test_hunger()
+	test_god_human()
 	test_batch_build()
 	test_blueprints()
 	test_terrain_shapes()
@@ -4622,3 +4623,61 @@ func test_hunger() -> void:
 				texts_ok = false
 	Loc.lang = "fa"
 	check(texts_ok, "hunger texts exist in Persian and English")
+
+
+func test_god_human() -> void:
+	print("-- god tool: place and remove humans")
+	var NpcSim = load("res://scripts/server/npc_sim.gd")
+	var cs = CityState.new(6201)
+	_login(cs, "plain")
+	cs.provision_admin("boss", "secret")
+	NpcSim.ensure_npcs(cs)
+	var base: int = cs.npcs.size()
+	var sp: Vector3 = cs.spawn_position()
+	var spot := Vector2(sp.x + 6.0, sp.z + 6.0)
+	check(str(cs.god_action("plain", "add", FWConst.GOD_HUMAN, spot.x, spot.y)["error"]) == "forbidden", "regular players cannot place humans")
+	var r: Dictionary = cs.god_action("boss", "add", FWConst.GOD_HUMAN, spot.x, spot.y)
+	check(bool(r["ok"]) and cs.npcs.size() == base + 1, "admin places a human as a real NPC")
+	var made: Dictionary = cs.npcs[cs.npcs.size() - 1]
+	var ids := {}
+	for n in cs.npcs:
+		ids[int(n["id"])] = true
+	check(ids.size() == cs.npcs.size(), "placed humans get unique ids")
+	check(bool(made["placed"]) and str(made["name"]) != "" and absf(float(made["x"]) - spot.x) < 0.01, "placed human has a name, position and the placed flag")
+	NpcSim.step(cs, 1.0)
+	check(cs.npcs.size() == base + 1, "placed humans take part in the daily simulation")
+	# سقف
+	while cs.npcs.size() < FWConst.NPC_MAX:
+		cs.npcs.append({"id": 900 + cs.npcs.size(), "name": "x", "x": 1.0, "z": 1.0, "state": "idle", "money": 0, "paid_day": -1})
+	check(str(cs.god_action("boss", "add", FWConst.GOD_HUMAN, spot.x + 2.0, spot.y)["error"]) == "npc_full", "residents are capped")
+	# ذخیره و بارگذاری
+	var cs2 = CityState.new(6202)
+	cs2.provision_admin("boss", "secret")
+	NpcSim.ensure_npcs(cs2)
+	cs2.god_action("boss", "add", FWConst.GOD_HUMAN, spot.x, spot.y)
+	var back = CityState.from_dict(cs2.to_dict())
+	var kept := false
+	for n in back.npcs:
+		if bool(n.get("placed", false)):
+			kept = true
+	check(back != null and back.npcs.size() == cs2.npcs.size() and kept, "placed humans survive save and load")
+	# حذف: فقط انسان‌های گذاشته‌شده، نه NPCهای اصلی
+	var n_before: int = back.npcs.size()
+	var base_npc: Dictionary = back.npcs[0]
+	var rm0: Dictionary = back.god_action("boss", "remove", "", float(base_npc["x"]), float(base_npc["z"]))
+	check(back.npcs.size() == n_before and not bool(rm0["ok"]), "starting NPCs are not removable with the remove tool")
+	var rm: Dictionary = back.god_action("boss", "remove", "", spot.x, spot.y)
+	check(bool(rm["ok"]) and back.npcs.size() == n_before - 1, "remove deletes a placed human")
+	# خلاقانه
+	var cs3 = CityState.new(6203)
+	cs3.creative = true
+	cs3.provision_admin("boss", "secret")
+	check(bool(cs3.god_action("boss", "add", FWConst.GOD_HUMAN, spot.x, spot.y)["ok"]), "humans can be placed in creative worlds")
+	var texts_ok := true
+	for lang in ["fa", "en"]:
+		Loc.lang = lang
+		for k in ["god_human", "err_npc_full"]:
+			if Loc.t(k) == k:
+				texts_ok = false
+	Loc.lang = "fa"
+	check(texts_ok, "human tool texts exist in Persian and English")
