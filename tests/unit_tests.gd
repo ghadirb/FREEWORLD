@@ -67,6 +67,7 @@ func _init() -> void:
 	test_arena_parkour()
 	test_arena_race()
 	test_arena_boat()
+	test_arena_island()
 	test_arena_football()
 	test_arena_survival()
 	test_arena_adventure()
@@ -4256,6 +4257,83 @@ func test_arena_boat() -> void:
 	check(float(cs.minigame.arena_times.get(id, {}).get("sailor", 0.0)) > 0.0, "finishing records a lap time")
 	var pr: Dictionary = Arenas.parse_code(Arenas.export_code(a))
 	check(bool(pr["ok"]) and str(pr["def"]["kind"]) == "boat", "the share code keeps the boat kind")
+
+
+func test_arena_island() -> void:
+	print("== Survival island arenas (hunger, food, enemies, timer) ==")
+	var cs = CityState.new(4244)
+	_login(cs, "maker")
+	_login(cs, "castaway")
+	cs.accounts["maker"]["money"] = 1000
+	var at := _mg_land_pos(cs)
+	var res: Dictionary = cs.arena_create("maker", "Isle", at, 16.0, 10, 90.0, 2, "island", 50, 5, 1)
+	check(bool(res["ok"]), "an island arena can be built")
+	var id: int = int(res["id"])
+	var a: Dictionary = cs.arenas.items[id]
+	check(str(a["kind"]) == "island" and int(a["obs"]) == 0, "kind is kept and there are no moving obstacles")
+	var food: Array = Arenas.make_island_food(cs.world, cs.seed_value, 1, a)
+	check(food.size() >= FWConst.ARENA_COINS_MIN, "food is placed on land")
+	check(food == Arenas.make_island_food(cs.world, cs.seed_value, 1, a), "food layout is deterministic per run")
+	var center := Vector2(float(a["x"]), float(a["z"]))
+	var inside := true
+	var spaced := true
+	for i in food.size():
+		if (food[i] as Vector2).distance_to(center) > float(a["r"]) + 0.5:
+			inside = false
+		for j in i:
+			if (food[i] as Vector2).distance_to(food[j]) < FWConst.ISLE_FOOD_SPACING - 0.1:
+				spaced = false
+	check(inside and spaced, "food sits inside the island and is spaced apart")
+	check(bool(cs.arena_play("castaway", id, at)["ok"]), "a castaway can start")
+	var st: Dictionary = cs.minigame.public_state("castaway")
+	check(st.has("hun") and st.has("hp") and int(st["hun"]) == int(FWConst.ISLE_HUNGER_MAX), "the run starts with full hunger and health")
+	check((st["coins"] as Array).size() == food.size() or (st["coins"] as Array).size() >= FWConst.ARENA_COINS_MIN, "all food is visible at once (not ordered)")
+	var run: Dictionary = cs.minigame.runs["castaway"]
+	run["spawns"] = []   # برای آزمون سرد: بدون دشمن
+	var far := center + Vector2(15.0, 0.0)
+	cs.minigame.step(10.0, {"castaway": far}, 1)
+	var hun_after: float = float(run["hun"])
+	check(hun_after < FWConst.ISLE_HUNGER_MAX - 11.0 and hun_after > FWConst.ISLE_HUNGER_MAX - 13.0, "hunger drains over time")
+	check(float(run["hp"]) == FWConst.SURV_HP, "no damage while still fed")
+	# غذا خوردن سیری را برمی‌گرداند
+	var first: Vector2 = (run["coins"] as Array)[0]
+	var evs: Array = cs.minigame.step(0.1, {"castaway": first}, 1)
+	check(float(run["hun"]) > hun_after + 5.0 and float(run["hun"]) <= FWConst.ISLE_HUNGER_MAX and int(run["score"]) == 1, "eating food restores fullness and scores")
+	var ticks := 0
+	for e in cs.minigame.step(1.0, {"castaway": far}, 1):
+		if e["kind"] == "tick":
+			ticks += 1
+	check(ticks >= 1, "a periodic tick event pushes the hunger value to the client")
+	# گرسنگی: سلامتی می‌ریزد
+	run["hun"] = 0.0
+	var hp0: float = float(run["hp"])
+	cs.minigame.step(2.0, {"castaway": far}, 1)
+	check(float(run["hp"]) < hp0 - FWConst.ISLE_STARVE_DAMAGE * 1.9, "starving drains health")
+	# زنده ماندن تا پایان زمان با شرط برد ۵۰٪ (۵ غذا) جایزه می‌دهد
+	for k in 4:
+		var nxt: Vector2 = (run["coins"] as Array)[0]
+		cs.minigame.step(0.1, {"castaway": nxt}, 1)
+	run["hun"] = 100.0
+	run["hp"] = 50.0
+	run["t"] = 0.05
+	var end_ev: Dictionary = {}
+	for e in cs.minigame.step(0.1, {"castaway": far}, 1):
+		if e["kind"] == "end":
+			end_ev = e
+	check(not end_ev.is_empty() and bool(end_ev["won"]) and int(end_ev["reward"]) > 0, "surviving with enough food wins and pays the reward")
+	# مرگ = باخت حتی با غذای کافی
+	check(bool(cs.arena_play("castaway", id, at)["ok"]), "a second run can start")
+	var run2: Dictionary = cs.minigame.runs["castaway"]
+	run2["spawns"] = []
+	run2["score"] = int(run2["total"])
+	run2["hp"] = 0.0
+	var dead_ev: Dictionary = {}
+	for e in cs.minigame.step(0.1, {"castaway": far}, 1):
+		if e["kind"] == "end":
+			dead_ev = e
+	check(not dead_ev.is_empty() and not bool(dead_ev["won"]) and int(dead_ev["reward"]) == 0, "dying is a loss with no reward")
+	var pr: Dictionary = Arenas.parse_code(Arenas.export_code(a))
+	check(bool(pr["ok"]) and str(pr["def"]["kind"]) == "island", "the share code keeps the island kind")
 
 
 func test_arena_football() -> void:

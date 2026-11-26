@@ -27,7 +27,7 @@ static func clean_name(raw: String) -> String:
 ## هر مقدار ناشناخته سکه‌یاب است.
 static func clean_kind(raw: Variant) -> String:
 	var k := str(raw)
-	return k if k == "parkour" or k == "race" or k == "boat" or k == "football" or k == "survival" or k == "adventure" else "coins"
+	return k if k == "parkour" or k == "race" or k == "boat" or k == "football" or k == "survival" or k == "island" or k == "adventure" else "coins"
 
 
 ## سطح سختی: ۰ آسان، ۱ متوسط، ۲ سخت؛ هر مقدار نامعتبر متوسط است.
@@ -318,6 +318,32 @@ static func make_race_gates(world, seed_value: int, a: Dictionary) -> Array:
 	return best
 
 
+## منابع (غذا) جزیرهٔ بقا: نقطه‌های روی خشکی درون خود میدان (۱۵ تا ۹۰٪ شعاع) با فاصلهٔ حداقل ۲٫۵ متر؛
+## قطعی از Seed، شناسه و شمارندهٔ دور (هر دور چیدمان تازه دارد).
+static func make_island_food(world, seed_value: int, counter: int, a: Dictionary) -> Array:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash("%d:isle:%d:%d:%d" % [seed_value, int(a.get("id", 0)), counter, int(a["coins"])])
+	var center := Vector2(float(a["x"]), float(a["z"]))
+	var r: float = float(a["r"])
+	var want: int = int(a["coins"])
+	var out: Array = []
+	var tries := 0
+	while out.size() < want and tries < 800:
+		tries += 1
+		var ang := rng.randf() * TAU
+		var c := center + Vector2(cos(ang), sin(ang)) * r * (0.15 + 0.75 * sqrt(rng.randf()))
+		if not on_land(world, c):
+			continue
+		var far := true
+		for o in out:
+			if (o as Vector2).distance_to(c) < FWConst.ISLE_FOOD_SPACING:
+				far = false
+				break
+		if far:
+			out.append(Vector2(snappedf(c.x, 0.1), snappedf(c.y, 0.1)))
+	return out
+
+
 ## آب برای دروازهٔ قایق: ارتفاع زمین زیر آستانهٔ قایق و داخل مرز جهان (همان قاعدهٔ shared/boat.gd، بدون پل و بلوک).
 static func on_water(world, c: Vector2) -> bool:
 	var lo: float = -FWConst.WORLD_LIMIT
@@ -431,6 +457,8 @@ static func make_targets(world, seed_value: int, player_name: String, counter: i
 		return make_race_gates(world, seed_value, a)
 	if kd == "boat":
 		return make_boat_gates(world, seed_value, a)
+	if kd == "island":
+		return make_island_food(world, seed_value, counter, a)
 	if kd == "parkour":
 		return make_checkpoints(world, seed_value, a)
 	return make_coins(world, seed_value, player_name, counter, a)

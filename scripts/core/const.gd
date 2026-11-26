@@ -1,7 +1,7 @@
 extends RefCounted
 ## ثابت‌های مشترک بین سرور و کلاینت.
 
-const PROTOCOL_VERSION := 49
+const PROTOCOL_VERSION := 50
 # ترافیک شبکه با DTLS رمز می‌شود (نسخهٔ ۴ به بعد). فقط برای عیب‌یابی خاموش شود.
 const USE_DTLS := true
 const DEFAULT_PORT := 7777
@@ -340,6 +340,11 @@ const SURV_ATTACK_RANGE := 2.4    # برد ضربهٔ خودکار بازیکن
 const SURV_ATTACK_CD := 0.6       # فاصلهٔ ضربه‌های بازیکن
 const SURV_ALIVE_MAX := 3         # حداکثر دشمن هم‌زمان
 const SURV_COUNT_MAX := 20        # حداکثر دشمن هر دور
+const ISLE_HUNGER_MAX := 100.0    # سیری اول جزیرهٔ بقا (پروتکل ۵۰)
+const ISLE_HUNGER_RATE := 1.2     # کاهش سیری در هر ثانیه
+const ISLE_FOOD := 30.0           # سیری‌ای که هر منبع (غذا) برمی‌گرداند
+const ISLE_STARVE_DAMAGE := 4.0   # سلامتی که در هر ثانیهٔ گرسنگی از دست می‌رود
+const ISLE_FOOD_SPACING := 2.5    # کمینهٔ فاصلهٔ دو منبع
 const ADV_STAGES_MAX := 8         # حداکثر مرحلهٔ ماجراجویی (پروتکل ۴۴)
 const FOOT_GOALS_MAX := 10        # حداکثر گل هدف در میدان فوتبال (پروتکل ۴۲)
 const FOOT_KICK_SPEED := 9.0      # سرعت توپ پس از لمس بازیکن (متر بر ثانیه)

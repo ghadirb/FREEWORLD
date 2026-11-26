@@ -1251,6 +1251,8 @@ func _update_mg_bar() -> void:
 		_mg_bar.text = Loc.fmt("mg_status", [Loc.digits(str(int(client.minigame.get("score", 0)))), Loc.digits(str(int(ceil(client.minigame_time_left()))))])
 		if client.minigame.has("hp"):
 			_mg_bar.text += "   ❤ " + Loc.digits(str(int(client.minigame["hp"])))
+		if client.minigame.has("hun"):
+			_mg_bar.text += "   🍖 " + Loc.digits(str(int(client.minigame["hun"])))
 		var near := INF
 		var near_d := Vector2.ZERO
 		if view != null:
@@ -1692,7 +1694,7 @@ func _build_arena_panel() -> void:
 	_arena_kind_btn = UiTheme.button("", Vector2(0, 52))
 	_arena_kind_btn.pressed.connect(func():
 		Sfx.play(self, "click")
-		_arena_kind = {"coins": "parkour", "parkour": "race", "race": "boat", "boat": "football", "football": "survival", "survival": "adventure"}.get(_arena_kind, "coins")
+		_arena_kind = {"coins": "parkour", "parkour": "race", "race": "boat", "boat": "football", "football": "survival", "survival": "adventure", "adventure": "island"}.get(_arena_kind, "coins")
 		_arena_kind_refresh())
 	v.add_child(_arena_kind_btn)
 	_arena_kind_refresh()
@@ -1752,6 +1754,7 @@ const ARENA_PRESETS := [
 	{"id": "hard", "kind": "parkour", "r": 18, "n": 12, "t": 40, "rw": 2, "win": 100, "obs": 3},
 	{"id": "race", "kind": "race", "r": 20, "n": 10, "t": 45, "rw": 2, "win": 100, "obs": 0},
 	{"id": "boat", "kind": "boat", "r": 16, "n": 8, "t": 40, "rw": 2, "win": 100, "obs": 0},
+	{"id": "island", "kind": "island", "r": 16, "n": 10, "t": 90, "rw": 2, "win": 50, "obs": 0},
 	{"id": "adventure", "kind": "adventure", "r": 18, "n": 5, "t": 90, "rw": 3, "win": 100, "obs": 0},
 	{"id": "survival", "kind": "survival", "r": 14, "n": 8, "t": 60, "rw": 2, "win": 100, "obs": 0},
 	{"id": "football", "kind": "football", "r": 14, "n": 5, "t": 60, "rw": 2, "win": 100, "obs": 0},
@@ -1824,7 +1827,7 @@ func _fill_arena_list() -> void:
 		var mine: bool = str(a["owner"]) == client.my_name
 		var box := VBoxContainer.new()
 		_arena_rows.add_child(box)
-		box.add_child(_label(({"parkour": "🏁 ", "race": "🏎 ", "boat": "🚤 ", "football": "⚽ ", "survival": "⚔ ", "adventure": "🗝 "}.get(str(a.get("kind", "coins")), "🪙 ")) + str(a["name"]), 22, Color("ffd24a")))
+		box.add_child(_label(({"parkour": "🏁 ", "race": "🏎 ", "boat": "🚤 ", "football": "⚽ ", "survival": "⚔ ", "adventure": "🗝 ", "island": "🏝 "}.get(str(a.get("kind", "coins")), "🪙 ")) + str(a["name"]), 22, Color("ffd24a")))
 		var top: Array = a["top"]
 		var sub := "%s: %s  ·  %s" % [Loc.t("arena_owner"), str(a["owner"]),
 			Loc.fmt("arena_info", [Loc.digits(str(a["coins"])), Loc.digits(str(int(a["time"]))), Loc.digits(str(a["reward"]))])]
@@ -2404,7 +2407,7 @@ func _on_notice(code: String, args: Dictionary) -> void:
 			Sfx.play(self, "notify")
 			toast(Loc.t("msg_arena_rated"), Color("c8f08a"))
 		"arena_started":
-			toast(Loc.t("msg_arena_started_boat" if bool(args.get("boat", false)) else "msg_arena_started_adventure" if bool(args.get("adventure", false)) else "msg_arena_started_survival" if bool(args.get("survival", false)) else "msg_arena_started_football" if bool(args.get("football", false)) else "msg_arena_started_race" if bool(args.get("race", false)) else ("msg_arena_started_parkour" if bool(args.get("parkour", false)) else "msg_arena_started_coins")), Color("ffd84a"))
+			toast(Loc.t("msg_arena_started_island" if bool(args.get("island", false)) else "msg_arena_started_boat" if bool(args.get("boat", false)) else "msg_arena_started_adventure" if bool(args.get("adventure", false)) else "msg_arena_started_survival" if bool(args.get("survival", false)) else "msg_arena_started_football" if bool(args.get("football", false)) else "msg_arena_started_race" if bool(args.get("race", false)) else ("msg_arena_started_parkour" if bool(args.get("parkour", false)) else "msg_arena_started_coins")), Color("ffd84a"))
 		"arena_respawned":
 			toast(Loc.fmt("msg_arena_respawned", [Loc.digits(str(int(FWConst.ARENA_RESPAWN_PENALTY)))]), Color("ffd84a"))
 		"arena_imported":

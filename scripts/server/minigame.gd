@@ -80,6 +80,21 @@ func start_arena(world, seed_value: int, player_name: String, arena: Dictionary)
 		runs[player_name]["atk"] = 0.0
 		runs[player_name]["send"] = 0.0
 		runs[player_name]["total"] = int(arena["coins"])
+	if kind_now == "island":
+		var r2: Dictionary = runs[player_name]
+		r2["isl"] = true
+		r2["foes"] = []
+		r2["spawns"] = Arenas.make_survival_spawns(world, seed_value, arena)
+		r2["spawned"] = 0
+		r2["hp"] = FWConst.SURV_HP
+		r2["fs"] = float(FWConst.ARENA_DIFF_FOE_SPEED[diff])
+		r2["fd"] = float(FWConst.ARENA_DIFF_FOE_DAMAGE[diff])
+		r2["atk"] = 0.0
+		r2["send"] = 0.0
+		r2["total"] = targets.size()
+		r2["ftotal"] = clampi(int(arena["coins"]) / 2, 2, FWConst.SURV_COUNT_MAX)
+		r2["hun"] = FWConst.ISLE_HUNGER_MAX
+		r2["scd"] = 0.0
 	if kind_now == "football":
 		var c0 := Vector2(float(arena["x"]), float(arena["z"]))
 		runs[player_name]["ball"] = {"p": c0, "v": Vector2.ZERO, "cd": 0.0, "send": 0.0, "c": c0, "r": float(arena["r"]), "goal": targets[0], "gr": FWConst.FOOT_GOAL_RANGE * float(FWConst.ARENA_DIFF_GOAL[diff])}
@@ -146,12 +161,26 @@ func step(dt: float, positions: Dictionary, day: int, world_ref = null) -> Array
 				if bool(run.get("pk", false)):
 					run["last"] = coins[i]   # ایستگاه گرفته‌شده = نقطهٔ ذخیره
 				coins.remove_at(i)
+				if run.has("hun"):
+					run["hun"] = minf(float(run["hun"]) + FWConst.ISLE_FOOD, FWConst.ISLE_HUNGER_MAX)
 				run["score"] = int(run["score"]) + 1
 				var queue: Array = run.get("queue", [])
 				if not queue.is_empty():
 					coins.append(queue.pop_front())
 				events.append({"name": player_name, "kind": "coin", "adv": bool(run.get("adv", false)), "n": int(run["score"]), "of": int(run.get("total", 0))})
 			i -= 1
+		if run.has("hun"):
+			run["hun"] = maxf(float(run["hun"]) - FWConst.ISLE_HUNGER_RATE * dt, 0.0)
+			run["hsend"] = float(run.get("hsend", 0.0)) + dt
+			if float(run["hsend"]) >= 1.0:   # سیری هر ثانیه به کلاینت می‌رسد، حتی وقتی دشمنی نیست
+				run["hsend"] = 0.0
+				events.append({"name": player_name, "kind": "tick"})
+			if float(run["hun"]) <= 0.0:
+				run["hp"] = float(run["hp"]) - FWConst.ISLE_STARVE_DAMAGE * dt
+				run["scd"] = float(run.get("scd", 0.0)) - dt
+				if float(run["scd"]) <= 0.0:
+					run["scd"] = 1.5
+					events.append({"name": player_name, "kind": "hurt"})
 		run["clk"] = float(run.get("clk", 0.0)) + dt
 		var obs: Array = run.get("obs", [])
 		if not obs.is_empty():
@@ -229,7 +258,7 @@ func _step_ball(world, run: Dictionary, player_name: String, pos: Vector2, dt: f
 func _step_foes(world, run: Dictionary, player_name: String, pos: Vector2, dt: float, events: Array) -> void:
 	var foes: Array = run["foes"]
 	var spawns: Array = run["spawns"]
-	var total: int = int(run.get("total", 1))
+	var total: int = int(run.get("ftotal", run.get("total", 1)))
 	while foes.size() < FWConst.SURV_ALIVE_MAX and int(run["spawned"]) < total and not spawns.is_empty():
 		var sp: Vector2 = spawns[int(run["spawned"]) % spawns.size()]
 		if sp.distance_to(pos) < 5.0:
@@ -263,8 +292,9 @@ func _step_foes(world, run: Dictionary, player_name: String, pos: Vector2, dt: f
 		tf["p"] = tf["p"] + (away.normalized() * 0.8 if away.length() > 0.01 else Vector2.ZERO)
 		if int(tf["hp"]) <= 0:
 			foes.remove_at(nearest)
-			run["score"] = int(run["score"]) + 1
-			events.append({"name": player_name, "kind": "coin"})
+			if not bool(run.get("isl", false)):   # در جزیره امتیاز از منابع می‌آید نه کشتن
+				run["score"] = int(run["score"]) + 1
+				events.append({"name": player_name, "kind": "coin"})
 	run["send"] = float(run["send"]) + dt
 	if float(run["send"]) >= FWConst.FOOT_SEND and not foes.is_empty():
 		run["send"] = 0.0
@@ -311,6 +341,8 @@ func _finish_arena(player_name: String, run: Dictionary) -> Dictionary:
 	var goal: int = int(run.get("win", 0))
 	var total: int = maxi(int(run.get("total", 0)), 1)
 	var won: bool = goal <= 0 or score * 100 >= total * goal
+	if bool(run.get("isl", false)) and float(run.get("hp", 1.0)) <= 0.0:
+		won = false   # جزیرهٔ بقا: مردن یعنی باخت
 	var reward := 0
 	if player_name != str(run["owner"]) and won:
 		reward = int(round(float(score) * float(run["per_coin"]) * float(run.get("rmult", 1.0))))
@@ -359,6 +391,8 @@ func public_state(player_name: String) -> Dictionary:
 				fl.append([snappedf(f["p"].x, 0.05), snappedf(f["p"].y, 0.05)])
 			out["foes"] = fl
 			out["hp"] = int(ceil(maxf(float(run["hp"]), 0.0)))
+			if run.has("hun"):
+				out["hun"] = int(ceil(float(run["hun"])))
 		if run.has("ball"):
 			var bb: Dictionary = run["ball"]
 			out["ball"] = [snappedf(bb["p"].x, 0.05), snappedf(bb["p"].y, 0.05), snappedf(bb["v"].x, 0.05), snappedf(bb["v"].y, 0.05)]
