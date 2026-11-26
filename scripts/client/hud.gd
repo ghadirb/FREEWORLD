@@ -104,6 +104,7 @@ var _book_panel: PanelContainer
 var _book_progress: Label
 var _book_rows: VBoxContainer
 var _fly_btn: Button
+var _jump_btn: Button
 var _boat_btn: Button
 var _fish_btn: Button
 var _horse_btn: Button
@@ -446,6 +447,13 @@ func _build_side_buttons() -> void:
 		ab.button_up.connect(func(): view.fly_vert = 0.0)
 		_fly_pad.add_child(ab)
 		_interactive.append(ab)
+	_jump_btn = UiTheme.button(Loc.t("jump"), Vector2(120, 96))
+	_jump_btn.add_theme_font_size_override("font_size", 22)
+	_jump_btn.visible = false
+	_jump_btn.button_down.connect(func(): view.try_hop())
+	root.add_child(_jump_btn)
+	_place(_jump_btn, 1.0, 1.0, 12.0, 120.0)
+	_interactive.append(_jump_btn)
 	view.fly_changed.connect(func(on: bool): _fly_btn.text = Loc.t("land") if on else Loc.t("fly"); _fly_pad.visible = on)
 	for b in [_mode_btn, _view_btn, _build_btn, _tools_btn, _inv_btn, chat_btn, _admin_btn, _god_btn, _mg_btn, _arena_btn, _race_btn, _book_btn, _boat_btn, _horse_btn, _car_btn, _fish_btn, _fly_btn, menu_btn]:
 		b.add_theme_font_size_override("font_size", 19)
@@ -1172,17 +1180,20 @@ func _update_race_bar() -> void:
 func _on_horse_changed() -> void:
 	_horse_btn.text = Loc.t("horse_leave") if client.mounted else Loc.t("horse")
 	_fly_btn.visible = view.mode == "life" and client.creative and not client.boating and not client.mounted and not client.driving
+	_jump_btn.visible = view.can_hop()
 
 
 func _on_car_changed() -> void:
 	_car_btn.text = Loc.t("car_leave") if client.driving else Loc.t("car")
 	_refresh_race()
 	_fly_btn.visible = view.mode == "life" and client.creative and not client.boating and not client.mounted and not client.driving
+	_jump_btn.visible = view.can_hop()
 
 
 func _on_boat_changed() -> void:
 	_boat_btn.text = Loc.t("boat_leave") if client.boating else Loc.t("boat")
 	_fly_btn.visible = view.mode == "life" and client.creative and not client.boating and not client.mounted and not client.driving
+	_jump_btn.visible = view.can_hop()
 	_refresh_race()
 
 
@@ -2461,6 +2472,7 @@ func _process(delta: float) -> void:
 	if _stat_acc > 0.4:
 		_stat_acc = 0.0
 		_refresh_stats()
+		_jump_btn.visible = view.can_hop() or view.hopping
 	_update_mg_bar()
 	_update_race_bar()
 	_update_race_bar()
@@ -2489,6 +2501,7 @@ func _on_mode_changed(_m: String) -> void:
 	_race_btn.visible = view.mode == "life"
 	_arena_btn.visible = view.mode == "life"
 	_fly_btn.visible = view.mode == "life" and client.creative and not client.boating and not client.mounted and not client.driving
+	_jump_btn.visible = view.can_hop()
 	_boat_btn.visible = view.mode == "life"
 	_fish_btn.visible = view.mode == "life"
 	_horse_btn.visible = view.mode == "life"

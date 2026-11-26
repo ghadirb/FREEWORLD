@@ -19,6 +19,7 @@ const BlockView = preload("res://scripts/client/block_view.gd")
 const MineView = preload("res://scripts/client/mine_view.gd")
 const VillageView = preload("res://scripts/client/village_view.gd")
 const Mine = preload("res://scripts/shared/mine.gd")
+const Gravity = preload("res://scripts/shared/gravity.gd")
 const RailNetwork = preload("res://scripts/shared/rail_network.gd")
 const Arenas = preload("res://scripts/server/arenas.gd")
 
@@ -81,6 +82,9 @@ var joy: Vector2 = Vector2.ZERO
 # پرواز خلاقانه: my_alt ارتفاع بالای زمین است؛ my_pos همیشه روی زمین می‌ماند.
 var _nfire_nodes: Dictionary = {}
 var flying: bool = false
+var hopping: bool = false  # پرش با جاذبهٔ اقلیم (ماه: بلندتر)
+var _hop_vy: float = 0.0
+var _hop_acc: float = 0.0
 var my_alt: float = 0.0
 var fly_vert: float = 0.0  # دکمه‌های HUD: +۱ بالا، −۱ پایین
 var _landing: bool = false
@@ -1240,6 +1244,7 @@ func _process(delta: float) -> void:
 		if Input.is_key_pressed(KEY_E):
 			cam.yaw -= dt * 1.8
 	_update_fly(dt)
+	_update_hop(dt)
 	if mode == "life":
 		_move_player(dt, joy + kb)
 		cam.set_life_focus(my_pos + Vector3(0.0, my_alt, 0.0))
@@ -1322,6 +1327,47 @@ func _update_fly(dt: float) -> void:
 		client.send_move(my_pos.x, my_pos.z, my_yaw, my_alt)
 
 
+func can_hop() -> bool:
+	return not client.creative and inside_id == 0 and client.mine_id == "" and mode == "life" and not client.boating and not client.mounted and not client.driving and not flying
+
+
+## پرش: سرعت اولیهٔ ثابت؛ ارتفاع و مدت هوا را جاذبهٔ اقلیم تعیین می‌کند. در ماه حدود ۶ برابر بلندتر است.
+func try_hop() -> void:
+	if hopping or not can_hop():
+		return
+	hopping = true
+	_hop_vy = Gravity.JUMP_SPEED
+	_hop_acc = 0.0
+
+
+func _update_hop(dt: float) -> void:
+	if not hopping:
+		if mode == "life" and can_hop() and Input.is_key_pressed(KEY_SPACE) and not (get_viewport().gui_get_focus_owner() is LineEdit):
+			try_hop()
+		if not hopping:
+			return
+	if not can_hop():
+		hopping = false
+		_hop_vy = 0.0
+		my_alt = 0.0
+		my_avatar.teleport_to(my_pos)
+		return
+	_hop_vy -= Gravity.g(str(client.mirror.world.climate)) * dt
+	my_alt += _hop_vy * dt
+	var landed: bool = my_alt <= 0.0
+	if landed:
+		my_alt = 0.0
+		hopping = false
+		_hop_vy = 0.0
+	my_avatar.position = my_pos + Vector3(0.0, my_alt, 0.0)
+	my_avatar.target = my_avatar.position
+	_hop_acc += dt
+	if landed or _hop_acc >= 0.1:
+		_hop_acc = 0.0
+		_alt_sent = my_alt
+		client.send_move(my_pos.x, my_pos.z, my_yaw, my_alt)
+
+
 func _move_player(dt: float, input: Vector2) -> void:
 	var len := minf(input.length(), 1.0)
 	if len < 0.08:
@@ -1347,13 +1393,13 @@ func _move_player(dt: float, input: Vector2) -> void:
 		speed_mult *= client.mirror.car_surface_mult(my_pos.x, my_pos.z)
 	elif client.mounted:
 		speed_mult = FWConst.HORSE_SPEED_MULT
-	var step := dir * FWConst.PLAYER_SPEED * speed_mult * (FWConst.FLY_SPEED_MULT if my_alt > FWConst.FLY_MIN_ALT else 1.0) * len * dt
+	var step := dir * FWConst.PLAYER_SPEED * speed_mult * (FWConst.FLY_SPEED_MULT if (flying and my_alt > FWConst.FLY_MIN_ALT) else 1.0) * len * dt
 	var nx := my_pos.x + step.x
 	var nz := my_pos.z + step.z
 	var lo := -FWConst.WORLD_LIMIT
 	var hi := FWConst.CITY_SIZE + FWConst.WORLD_LIMIT
 	var mirror = client.mirror
-	var airborne: bool = my_alt > FWConst.FLY_MIN_ALT
+	var airborne: bool = flying and my_alt > FWConst.FLY_MIN_ALT
 	if client.boating:
 		# قایق فقط روی آب می‌رود؛ لمس ساحل (بیرون از مسابقه) پیاده می‌کند (سرور تصمیم نهایی را می‌گیرد).
 		var can_beach: bool = not client.race_active()

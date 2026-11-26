@@ -20,6 +20,7 @@ const Scenarios = preload("res://scripts/shared/scenarios.gd")
 const ScenarioApply = preload("res://scripts/server/scenario_apply.gd")
 const Entitlements = preload("res://scripts/client/entitlements.gd")
 const Loc = preload("res://scripts/client/loc.gd")
+const Gravity = preload("res://scripts/shared/gravity.gd")
 const Story = preload("res://scripts/shared/story.gd")
 const Book = preload("res://scripts/server/book.gd")
 const Packs = preload("res://scripts/shared/blueprint_packs.gd")
@@ -106,6 +107,7 @@ func _init() -> void:
 	test_gallery_and_rooms()
 	test_two_storey_house()
 	test_climates()
+	test_gravity()
 	test_story_book()
 	test_blueprint_packs()
 	test_quests()
@@ -3275,6 +3277,34 @@ func test_scenarios() -> void:
 	check(ok2["ok"] and ws[1]["creative"], "creative scenario makes a creative world")
 	check(not WorldSlots.add_world(ws, "x3", 1, false, "nope")["ok"], "unknown scenario is rejected")
 	check(Entitlements.is_unlocked("medieval_fort") and Entitlements.is_unlocked("green_valley"), "worlds are open until payments are connected")
+
+
+func test_gravity() -> void:
+	print("[gravity]")
+	check(Gravity.g("temperate") == Gravity.EARTH_G and Gravity.g("winter") == Gravity.EARTH_G and Gravity.g("desert") == Gravity.EARTH_G, "Earth climates share Earth gravity")
+	check(Gravity.g("moon") == Gravity.MOON_G and Gravity.is_low_gravity("moon") and not Gravity.is_low_gravity("temperate"), "the moon has low gravity")
+	check(Gravity.g("nonsense") == Gravity.EARTH_G, "unknown climate falls back to Earth gravity")
+	var ratio: float = Gravity.max_height("moon") / Gravity.max_height("temperate")
+	check(absf(ratio - Gravity.EARTH_G / Gravity.MOON_G) < 0.001 and ratio > 5.5, "a moon hop is about six times higher")
+	check(Gravity.max_height("temperate") > FWConst.FLY_MIN_ALT, "an Earth hop clears the airborne threshold")
+	check(Gravity.max_height("moon") < FWConst.FLY_MAX_ALT, "a moon hop stays far below the creative flight ceiling")
+	check(Gravity.air_time("moon") > Gravity.air_time("temperate") * 5.0, "moon hops last about six times longer")
+	check(Gravity.server_cap("moon") > Gravity.max_height("moon") and Gravity.server_cap("temperate") > Gravity.max_height("temperate"), "server cap leaves network slack")
+	# فیزیک: شبیه‌سازی گام‌به‌گام همان بیشینهٔ فرمول را می‌دهد و در زمان هوا می‌نشیند.
+	for cl in ["temperate", "moon"]:
+		var alt := 0.0
+		var vy: float = Gravity.JUMP_SPEED
+		var peak := 0.0
+		var t := 0.0
+		var dt := 1.0 / 120.0
+		while true:
+			vy -= Gravity.g(cl) * dt
+			alt += vy * dt
+			t += dt
+			peak = maxf(peak, alt)
+			if alt <= 0.0:
+				break
+		check(absf(peak - Gravity.max_height(cl)) < 0.05 and absf(t - Gravity.air_time(cl)) < 0.1, "%s: simulated hop matches the formulas" % cl)
 
 
 func test_climates() -> void:

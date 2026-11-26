@@ -4,6 +4,7 @@ extends Node
 
 const Boat = preload("res://scripts/shared/boat.gd")
 const FWConst = preload("res://scripts/core/const.gd")
+const Gravity = preload("res://scripts/shared/gravity.gd")
 const CityState = preload("res://scripts/server/city_state.gd")
 const Persistence = preload("res://scripts/server/persistence.gd")
 const NpcSim = preload("res://scripts/server/npc_sim.gd")
@@ -1028,6 +1029,8 @@ func on_move(pid: int, x: float, z: float, yaw: float, alt: float = 0.0) -> void
 	var driving: bool = bool(p.get("car", false))
 	var mounted: bool = bool(p.get("horse", false)) or driving
 	var flying: bool = cs.creative and alt > FWConst.FLY_MIN_ALT and not boating and not mounted
+	# پرش: فقط در جهان غیرخلاقانه، پیاده؛ ارتفاع تا سقف جاذبهٔ اقلیم (ماه بلندتر) و هرگز مانع زمین را دور نمی‌زند.
+	var hopping: bool = not cs.creative and alt > 0.0 and not boating and not mounted
 	var now := Time.get_ticks_msec()
 	var dt: float = clampf(float(now - int(p["last_move"])) / 1000.0, 0.0, 0.5)
 	p["last_move"] = now
@@ -1059,7 +1062,12 @@ func on_move(pid: int, x: float, z: float, yaw: float, alt: float = 0.0) -> void
 		terrain_ok = flying or cs.is_walkable(x, z, cur.y)
 	var valid: bool = d <= float(p["allow"]) + 0.05 and in_bounds and terrain_ok
 	if valid:
-		p["alt"] = clampf(alt, 0.0, FWConst.FLY_MAX_ALT) if flying else 0.0
+		if flying:
+			p["alt"] = clampf(alt, 0.0, FWConst.FLY_MAX_ALT)
+		elif hopping:
+			p["alt"] = clampf(alt, 0.0, Gravity.server_cap(str(cs.world.climate)))
+		else:
+			p["alt"] = 0.0
 		p["allow"] = float(p["allow"]) - d
 		if boating and not beaching:
 			p["pos"] = Vector3(x, FWConst.SEA_LEVEL, z)

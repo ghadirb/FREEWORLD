@@ -10,6 +10,7 @@ const ServerMain = preload("res://scripts/server/server_main.gd")
 const Placement = preload("res://scripts/shared/placement.gd")
 const Mine = preload("res://scripts/shared/mine.gd")
 const Boat = preload("res://scripts/shared/boat.gd")
+const Gravity = preload("res://scripts/shared/gravity.gd")
 const GameViewScript = preload("res://scripts/client/game_view.gd")
 const HudScript = preload("res://scripts/client/hud.gd")
 
@@ -592,7 +593,41 @@ func _run() -> void:
 			await create_timer(0.3).timeout
 			ok(float(server.peers[1]["alt"]) == 0.0, "landing resets altitude")
 		else:
-			ok(got_alt == 0.0, "survival: altitude is ignored")
+			ok(got_alt <= Gravity.server_cap("temperate") + 0.001 and got_alt < FWConst.FLY_MAX_ALT * 0.1, "survival: no flight, altitude is limited to a hop")
+		c.disconnect_from_server()
+		server.stop()
+		server.queue_free()
+		c.queue_free()
+		await create_timer(0.3).timeout
+
+	print("== jump and low gravity ==")
+	for hop_scn in ["", "space_colony"]:
+		var hdir := OS.get_user_data_dir().path_join("local_test_hop_%s_%d" % [hop_scn, Time.get_ticks_msec()])
+		server = ServerMain.launch(root, {"port": 0, "seed": 777, "data_dir": hdir, "admins": [["hosty", "secret-secret-1"]], "max_seconds": 0.0, "scenario": hop_scn})
+		c = _mk_client()
+		c.connect_local(server, "hosty", "secret-secret-1")
+		ok(await wait_until(func(): return c.is_logged_in, 3.0), "hop test login (scenario='%s')" % hop_scn)
+		var hclimate: String = str(server.cs.world.climate)
+		var hp: Vector3 = server.peers[1]["pos"]
+		var h_cap: float = Gravity.server_cap(hclimate)
+		c.send_move(hp.x, hp.z, 0.0, 0.5)
+		await create_timer(0.3).timeout
+		ok(absf(float(server.peers[1]["alt"]) - 0.5) < 0.05, "%s: a small hop is accepted in a survival world" % hclimate)
+		c.send_move(hp.x, hp.z, 0.0, 999.0)
+		await create_timer(0.3).timeout
+		ok(absf(float(server.peers[1]["alt"]) - h_cap) < 0.001, "%s: hop height is capped by that climate's gravity (%.2f m)" % [hclimate, h_cap])
+		ok(await wait_until(func(): return absf(float(c.players.get("hosty", {}).get("alt", 0.0)) - h_cap) < 0.2, 3.0), "%s: hop height is broadcast to clients" % hclimate)
+		c.send_move(hp.x, hp.z, 0.0, 0.0)
+		await create_timer(0.3).timeout
+		ok(float(server.peers[1]["alt"]) == 0.0, "%s: landing resets altitude" % hclimate)
+		if hclimate == "moon":
+			c.send_move(hp.x, hp.z, 0.0, 3.0)
+			await create_timer(0.3).timeout
+			ok(absf(float(server.peers[1]["alt"]) - 3.0) < 0.05, "moon: a 3 m hop is allowed (impossible on Earth)")
+		else:
+			c.send_move(hp.x, hp.z, 0.0, 3.0)
+			await create_timer(0.3).timeout
+			ok(float(server.peers[1]["alt"]) < 1.0, "earth: a 3 m hop is clamped to under 1 m")
 		c.disconnect_from_server()
 		server.stop()
 		server.queue_free()
