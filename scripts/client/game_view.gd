@@ -2107,6 +2107,10 @@ func _update_sky(h: float) -> void:
 	sun.light_energy = lerpf(0.2, 0.85, light) * _weather_light()
 	var top := Color(0.02, 0.03, 0.09).lerp(Color(0.26, 0.52, 0.88), light)
 	var horizon := Color(0.05, 0.07, 0.15).lerp(Color(0.7, 0.84, 0.95), light).lerp(Color(0.96, 0.58, 0.34), dusk * 0.7)
+	if str(client.mirror.world.climate) == "moon":
+		# ماه: بدون جو، آسمان همیشه تقریباً سیاه با افق خاکستری تیره (نور خورشید همان است)
+		top = Color(0.005, 0.006, 0.02).lerp(Color(0.02, 0.03, 0.08), light)
+		horizon = Color(0.03, 0.035, 0.06).lerp(Color(0.2, 0.22, 0.3), light)
 	sky_mat.sky_top_color = top
 	sky_mat.sky_horizon_color = horizon
 	sky_mat.ground_horizon_color = horizon

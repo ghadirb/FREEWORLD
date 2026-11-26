@@ -3180,7 +3180,7 @@ func test_villages() -> void:
 
 func test_scenarios() -> void:
 	print("[scenarios]")
-	check(Scenarios.ids().size() == 8, "eight ready-made worlds")
+	check(Scenarios.ids().size() == 9, "nine ready-made worlds")
 	var free := 0
 	var premium := 0
 	for id in Scenarios.ids():
@@ -3328,6 +3328,58 @@ func test_climates() -> void:
 				kinds_d[d["kind"]] = true
 	check(kinds_w.has("tree") and kinds_w.has("rock"), "winter has trees and rocks (%s)" % str(kinds_w.keys()))
 	check(kinds_d.has("clay") and kinds_d.has("tree") and kinds_d.has("rock"), "desert has palms, rocks and clay (%s)" % str(kinds_d.keys()))
+	# ماه (جهان فضایی): زیست‌بوم‌ها، منابع و همان ارتفاع زمین پایه
+	var moon = WG.new(411)
+	moon.climate = "moon"
+	var moon_base = WG.new(411)
+	var seen_m := {}
+	var moon_same_h := true
+	var kinds_m := {}
+	for iz in range(0, 640, 16):
+		for ix in range(0, 640, 16):
+			seen_m[moon.biome_at(float(ix), float(iz))] = true
+			if absf(moon.height_at(float(ix), float(iz)) - moon_base.height_at(float(ix), float(iz))) > 0.0001:
+				moon_same_h = false
+	for rz in range(0, 160):
+		for rx in range(0, 160):
+			var m: Dictionary = moon.resource_in_cell(rx, rz)
+			if not m.is_empty():
+				kinds_m[m["kind"]] = true
+	var ok_m := true
+	for b in seen_m:
+		if not ["water", "beach", "mountain", "regolith", "crystal_field"].has(b):
+			ok_m = false
+	check(ok_m and seen_m.has("regolith") and seen_m.has("crystal_field"), "moon has regolith and crystal fields only (%s)" % str(seen_m.keys()))
+	check(moon_same_h, "moon never changes terrain height")
+	check(WG.is_wooded("crystal_field") and not WG.is_wooded("regolith"), "crystal field counts as wooded (gives wood)")
+	check(WG.biome_color("regolith") != WG.biome_color("plain") and WG.biome_color("crystal_field") != WG.biome_color("forest"), "moon biomes have their own colours")
+	check(kinds_m.has("tree") and kinds_m.has("rock"), "moon has crystal spires and rocks (%s)" % str(kinds_m.keys()))
+	check(FWConst.CLIMATES.has("moon") and Scenarios.climate("space_colony") == "moon", "space colony uses the moon climate")
+	check(Scenarios.is_premium("space_colony") and Story.cast_for("space_colony").size() == 4 and Story.legend_entries("space_colony").size() == 4, "space colony has a cast and a four-step legend")
+	var mnames := []
+	for e in Story.entries_for("moon", false):
+		mnames.append(e["id"])
+	check(mnames.has("dust_walker") and mnames.has("dome_builder") and not mnames.has("snow_walker") and not mnames.has("oasis_find"), "moon entries appear only on the moon")
+	var m_ok := true
+	for lang in ["fa", "en"]:
+		Loc.lang = lang
+		for e in Story.entries_for("moon", false, "space_colony"):
+			if Loc.t("book_" + str(e["id"])) == "book_" + str(e["id"]):
+				m_ok = false
+	Loc.lang = "fa"
+	check(m_ok, "every moon entry has Persian and English text")
+	var mcs = CityState.new(411)
+	ScenarioApply.apply(mcs, "space_colony")
+	var rocket_x: int = Scenarios.CENTER + 28
+	var rocket_z: int = Scenarios.CENTER + 12
+	var lamp_y := -1
+	var rocket_base := -1
+	for ry in range(0, 30):
+		if mcs.blocks.has(Vector3i(rocket_x, ry, rocket_z)) and str(mcs.blocks[Vector3i(rocket_x, ry, rocket_z)][0]) == "lamp":
+			lamp_y = ry
+		if mcs.blocks.has(Vector3i(rocket_x + 1, ry, rocket_z)) and str(mcs.blocks[Vector3i(rocket_x + 1, ry, rocket_z)][0]) == "brick" and rocket_base < 0:
+			rocket_base = ry
+	check(mcs.world.climate == "moon" and lamp_y == rocket_base + 10, "the rocket stands level on the landing pad with its lamp on top (base %d, lamp %d)" % [rocket_base, lamp_y])
 	var win2 = WG.new(297)
 	win2.climate = "winter"
 	var same := true
@@ -3364,7 +3416,7 @@ func test_story_book() -> void:
 		ids[e["id"]] = true
 		if not Story.ROLES.has(str(e["giver"])):
 			bad_role = true
-		if not kinds.has(str(e["kind"])) or not ["", "winter", "desert"].has(str(e["climate"])) or int(e["reward"]) < 0 or int(e["reward"]) > 100:
+		if not kinds.has(str(e["kind"])) or not ["", "winter", "desert", "moon"].has(str(e["climate"])) or int(e["reward"]) < 0 or int(e["reward"]) > 100:
 			bad_kind = true
 	check(not dup and not bad_role and not bad_kind, "book entries have unique ids, known roles and kinds, small rewards (%d entries)" % Story.ENTRIES.size())
 	var texts_ok := true

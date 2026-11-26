@@ -15,6 +15,7 @@ const CASTS := {
 	"medieval_fort": [["آرش", "smith"], ["سیمین", "elder"], ["پوریا", "guide"], ["بهرام", "farmer"]],
 	"frozen_north": [["بهمن", "hunter"], ["شیرین", "innkeeper"], ["داراب", "elder"]],
 	"desert_caravan": [["کاوه", "nomad"], ["گلنار", "innkeeper"], ["مهرداد", "smith"]],
+	"space_colony": [["سارا", "guide"], ["نیما", "smith"], ["آیدا", "elder"], ["کامران", "farmer"]],
 }
 
 ## مأموریت‌های چندمرحلهٔ هر نقش (زنجیره‌ای، به ترتیب): تحویل کالا به همان NPC.
@@ -101,6 +102,11 @@ const ENTRIES := [
 	{"id": "oasis_find", "kind": "biome", "a": ["oasis"], "b": 0, "reward": 20, "giver": "nomad", "climate": "desert"},
 	{"id": "mesa_climber", "kind": "biome", "a": ["mesa"], "b": 12, "reward": 35, "giver": "nomad", "climate": "desert"},
 	{"id": "sand_city", "kind": "blocks_of", "a": "brick", "b": 40, "reward": 40, "giver": "innkeeper", "climate": "desert"},
+	# ماه (جهان فضایی)
+	{"id": "dust_walker", "kind": "biome", "a": ["regolith", "crystal_field"], "b": 0, "reward": 15, "giver": "guide", "climate": "moon"},
+	{"id": "crystal_find", "kind": "biome", "a": ["crystal_field"], "b": 0, "reward": 20, "giver": "guide", "climate": "moon"},
+	{"id": "crater_rim", "kind": "biome", "a": ["mountain"], "b": 18, "reward": 35, "giver": "smith", "climate": "moon"},
+	{"id": "dome_builder", "kind": "blocks_of", "a": "glass", "b": 30, "reward": 40, "giver": "elder", "climate": "moon"},
 ]
 
 ## «افسانه»: زنجیرهٔ اختیاری مقصدهای واقعی روی نقشهٔ هر جهان آماده (پروتکل ۳۶). هر مرحله باید به ترتیب انجام شود؛
@@ -125,6 +131,12 @@ const LEGENDS := {
 		{"dx": 20, "dz": -100, "reward": 40, "giver": "innkeeper"},
 		{"dx": 110, "dz": -30, "reward": 55, "giver": "smith"},
 		{"dx": 60, "dz": 100, "reward": 90, "giver": "nomad", "bonus": ["gem", 1]},
+	],
+	"space_colony": [
+		{"dx": 60, "dz": -50, "reward": 25, "giver": "guide"},
+		{"dx": -70, "dz": -60, "reward": 40, "giver": "smith"},
+		{"dx": -50, "dz": 90, "reward": 55, "giver": "farmer"},
+		{"dx": 90, "dz": 70, "reward": 90, "giver": "elder", "bonus": ["gem", 1]},
 	],
 	"green_valley": [
 		{"dx": 45, "dz": -40, "reward": 25, "giver": "farmer"},

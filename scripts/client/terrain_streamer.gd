@@ -45,6 +45,12 @@ func setup(world_gen, view_radius: int) -> void:
 			mb.add_cylinder(Vector3.ZERO, 0.17, 0.1, 3.3, 5, Color("9a7248"))
 			mb.add_cylinder(Vector3(0, 3.0, 0), 1.5, 0.15, 0.45, 8, Color("4f8f3a"))
 			mb.add_cylinder(Vector3(0, 3.3, 0), 0.9, 0.0, 0.5, 8, Color("68a748"))
+		"moon":
+			# ستون بلور: سه منشور باریک آبی‌بنفش که به نوک می‌رسند
+			mb.add_cylinder(Vector3.ZERO, 0.32, 0.22, 0.35, 6, Color("5d6280"))
+			mb.add_cylinder(Vector3(0, 0.3, 0), 0.34, 0.0, 2.6, 6, Color("8fb8ff"))
+			mb.add_cylinder(Vector3(0.55, 0.2, 0.2), 0.2, 0.0, 1.5, 5, Color("a98bff"))
+			mb.add_cylinder(Vector3(-0.45, 0.2, -0.25), 0.18, 0.0, 1.2, 5, Color("7fe0ff"))
 		_:
 			mb.add_cylinder(Vector3.ZERO, 0.2, 0.14, 1.3, 5, Color("6b4a2d"))
 			mb.add_cylinder(Vector3(0, 0.9, 0), 1.25, 0.0, 2.2, 7, Color("2f7a3f"))
@@ -182,6 +188,13 @@ func _climate_tint(col: Color, biome: String, h: float) -> Color:
 		"desert":
 			if biome == "beach":
 				return col.lerp(Color("eed9a0"), 0.5)
+		"moon":
+			if biome == "beach":
+				return col.lerp(Color("b4b4ba"), 0.8)
+			if biome == "water":
+				return Color("33415c")
+			if biome == "mountain":
+				return col.lerp(Color("d9dbe3"), smoothstep(14.0, 22.0, h))
 	return col
 
 

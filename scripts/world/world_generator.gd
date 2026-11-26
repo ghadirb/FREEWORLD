@@ -5,7 +5,7 @@ extends RefCounted
 const FWConst = preload("res://scripts/core/const.gd")
 
 var seed_value: int
-## اقلیم: temperate (پیش‌فرض، بدون تغییر نسبت به نسخه‌های قبل)، winter (برف و کاج)، desert (شن و نخل).
+## اقلیم: temperate (پیش‌فرض، بدون تغییر نسبت به نسخه‌های قبل)، winter (برف و کاج)، desert (شن و نخل)، moon (خاک ماه و ستون‌های بلور).
 ## فقط برچسب زیست‌بوم و منابع را عوض می‌کند؛ ارتفاع، آب، روستا و معدن همان Seed است.
 var climate: String = "temperate"
 var _base := FastNoiseLite.new()
@@ -123,18 +123,22 @@ func biome_from(h: float, moisture: float) -> String:
 				return "snow_forest"
 			"desert":
 				return "oasis"
+			"moon":
+				return "crystal_field"
 		return "forest"
 	match climate:
 		"winter":
 			return "snow"
 		"desert":
 			return "desert"
+		"moon":
+			return "regolith"
 	return "plain"
 
 
-## آیا این زیست‌بوم درخت‌زار است؟ (جنگل معمولی، جنگل برفی، واحه)
+## آیا این زیست‌بوم درخت‌زار است؟ (جنگل معمولی، جنگل برفی، واحه، بلورزار ماه)
 static func is_wooded(biome: String) -> bool:
-	return biome == "forest" or biome == "snow_forest" or biome == "oasis"
+	return biome == "forest" or biome == "snow_forest" or biome == "oasis" or biome == "crystal_field"
 
 
 ## آیا این زیست‌بوم کوهستانی است؟ (کوه معمولی و صخره‌های صحرا)
@@ -176,7 +180,7 @@ func resource_in_cell(rx: int, rz: int) -> Dictionary:
 	var roll := _h01(rx, rz, 3)
 	var kind := ""
 	match biome:
-		"forest", "snow_forest":
+		"forest", "snow_forest", "crystal_field":
 			if roll < 0.30:
 				kind = "tree"
 			elif roll < 0.33:
@@ -190,6 +194,12 @@ func resource_in_cell(rx: int, rz: int) -> Dictionary:
 			if roll < 0.05:
 				kind = "tree"
 			elif roll < 0.08:
+				kind = "rock"
+		"regolith":
+			# خاک ماه: تخته‌سنگ‌های فراوان و ستون بلور پراکنده
+			if roll < 0.02:
+				kind = "tree"
+			elif roll < 0.10:
 				kind = "rock"
 		"desert":
 			if roll < 0.012:
@@ -482,5 +492,9 @@ static func biome_color(biome: String) -> Color:
 			return Color("8fae52")
 		"mesa":
 			return Color("b9693f")
+		"regolith":
+			return Color("9a9ca3")
+		"crystal_field":
+			return Color("7d86a8")
 		_:
 			return Color("7fbf5a")

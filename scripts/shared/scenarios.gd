@@ -8,7 +8,7 @@ const FWConst = preload("res://scripts/core/const.gd")
 ## مرکز شهر (سلول‌های میدان مرکزی دور آن‌اند؛ سازه‌ها بیرون از میدان ساخته می‌شوند).
 const CENTER := 64
 
-const ORDER := ["green_valley", "builder_playground", "god_sandbox", "island_castaway", "medieval_fort", "merchant_city", "frozen_north", "desert_caravan"]
+const ORDER := ["green_valley", "builder_playground", "god_sandbox", "island_castaway", "medieval_fort", "merchant_city", "frozen_north", "desert_caravan", "space_colony"]
 
 const DEFS := {
 	"green_valley": {
@@ -67,6 +67,14 @@ const DEFS := {
 		"hour": 11.0, "weather": "clear", "time_speed": 1.0, "forest_growth": false, "npcs": 5,
 		"structures": ["oasis_camp", "pyramid", "market_street", "caravanserai", "cave_dome_west", "adobe_quarter", "estate_brick@-32,-24", "well", "obelisk", "stable", "inn"],
 		"trees": 10, "animals": {"sheep": 6, "rabbit": 8},
+	},
+	# جهان فضایی (اقلیم moon): خاک خاکستری، ستون‌های بلور به‌جای درخت (همان چوب می‌دهند)، آسمان سیاه؛ بقیهٔ قوانین همان است.
+	"space_colony": {
+		"seed": 411, "premium": true, "creative": false, "climate": "moon",
+		"money": 700, "items": {"stone": 60, "wood": 50, "glass": 30, "iron": 12, "brick": 10},
+		"hour": 12.0, "weather": "clear", "time_speed": 1.0, "forest_growth": false, "npcs": 4,
+		"structures": ["landing_pad", "rocket", "habitat_dome", "moon_lab", "solar_field", "well", "obelisk"],
+		"trees": 8, "animals": {},
 	},
 }
 
@@ -256,6 +264,14 @@ static func _stair_house(out: Array, cx: int, cz: int, hw: int, hd: int, wall: S
 		if out[i].size() < 6:
 			out[i].append(0)
 		out[i].append_array([cx, cz, hw + 1, hd + 2])
+
+
+## همهٔ ستون‌های out از اندیس start به بعد را در یک گروه تراز می‌گذارد (همه از بلندترین زمین مستطیل شروع می‌شوند و زیرشان با خاک پر می‌شود).
+static func _level_group(out: Array, start: int, cx: int, cz: int, hw: int, hd: int) -> void:
+	for i in range(start, out.size()):
+		if out[i].size() < 6:
+			out[i].append(0)
+		out[i].append_array([cx, cz, hw, hd])
 
 
 ## ستون‌های یک سازه. rng برای سازه‌های ویرانه‌ای (شکستگی) از Seed جهان می‌آید تا قطعی بماند.
@@ -597,6 +613,42 @@ static func structure(kind: String, rng: RandomNumberGenerator) -> Array:
 			for dx in range(-3, 4):
 				for dz in range(-2, 0):
 					_col(out, sx + dx, sz + dz, 2, 1, "roof")
+		"landing_pad":
+			# سکوی فرود: دو حلقهٔ سنگی هم‌مرکز با چراغ در چهار گوشه (جهان فضایی؛ هم‌تراز با موشک)
+			var px := CENTER + 28
+			var pz := CENTER + 12
+			_ring(out, px, pz, 5, 0, 1, "stone")
+			_ring(out, px, pz, 3, 0, 1, "stone")
+			for c in [Vector2i(-5, -5), Vector2i(5, -5), Vector2i(-5, 5), Vector2i(5, 5)]:
+				_col(out, px + c.x, pz + c.y, 1, 1, "lamp")
+			_level_group(out, 0, px, pz, 5, 5)
+		"rocket":
+			# موشک: بدنهٔ آجری ۳×۳ روی سکوی فرود، چهار باله، دماغهٔ شیشه‌ای و چراغ (جهان فضایی)
+			var rx := CENTER + 28
+			var rz := CENTER + 12
+			_ring(out, rx, rz, 1, 0, 9, "brick")
+			for c in [Vector2i(-2, -2), Vector2i(2, -2), Vector2i(-2, 2), Vector2i(2, 2)]:
+				_col(out, rx + c.x, rz + c.y, 0, 3, "stone")
+			for dx in range(-1, 2):
+				for dz in range(-1, 2):
+					_col(out, rx + dx, rz + dz, 9, 1, "glass")
+			_col(out, rx, rz, 10, 1, "lamp")
+			_level_group(out, 0, rx, rz, 5, 5)
+		"habitat_dome":
+			# زیستگاه: گنبد شیشه‌ای بزرگ با درگاه و چراغ داخل؛ داخلش جا برای باغ و خانه است (جهان فضایی)
+			_dome(out, CENTER - 30, CENTER + 6, [8, 8, 7, 6, 5, 4, 3, 2], "glass", true)
+		"moon_lab":
+			# آزمایشگاه سنگی با کتابخانه، انبار و اتاق خواب (جهان فضایی)
+			_room_house(out, CENTER + 38, CENTER - 24, 5, 4, 4, "stone", [-2, 2], ["library", "store", "bedroom"])
+			_col(out, CENTER + 38, CENTER - 19, 0, 1, "lamp")
+		"solar_field":
+			# مزرعهٔ خورشیدی: سه ردیف تیرک با صفحهٔ شیشه‌ای بالای آن (جهان فضایی)
+			for row in range(3):
+				for k in range(7):
+					var sx := CENTER - 50 + k * 2
+					var sz := CENTER - 26 + row * 4
+					_col(out, sx, sz, 0, 1, "fence")
+					_col(out, sx, sz, 1, 1, "glass")
 		"build_pads":
 			# سه زمین ساخت با حاشیهٔ سنگی ۷×۷ برای تمرین ساخت
 			for k in range(3):
