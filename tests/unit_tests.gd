@@ -94,6 +94,7 @@ func _init() -> void:
 	test_world_rules()
 	test_civilization()
 	test_wild()
+	test_hunger()
 	test_batch_build()
 	test_blueprints()
 	test_terrain_shapes()
@@ -4504,9 +4505,9 @@ func test_wild() -> void:
 	check(cs.craft("smith", "club", 1)["error"] == "gear_have", "a weaker weapon is refused after a better one")
 	check(cs.craft("smith", "vest", 1)["ok"] and cs.craft("smith", "plate", 1)["ok"] and int(cs.gear_of(acc)["armor"]) == 2, "armor goes vest then iron plate")
 	check(cs.craft("smith", "sword", 2)["error"] == "bad_request", "gear can only be crafted one at a time")
-	check(cs.vitals_public("smith") == [100, 2, 2], "vitals report hp and gear tiers")
+	check(cs.vitals_public("smith") == [100, 2, 2, 100], "vitals report hp and gear tiers")
 	var cs2 = CityState.from_dict(cs.to_dict())
-	check(cs2 != null and cs2.vitals_public("smith") == [100, 2, 2], "gear and health survive save and load")
+	check(cs2 != null and cs2.vitals_public("smith") == [100, 2, 2, 100], "gear and health survive save and load")
 	# مرگ: سلامت پر، بازگشت به میدان، جریمهٔ محدود
 	var cs3 = CityState.new(5152)
 	_login(cs3, "victim")
@@ -4541,3 +4542,83 @@ func test_wild() -> void:
 				texts_ok = false
 	Loc.lang = "fa"
 	check(texts_ok, "wild and gear texts exist in Persian and English")
+
+
+func test_hunger() -> void:
+	print("-- hunger and food (protocol 48)")
+	check(FWConst.PROTOCOL_VERSION >= 48, "protocol bumped for the eat message")
+	var cs = CityState.new(6101)
+	_login(cs, "eater")
+	var acc: Dictionary = cs.accounts["eater"]
+	check(float(acc["hunger"]) == FWConst.HUNGER_MAX, "new accounts start with full hunger")
+	cs.energy_step(100.0, {"eater": 0})
+	check(float(acc["hunger"]) < FWConst.HUNGER_MAX, "hunger falls over time")
+	check(cs.vitals_public("eater").size() == 4, "vitals carry hunger as the fourth value")
+	# سیری: نمی‌شود غذا هدر داد
+	acc["hunger"] = FWConst.HUNGER_MAX
+	check(str(cs.eat("eater", "fish")["error"]) == "not_hungry", "cannot eat when full")
+	acc["hunger"] = 10.0
+	check(str(cs.eat("eater", "pizza")["error"]) == "bad_request", "unknown food is rejected")
+	check(str(cs.eat("eater", "fish")["error"]) == "no_items", "fish needs a fish in the pack")
+	acc["inv"]["fish"] = 2
+	var r: Dictionary = cs.eat("eater", "fish")
+	check(bool(r["ok"]) and int(acc["inv"]["fish"]) == 1 and absf(float(acc["hunger"]) - 40.0) < 0.001, "eating fish uses one fish and restores hunger")
+	# نان از بازار
+	check(str(cs.eat("eater", "bread")["error"]) == "no_stock", "bread needs market stock")
+	cs.market["bread"] = 3.0
+	var money0: int = int(acc["money"])
+	var r2: Dictionary = cs.eat("eater", "bread")
+	check(bool(r2["ok"]) and int(r2["paid"]) > 0 and int(acc["money"]) == money0 - int(r2["paid"]) and absf(float(cs.market["bread"]) - 2.0) < 0.001, "bread costs coins and one market unit")
+	acc["hunger"] = 5.0
+	acc["money"] = 0
+	check(str(cs.eat("eater", "bread")["error"]) == "no_money", "market food needs money")
+	acc["hunger"] = 95.0
+	acc["inv"]["fish"] = 1
+	cs.eat("eater", "fish")
+	check(float(acc["hunger"]) == FWConst.HUNGER_MAX, "hunger never exceeds the maximum")
+	# گرسنگی کامل: خستگی سریع‌تر، بدون مرگ
+	var cs2 = CityState.new(6102)
+	_login(cs2, "a")
+	_login(cs2, "b")
+	cs2.accounts["a"]["hunger"] = 0.0
+	cs2.accounts["b"]["hunger"] = 50.0
+	cs2.energy_step(60.0, {"a": 0, "b": 0})
+	var lost_a: float = FWConst.ENERGY_MAX - float(cs2.accounts["a"]["energy"])
+	var lost_b: float = FWConst.ENERGY_MAX - float(cs2.accounts["b"]["energy"])
+	check(lost_a > lost_b * 2.5, "starving players tire several times faster")
+	check(float(cs2.accounts["a"]["hp"]) == FWConst.PLAYER_HP_MAX, "hunger alone never hurts health")
+	# بدون بهبود سلامت در گرسنگی
+	cs2.accounts["a"]["hp"] = 50.0
+	cs2.accounts["b"]["hp"] = 50.0
+	cs2.accounts["a"]["hunger"] = 0.0
+	cs2.accounts["b"]["hunger"] = 80.0
+	cs2._hurt_t["a"] = 99.0
+	cs2._hurt_t["b"] = 99.0
+	var spot := Vector2(cs2.spawn_position().x + 60.0, cs2.spawn_position().z)
+	cs2.wild_step(5.0, {"a": spot, "b": spot})
+	check(float(cs2.accounts["a"]["hp"]) == 50.0 and float(cs2.accounts["b"]["hp"]) > 50.0, "starving players do not regain health")
+	# خلاقانه: گرسنگی نیست
+	var cs3 = CityState.new(6103)
+	_login(cs3, "maker")
+	cs3.creative = true
+	cs3.accounts["maker"]["hunger"] = 3.0
+	cs3.energy_step(10.0, {"maker": 0})
+	check(float(cs3.accounts["maker"]["hunger"]) == FWConst.HUNGER_MAX, "creative worlds have no hunger")
+	# ذخیره و بارگذاری، و ذخیرهٔ قدیمی بدون کلید
+	var cs4 = CityState.new(6104)
+	_login(cs4, "saver")
+	cs4.accounts["saver"]["hunger"] = 33.0
+	var back = CityState.from_dict(cs4.to_dict())
+	check(back != null and absf(float(back.accounts["saver"]["hunger"]) - 33.0) < 0.001, "hunger survives save and load")
+	var old: Dictionary = cs4.to_dict()
+	old["accounts"]["saver"].erase("hunger")
+	var back2 = CityState.from_dict(old)
+	check(back2 != null and float(back2.accounts["saver"]["hunger"]) == FWConst.HUNGER_MAX, "old saves without hunger load as full")
+	var texts_ok := true
+	for lang in ["fa", "en"]:
+		Loc.lang = lang
+		for k in ["hunger", "eat_title", "eat_fish", "eat_bread", "eat_cheese", "eat_milk", "eat_egg", "msg_ate", "err_not_hungry", "err_no_stock"]:
+			if Loc.t(k) == k:
+				texts_ok = false
+	Loc.lang = "fa"
+	check(texts_ok, "hunger texts exist in Persian and English")

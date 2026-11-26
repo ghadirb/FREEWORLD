@@ -74,6 +74,7 @@ var furn: Array = []   # مبلمان خانهٔ فعلی: [{t,x,z,r}]
 var mine_id: String = ""
 var mine_depleted: Dictionary = {}
 var energy: int = 100
+var hunger: int = 100
 var time_speed: float = 1.0
 var weather: String = "clear"
 var egg_price: float = 6.0
@@ -379,6 +380,8 @@ func on_vitals(v: Array) -> void:
 		hp = int(v[0])
 		weapon_tier = int(v[1])
 		armor_tier = int(v[2])
+		if v.size() >= 4:
+			hunger = int(v[3])
 		vitals_changed.emit()
 
 
@@ -483,6 +486,11 @@ func _apply_terrain(flat: PackedInt32Array) -> void:
 		hi = Vector2(maxf(hi.x, float(flat[i]) * st), maxf(hi.y, float(flat[i + 1]) * st))
 		i += 3
 	terrain_changed.emit(lo.x - st, lo.y - st, hi.x + st, hi.y + st)
+
+
+func eat(food: String) -> void:
+	if is_logged_in:
+		_tx("c2s_eat", [food])
 
 
 func craft(recipe: String, times: int = 1) -> void:

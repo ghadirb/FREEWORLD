@@ -762,6 +762,17 @@ func _build_inventory_panel() -> void:
 		cb.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		cb.pressed.connect(func(): client.craft(recipe, 1))
 		crow.add_child(cb)
+	v.add_child(_label(Loc.t("eat_title"), 22, Color("9ad0ff")))
+	var erow := HFlowContainer.new()
+	erow.add_theme_constant_override("h_separation", 8)
+	erow.add_theme_constant_override("v_separation", 8)
+	v.add_child(erow)
+	for food in FWConst.FOOD_ORDER:
+		var eb := UiTheme.button(Loc.t("eat_" + food), Vector2(0, 56))
+		eb.custom_minimum_size = Vector2(170, 52)
+		eb.add_theme_font_size_override("font_size", 17)
+		eb.pressed.connect(func(): client.eat(food))
+		erow.add_child(eb)
 	v.add_child(_label(Loc.t("offer_title"), 22, Color("9ad0ff")))
 	var orow := HFlowContainer.new()
 	orow.add_theme_constant_override("h_separation", 6)
@@ -2333,6 +2344,9 @@ func _on_notice(code: String, args: Dictionary) -> void:
 		"upgraded":
 			Sfx.play(self, "coin")
 			toast(Loc.fmt("msg_upgraded", [Loc.t("tool_" + str(args["tool"]))]), Color("ffd84a"))
+		"ate":
+			Sfx.play(self, "coin")
+			toast(Loc.fmt("msg_ate", [Loc.t("eat_" + str(args["food"]))]), Color("c8f08a"))
 		"gear_made":
 			Sfx.play(self, "place")
 			toast(Loc.fmt("msg_gear_made", [Loc.t("craft_" + str(args["item"]))]), Color("c8f08a"))
@@ -2419,6 +2433,8 @@ func _on_notice(code: String, args: Dictionary) -> void:
 func _refresh_stats() -> void:
 	_money.text = Loc.t("creative_badge") if client.creative else "%s %s" % [Loc.digits(str(client.money)), Loc.t("coins")]
 	_clock.text = "%s   %s: %s   %s: %s" % [Loc.clock(client.world_time), Loc.t("energy"), Loc.digits(str(client.energy)), Loc.t("health"), Loc.digits(str(client.hp))]
+	if not client.creative:
+		_clock.text += "   %s: %s" % [Loc.t("hunger"), Loc.digits(str(client.hunger))]
 	_price.text = "%s: %s  |  %s: %s" % [Loc.t("wheat_price"), Loc.digits("%.1f" % client.wheat_price),
 		Loc.t("bread_price"), Loc.digits("%.1f" % client.bread_price)]
 	_price.text += "  |  %s: %s  |  %s: %s" % [Loc.t("egg_price"), Loc.digits("%.1f" % client.egg_price),

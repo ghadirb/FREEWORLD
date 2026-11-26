@@ -195,6 +195,12 @@ func c2s_fill(x: float, z: float, tool: String) -> void:
 
 
 @rpc("any_peer", "call_remote", "reliable")
+func c2s_eat(food: String) -> void:
+	if server:
+		server.on_eat(multiplayer.get_remote_sender_id(), food)
+
+
+@rpc("any_peer", "call_remote", "reliable")
 func c2s_craft(recipe: String, times: int) -> void:
 	if server:
 		server.on_craft(multiplayer.get_remote_sender_id(), recipe, times)

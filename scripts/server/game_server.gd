@@ -878,6 +878,10 @@ func _broadcast_stocks() -> void:
 		if ev != int(pe.get("last_energy", -1)):
 			pe["last_energy"] = ev
 			_send(pid, "s2c_energy", ev)
+		var hv: int = int(ceil(float(cs.accounts[pe["name"]].get("hunger", FWConst.HUNGER_MAX))))
+		if hv != int(pe.get("last_hunger", -1)):
+			pe["last_hunger"] = hv
+			_send(pid, "s2c_vitals", cs.vitals_public(pe["name"]))
 	for pid in _auth_peers():
 		var pe2: Dictionary = peers[pid]
 		var inv_now: Dictionary = cs.inv_public(pe2["name"])
@@ -1672,6 +1676,25 @@ func _terraform_request(pid: int, x: float, z: float, tool: String, digging: boo
 	_broadcast("s2c_terrain_edit", flat)
 	_push_inv(pid, p["name"])
 	_notice(pid, "gathered" if digging else "filled", {"item": res["item"], "count": res["count"]})
+	_dirty = true
+
+
+func on_eat(pid: int, food: String) -> void:
+	var p := _player_of(pid)
+	if p.is_empty():
+		return
+	if not _allow_action(p):
+		_notice(pid, "rate_limited")
+		return
+	var res: Dictionary = cs.eat(p["name"], food)
+	if not res["ok"]:
+		_notice(pid, str(res["error"]))
+		return
+	_push_inv(pid, p["name"])
+	_send(pid, "s2c_vitals", cs.vitals_public(p["name"]))
+	if int(res["paid"]) > 0:
+		_send(pid, "s2c_money", cs.money_of(p["name"]))
+	_notice(pid, "ate", {"food": food})
 	_dirty = true
 
 

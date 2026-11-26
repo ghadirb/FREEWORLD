@@ -1,7 +1,7 @@
 extends RefCounted
 ## ثابت‌های مشترک بین سرور و کلاینت.
 
-const PROTOCOL_VERSION := 47
+const PROTOCOL_VERSION := 48
 # ترافیک شبکه با DTLS رمز می‌شود (نسخهٔ ۴ به بعد). فقط برای عیب‌یابی خاموش شود.
 const USE_DTLS := true
 const DEFAULT_PORT := 7777
@@ -85,6 +85,20 @@ const ENTERABLE := ["house", "shop", "bakery"]
 const ENERGY_MAX := 100.0
 const ENERGY_DECAY_PER_SEC := 0.04
 const ENERGY_REST_PER_SEC := 2.5
+# گرسنگی (پروتکل ۴۸): آرام کم می‌شود؛ با خوردن غذا پر می‌شود. گرسنگیِ کامل کشنده نیست؛
+# فقط بهبود سلامت متوقف و خستگی چند برابر می‌شود. در جهان خلاقانه گرسنگی وجود ندارد.
+const HUNGER_MAX := 100.0
+const HUNGER_DECAY_PER_SEC := 0.06
+const HUNGER_STARVE_ENERGY_MULT := 3.0
+# غذا: «inv» از کوله‌پشتی مصرف می‌شود؛ «market» یک واحد از بازار مشترک به قیمت روز خریده می‌شود.
+const FOODS := {
+	"fish": {"src": "inv", "hunger": 30.0},
+	"bread": {"src": "market", "hunger": 40.0},
+	"cheese": {"src": "market", "hunger": 35.0},
+	"milk": {"src": "market", "hunger": 18.0},
+	"egg": {"src": "market", "hunger": 12.0},
+}
+const FOOD_ORDER := ["fish", "bread", "cheese", "milk", "egg"]
 
 # هر ثانیهٔ واقعی = یک دقیقهٔ بازی
 const TIME_SCALE := 60.0

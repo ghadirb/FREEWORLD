@@ -147,6 +147,7 @@ func authenticate(player_name: String, token: String) -> Dictionary:
 		"job": 0,
 		"work_acc": 0.0,
 		"energy": FWConst.ENERGY_MAX,
+		"hunger": FWConst.HUNGER_MAX,
 		"hp": FWConst.PLAYER_HP_MAX,
 		"gear": {"weapon": 0, "armor": 0},
 		"inv": Scenarios.start_items(scenario),
@@ -175,6 +176,7 @@ func provision_admin(player_name: String, secret: String, role: String = FWConst
 		"job": 0,
 		"work_acc": 0.0,
 		"energy": FWConst.ENERGY_MAX,
+		"hunger": FWConst.HUNGER_MAX,
 		"hp": FWConst.PLAYER_HP_MAX,
 		"gear": {"weapon": 0, "armor": 0},
 		"inv": Scenarios.start_items(scenario),
@@ -605,7 +607,10 @@ func energy_step(delta: float, online: Dictionary) -> void:
 		var acc: Dictionary = accounts[name]
 		if creative:
 			acc["energy"] = FWConst.ENERGY_MAX
+			acc["hunger"] = FWConst.HUNGER_MAX
 			continue
+		var hg: float = float(acc.get("hunger", FWConst.HUNGER_MAX))
+		acc["hunger"] = maxf(hg - FWConst.HUNGER_DECAY_PER_SEC * delta, 0.0)
 		var e: float = float(acc.get("energy", FWConst.ENERGY_MAX))
 		var bid: int = int(online[name])
 		var resting: bool = bid > 0 and buildings.has(bid) and str(buildings[bid]["type"]) == "house" and buildings[bid]["owner"] == name
@@ -613,6 +618,8 @@ func energy_step(delta: float, online: Dictionary) -> void:
 			e += FWConst.ENERGY_REST_PER_SEC * delta
 		else:
 			var mult: float = FWConst.STORM_ENERGY_MULT if (str(disaster["kind"]) == "storm" and bid == 0) else 1.0
+			if float(acc["hunger"]) <= 0.0:
+				mult *= FWConst.HUNGER_STARVE_ENERGY_MULT
 			e -= FWConst.ENERGY_DECAY_PER_SEC * delta * mult
 		acc["energy"] = clampf(e, 0.0, FWConst.ENERGY_MAX)
 
@@ -1080,10 +1087,37 @@ static func _load_gear(v: Variant) -> Dictionary:
 ## وضعیت سلامت و تجهیزات برای کلاینت: [hp، سطح سلاح، سطح زره]
 func vitals_public(player_name: String) -> Array:
 	if not accounts.has(player_name):
-		return [int(FWConst.PLAYER_HP_MAX), 0, 0]
+		return [int(FWConst.PLAYER_HP_MAX), 0, 0, int(FWConst.HUNGER_MAX)]
 	var acc: Dictionary = accounts[player_name]
 	var g := gear_of(acc)
-	return [int(ceil(float(acc.get("hp", FWConst.PLAYER_HP_MAX)))), int(g["weapon"]), int(g["armor"])]
+	return [int(ceil(float(acc.get("hp", FWConst.PLAYER_HP_MAX)))), int(g["weapon"]), int(g["armor"]), int(ceil(float(acc.get("hunger", FWConst.HUNGER_MAX))))]
+
+
+## خوردن غذا (پروتکل ۴۸). ماهی از کوله‌پشتی؛ نان/پنیر/شیر/تخم‌مرغ یک واحد از بازار مشترک به قیمت روز.
+func eat(player_name: String, food: String) -> Dictionary:
+	if not accounts.has(player_name):
+		return {"ok": false, "error": "no_account"}
+	if not FWConst.FOODS.has(food):
+		return {"ok": false, "error": "bad_request"}
+	var acc: Dictionary = accounts[player_name]
+	if float(acc.get("hunger", FWConst.HUNGER_MAX)) >= FWConst.HUNGER_MAX:
+		return {"ok": false, "error": "not_hungry"}
+	var spec: Dictionary = FWConst.FOODS[food]
+	var paid := 0
+	if str(spec["src"]) == "inv":
+		if int(acc["inv"].get(food, 0)) < 1:
+			return {"ok": false, "error": "no_items"}
+		acc["inv"][food] = int(acc["inv"][food]) - 1
+	else:
+		if float(market.get(food, 0.0)) < 1.0:
+			return {"ok": false, "error": "no_stock"}
+		paid = int(ceil(_price_for(food)))
+		if not _pay(acc, paid):
+			return {"ok": false, "error": "no_money"}
+		market[food] = float(market[food]) - 1.0
+	acc["hunger"] = minf(FWConst.HUNGER_MAX, float(acc.get("hunger", FWConst.HUNGER_MAX)) + float(spec["hunger"]))
+	_log(player_name, "eat", {"food": food, "paid": paid})
+	return {"ok": true, "food": food, "paid": paid}
 
 
 ## یک گام دشمنان وحشی. exposed = {نام: Vector2} بازیکنانی که بیرون‌اند و درگیر بازی‌ساز نیستند.
@@ -1134,7 +1168,7 @@ func wild_step(dt: float, exposed: Dictionary) -> Dictionary:
 			continue
 		var a2: Dictionary = accounts[name]
 		var hp: float = float(a2.get("hp", FWConst.PLAYER_HP_MAX))
-		if hp < FWConst.PLAYER_HP_MAX and float(_hurt_t.get(name, 999.0)) >= FWConst.PLAYER_HP_REGEN_DELAY:
+		if hp < FWConst.PLAYER_HP_MAX and float(_hurt_t.get(name, 999.0)) >= FWConst.PLAYER_HP_REGEN_DELAY and float(a2.get("hunger", FWConst.HUNGER_MAX)) > 0.0:
 			var before := int(ceil(hp))
 			a2["hp"] = minf(FWConst.PLAYER_HP_MAX, hp + FWConst.PLAYER_HP_REGEN * dt)
 			if int(ceil(float(a2["hp"]))) != before and not out["vitals"].has(name):
@@ -2790,6 +2824,7 @@ static func from_dict(d: Dictionary):
 			"job": int(a.get("job", 0)),
 			"work_acc": float(a.get("work_acc", 0.0)),
 			"energy": clampf(float(a.get("energy", FWConst.ENERGY_MAX)), 0.0, FWConst.ENERGY_MAX),
+			"hunger": clampf(float(a.get("hunger", FWConst.HUNGER_MAX)), 0.0, FWConst.HUNGER_MAX),
 			"hp": clampf(float(a.get("hp", FWConst.PLAYER_HP_MAX)), 1.0, FWConst.PLAYER_HP_MAX),
 			"gear": _load_gear(a.get("gear", null)),
 			"inv": _load_inv(a.get("inv", null)),
