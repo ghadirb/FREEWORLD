@@ -59,11 +59,13 @@ func start_arena(world, seed_value: int, player_name: String, arena: Dictionary)
 	var coins: Array = targets
 	var queue: Array = []
 	var kind_now: String = Arenas.clean_kind(arena.get("kind", "coins"))
+	var diff: int = Arenas.clean_diff(arena.get("diff", FWConst.ARENA_DIFF_DEFAULT))
+	var limit: float = Arenas.run_limit(arena, targets)
 	if Arenas.is_ordered(kind_now):
 		# پارکور و مسابقه: فقط ایستگاه بعدی دیده می‌شود؛ با رسیدن به آن، بعدی ظاهر می‌شود.
 		coins = [targets[0]]
 		queue = targets.slice(1)
-	runs[player_name] = {"t": float(arena["time"]), "score": 0, "coins": coins, "win": int(arena.get("win", 0)), "obs": Arenas.make_obstacles(seed_value, arena) if Arenas.clean_kind(arena.get("kind", "coins")) == "parkour" else [], "clk": 0.0, "hit_cd": 0.0, "queue": queue, "limit": float(arena["time"]), "arena": int(arena["id"]),
+	runs[player_name] = {"t": limit, "score": 0, "diff": diff, "rmult": float(FWConst.ARENA_DIFF_REWARD[diff]), "pen": FWConst.ARENA_OBS_PENALTY * float(FWConst.ARENA_DIFF_PENALTY[diff]), "coins": coins, "win": int(arena.get("win", 0)), "obs": Arenas.make_obstacles(seed_value, arena, targets) if kind_now == "parkour" else [], "clk": 0.0, "hit_cd": 0.0, "queue": queue, "limit": limit, "arena": int(arena["id"]),
 		"total": int(arena["coins"]) if kind_now == "football" else targets.size(), "owner": str(arena["owner"]), "per_coin": int(arena["reward"]),
 		"props": Arenas.clean_props(arena.get("props", []), arena), "prop_cd": 0.0,
 		"pk": Arenas.is_ordered(kind_now), "rc": kind_now == "race", "adv": kind_now == "adventure", "last": Vector2(float(arena["x"]), float(arena["z"]))}
@@ -73,12 +75,14 @@ func start_arena(world, seed_value: int, player_name: String, arena: Dictionary)
 		runs[player_name]["spawns"] = targets
 		runs[player_name]["spawned"] = 0
 		runs[player_name]["hp"] = FWConst.SURV_HP
+		runs[player_name]["fs"] = float(FWConst.ARENA_DIFF_FOE_SPEED[diff])
+		runs[player_name]["fd"] = float(FWConst.ARENA_DIFF_FOE_DAMAGE[diff])
 		runs[player_name]["atk"] = 0.0
 		runs[player_name]["send"] = 0.0
 		runs[player_name]["total"] = int(arena["coins"])
 	if kind_now == "football":
 		var c0 := Vector2(float(arena["x"]), float(arena["z"]))
-		runs[player_name]["ball"] = {"p": c0, "v": Vector2.ZERO, "cd": 0.0, "send": 0.0, "c": c0, "r": float(arena["r"]), "goal": targets[0]}
+		runs[player_name]["ball"] = {"p": c0, "v": Vector2.ZERO, "cd": 0.0, "send": 0.0, "c": c0, "r": float(arena["r"]), "goal": targets[0], "gr": FWConst.FOOT_GOAL_RANGE * float(FWConst.ARENA_DIFF_GOAL[diff])}
 	return {"ok": true}
 
 
@@ -150,7 +154,7 @@ func step(dt: float, positions: Dictionary, day: int, world_ref = null) -> Array
 			if float(run["hit_cd"]) <= 0.0 and (not coins.is_empty() or is_surv):
 				for d in obs:
 					if pos.distance_to(Arenas.obstacle_pos(d, float(run["clk"]))) <= FWConst.ARENA_OBS_HIT_RANGE:
-						run["t"] = float(run["t"]) - FWConst.ARENA_OBS_PENALTY
+						run["t"] = float(run["t"]) - float(run.get("pen", FWConst.ARENA_OBS_PENALTY))
 						run["hit_cd"] = FWConst.ARENA_OBS_COOLDOWN
 						events.append({"name": player_name, "kind": "hit"})
 						break
@@ -166,7 +170,7 @@ func step(dt: float, positions: Dictionary, day: int, world_ref = null) -> Array
 						props.remove_at(j)
 						events.append({"name": player_name, "kind": "bonus"})
 					elif float(run["prop_cd"]) <= 0.0 and (not coins.is_empty() or is_surv):
-						run["t"] = float(run["t"]) - FWConst.ARENA_OBS_PENALTY
+						run["t"] = float(run["t"]) - float(run.get("pen", FWConst.ARENA_OBS_PENALTY))
 						run["prop_cd"] = FWConst.ARENA_OBS_COOLDOWN
 						events.append({"name": player_name, "kind": "hit"})
 				j -= 1
@@ -202,7 +206,7 @@ func _step_ball(world, run: Dictionary, player_name: String, pos: Vector2, dt: f
 		v = Vector2.ZERO
 	b["p"] = np
 	b["v"] = v
-	if np.distance_to(b["goal"]) <= FWConst.FOOT_GOAL_RANGE:
+	if np.distance_to(b["goal"]) <= float(b.get("gr", FWConst.FOOT_GOAL_RANGE)):
 		run["score"] = int(run["score"]) + 1
 		b["p"] = center
 		b["v"] = Vector2.ZERO
@@ -236,11 +240,11 @@ func _step_foes(world, run: Dictionary, player_name: String, pos: Vector2, dt: f
 		var d: float = fp.distance_to(pos)
 		f["cd"] = maxf(float(f["cd"]) - dt, 0.0)
 		if d > FWConst.SURV_FOE_REACH * 0.8:
-			var np: Vector2 = fp.move_toward(pos, FWConst.SURV_FOE_SPEED * dt)
+			var np: Vector2 = fp.move_toward(pos, FWConst.SURV_FOE_SPEED * float(run.get("fs", 1.0)) * dt)
 			if world == null or world.height_at(np.x, np.y) >= 0.5:
 				f["p"] = np
 		elif float(f["cd"]) <= 0.0:
-			run["hp"] = float(run["hp"]) - FWConst.SURV_FOE_DAMAGE
+			run["hp"] = float(run["hp"]) - FWConst.SURV_FOE_DAMAGE * float(run.get("fd", 1.0))
 			f["cd"] = FWConst.SURV_FOE_CD
 			events.append({"name": player_name, "kind": "hurt"})
 		if d < best:
@@ -304,7 +308,7 @@ func _finish_arena(player_name: String, run: Dictionary) -> Dictionary:
 	var won: bool = goal <= 0 or score * 100 >= total * goal
 	var reward := 0
 	if player_name != str(run["owner"]) and won:
-		reward = score * int(run["per_coin"])
+		reward = int(round(float(score) * float(run["per_coin"]) * float(run.get("rmult", 1.0))))
 	# پارکور: اگر همهٔ ایستگاه‌ها گرفته شد، زمان تمام‌کردن ثبت و سریع‌ترین زمان نگه داشته می‌شود.
 	var finish_time := 0.0
 	var new_time := false
@@ -339,6 +343,7 @@ func public_state(player_name: String) -> Dictionary:
 		out["score"] = int(run["score"])
 		out["pk"] = bool(run.get("pk", false))
 		out["rc"] = bool(run.get("rc", false))
+		out["diff"] = int(run.get("diff", FWConst.ARENA_DIFF_DEFAULT))
 		if bool(run.get("adv", false)):
 			out["adv"] = true
 			out["left"] = (run.get("queue", []) as Array).size()

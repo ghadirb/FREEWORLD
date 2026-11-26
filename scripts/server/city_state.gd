@@ -1729,10 +1729,10 @@ func arenas_public() -> Array:
 
 
 ## ساخت میدان در موقعیت بازیکن؛ هزینه ARENA_COST (در جهان خلاقانه رایگان).
-func arena_create(player_name: String, arena_name: String, pos: Vector2, radius: float, coins: int, time: float, reward: int, kind: String = "coins", win_pct: int = 0, obstacles: int = 0) -> Dictionary:
+func arena_create(player_name: String, arena_name: String, pos: Vector2, radius: float, coins: int, time: float, reward: int, kind: String = "coins", win_pct: int = 0, obstacles: int = 0, diff: int = 1) -> Dictionary:
 	if not accounts.has(player_name):
 		return {"ok": false, "error": "no_account"}
-	var res: Dictionary = arenas.validate_new(world, seed_value, player_name, arena_name, pos, radius, coins, time, reward, kind, win_pct, obstacles)
+	var res: Dictionary = arenas.validate_new(world, seed_value, player_name, arena_name, pos, radius, coins, time, reward, kind, win_pct, obstacles, diff)
 	if not bool(res["ok"]):
 		return res
 	if not _pay(accounts[player_name], FWConst.ARENA_COST):
@@ -1743,10 +1743,10 @@ func arena_create(player_name: String, arena_name: String, pos: Vector2, radius:
 
 
 ## ویرایش رایگان میدان توسط سازنده یا مدیر. دورهای در حال اجرای همان میدان لغو می‌شوند چون چیدمان سکه‌ها عوض می‌شود.
-func arena_edit(player_name: String, id: int, arena_name: String, radius: float, coins: int, time: float, reward: int, kind: String = "coins", win_pct: int = 0, obstacles: int = 0) -> String:
+func arena_edit(player_name: String, id: int, arena_name: String, radius: float, coins: int, time: float, reward: int, kind: String = "coins", win_pct: int = 0, obstacles: int = 0, diff: int = 1) -> String:
 	if not accounts.has(player_name):
 		return "no_account"
-	var res: Dictionary = arenas.validate_edit(world, seed_value, player_name, FWConst.is_admin(role_of(player_name)), id, arena_name, radius, coins, time, reward, kind, win_pct, obstacles)
+	var res: Dictionary = arenas.validate_edit(world, seed_value, player_name, FWConst.is_admin(role_of(player_name)), id, arena_name, radius, coins, time, reward, kind, win_pct, obstacles, diff)
 	if not bool(res["ok"]):
 		return str(res["error"])
 	var a: Dictionary = res["arena"]
@@ -1773,7 +1773,7 @@ func arena_import(player_name: String, code: String, pos: Vector2) -> Dictionary
 	if not bool(pr["ok"]):
 		return pr
 	var d: Dictionary = pr["def"]
-	var res: Dictionary = arena_create(player_name, str(d["name"]), pos, float(d["r"]), int(d["coins"]), float(d["time"]), int(d["reward"]), str(d["kind"]), int(d["win"]), int(d["obs"]))
+	var res: Dictionary = arena_create(player_name, str(d["name"]), pos, float(d["r"]), int(d["coins"]), float(d["time"]), int(d["reward"]), str(d["kind"]), int(d["win"]), int(d["obs"]), int(d["diff"]))
 	if not bool(res["ok"]):
 		return res
 	var a: Dictionary = arenas.items[int(res["id"])]

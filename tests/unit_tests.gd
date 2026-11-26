@@ -74,6 +74,7 @@ func _init() -> void:
 	test_arena_checkpoint_respawn()
 	test_arena_props()
 	test_arena_share_code()
+	test_arena_difficulty()
 	test_disasters()
 	test_race()
 	test_car_race()
@@ -1572,10 +1573,11 @@ func test_arenas() -> void:
 	var coins: Array = pub["coins"]
 	var inside := true
 	for c in coins:
-		if Vector2(float(c[0]), float(c[1])).distance_to(at) > float(a["r"]) + 0.5:
+		var cd: float = Vector2(float(c[0]), float(c[1])).distance_to(at)
+		if cd < float(a["r"]) + FWConst.ARENA_COURSE_GAP - 0.5 or cd > float(a["r"]) + Arenas.course_range("coins", 1) + 0.5:
 			inside = false
-	check(pub["active"] and coins.size() >= FWConst.ARENA_COINS_MIN and coins.size() <= 10 and inside, "arena coins stay inside the circle")
-	check(float(pub["t"]) <= 40.0 and float(pub["t"]) > 39.0, "run time comes from the arena")
+	check(pub["active"] and coins.size() >= FWConst.ARENA_COINS_MIN and coins.size() <= 10 and inside, "arena coins are spread outside the circle, within the course range")
+	check(float(pub["t"]) >= 39.0 and float(pub["t"]) <= FWConst.ARENA_TIME_CAP, "run time is the base time plus the travel time")
 	var owner_m: int = int(cs.accounts["maker"]["money"])
 	var total: int = coins.size()
 	var end_ev: Dictionary = {}
@@ -3897,7 +3899,7 @@ func test_arena_win_rule() -> void:
 	check(int(cs.arenas.items[id]["win"]) == FWConst.ARENA_WIN_MAX, "the win threshold is clamped to 100")
 	check(int(cs.arenas_public()[0]["win"]) == 100, "the public list carries the threshold")
 	check(bool(cs.arena_play("runner", id, at)["ok"]), "the runner starts")
-	var evs: Array = cs.minigame_step(61.0, {"runner": Vector2(-9999.0, -9999.0)})
+	var evs: Array = cs.minigame_step(700.0, {"runner": Vector2(-9999.0, -9999.0)})
 	var end_ev: Dictionary = {}
 	for e in evs:
 		if str(e["kind"]) == "end":
@@ -3975,6 +3977,7 @@ func test_arena_obstacles() -> void:
 	check(bool(cs.arena_play("runner", id, at)["ok"]), "the runner starts")
 	var st: Dictionary = cs.minigame.public_state("runner")
 	check(st.has("obs") and st["obs"].size() == FWConst.ARENA_OBS_MAX and st.has("el"), "the run state carries the obstacles and the clock")
+	defs = st["obs"]
 	# سرِ مانع بایست؛ برخورد زمان را کم می‌کند و بلافاصله دوباره نمی‌زند.
 	var t_before: float = float(cs.minigame.runs["runner"]["t"])
 	var stand: Vector2 = Arenas.obstacle_pos(defs[0], float(cs.minigame.runs["runner"]["clk"]) + 0.05)
@@ -4087,9 +4090,9 @@ func test_arena_race() -> void:
 	var ring_ok := true
 	for g in gates:
 		var d: float = (g as Vector2).distance_to(center)
-		if d < float(a["r"]) * 0.7 or d > float(a["r"]) * 0.88:
+		if d < float(a["r"]) + FWConst.ARENA_COURSE_GAP - 0.5 or d > 2.2 * Arenas.course_range("race", 1):
 			ring_ok = false
-	check(ring_ok, "gates sit on a ring around the centre")
+	check(ring_ok, "gates sit on a loop outside the start arena")
 	check(bool(cs.arena_play("driver", id, at)["ok"]), "a driver can start the race")
 	check(cs.minigame.is_arena_race("driver") and bool(cs.minigame.public_state("driver")["rc"]), "the run is flagged as a race (higher speed cap)")
 	check(not cs.minigame.is_arena_race("maker"), "other players are not flagged")
@@ -4270,3 +4273,109 @@ func test_arena_share_code() -> void:
 		check(float(ea["r"]) <= FWConst.ARENA_R_MAX and int(ea["coins"]) <= FWConst.ARENA_PARKOUR_MAX and float(ea["time"]) <= FWConst.ARENA_TIME_MAX and int(ea["reward"]) <= FWConst.ARENA_REWARD_MAX and int(ea["win"]) <= FWConst.ARENA_WIN_MAX and int(ea["obs"]) <= FWConst.ARENA_OBS_MAX and ea["props"].is_empty(), "hostile numbers are clamped and bad objects dropped")
 	else:
 		check(true, "hostile code refused outright")
+
+
+func _arena_finish_reward(cs, who: String, id: int, at: Vector2, score: int) -> int:
+	cs.minigame.cancel(who)
+	if not bool(cs.arena_play(who, id, at)["ok"]):
+		return -1
+	cs.minigame.runs[who]["score"] = score
+	for e in cs.minigame_step(9999.0, {who: Vector2(-9999.0, -9999.0)}):
+		if str(e["kind"]) == "end":
+			return int(e["reward"])
+	return -1
+
+
+func test_arena_difficulty() -> void:
+	print("== Arena difficulty and courses outside the start arena ==")
+	check(Arenas.clean_diff(0) == 0 and Arenas.clean_diff(2) == 2 and Arenas.clean_diff(9) == 2 and Arenas.clean_diff(-3) == 0, "difficulty is clamped to easy, medium, hard")
+	check(Arenas.clean_diff("x") == 1 and Arenas.clean_diff(null) == 1, "an unknown difficulty means medium")
+	var cs = CityState.new(4301)
+	_login(cs, "maker")
+	_login(cs, "guest")
+	cs.accounts["maker"]["money"] = 5000
+	cs.accounts["guest"]["money"] = 0
+	var at := _mg_land_pos(cs)
+	var spots: Array = []
+	var k := 0
+	while spots.size() < 5 and k < 120:
+		var sp := at + Vector2(float(k) * 45.0, 0.0)
+		var sh: float = cs.world.height_at(sp.x, sp.y)
+		if sh >= 1.0 and sh <= 10.0:
+			spots.append(sp)
+		k += 1
+	check(spots.size() >= 4, "the test world has land for four separate arenas")
+	var ids: Array = []
+	var means: Array = []
+	for d in 3:
+		var res: Dictionary = cs.arena_create("maker", "Diff%d" % d, spots[d], 10.0, 12, 40.0, 2, "coins", 0, 0, d)
+		if not bool(res["ok"]):
+			ids.append(0)
+			means.append(0.0)
+			continue
+		var id: int = int(res["id"])
+		ids.append(id)
+		var a: Dictionary = cs.arenas.items[id]
+		check(int(a["diff"]) == d, "the arena remembers difficulty %d" % d)
+		var pts: Array = Arenas.make_targets(cs.world, cs.seed_value, "maker", 0, a)
+		var c0 := Vector2(float(a["x"]), float(a["z"]))
+		var sum := 0.0
+		var outside := true
+		for p in pts:
+			var pd: float = (p as Vector2).distance_to(c0)
+			sum += pd
+			if pd < float(a["r"]) + FWConst.ARENA_COURSE_GAP - 0.5:
+				outside = false
+		check(outside and pts.size() >= FWConst.ARENA_COINS_MIN, "difficulty %d: every coin is outside the start arena" % d)
+		means.append(sum / float(maxi(pts.size(), 1)))
+	check(ids.size() == 3 and float(means[2]) > float(means[0]), "a harder game sends the player farther across the city")
+	var edit_err: String = cs.arena_edit("maker", ids[1], "Diff1", 10.0, 12, 40.0, 2, "coins", 0, 0, 2)
+	check(edit_err == "" and int(cs.arenas.items[ids[1]]["diff"]) == 2, "the owner can change the difficulty of an existing game (%s)" % edit_err)
+	check(int(cs.arenas_public()[0]["diff"]) >= 0, "the public list carries the difficulty")
+	# جایزه: آسان ۰٫۷۵، متوسط ۱، سخت ۱٫۵ برابر
+	var r0 := _arena_finish_reward(cs, "guest", ids[0], Vector2(float(cs.arenas.items[ids[0]]["x"]), float(cs.arenas.items[ids[0]]["z"])), 10)
+	var r2 := _arena_finish_reward(cs, "guest", ids[1], Vector2(float(cs.arenas.items[ids[1]]["x"]), float(cs.arenas.items[ids[1]]["z"])), 10)
+	check(r0 == 15 and r2 == 30, "prize scales with difficulty (easy 15, hard 30 for ten targets at 2 each; got %d and %d)" % [r0, r2])
+	# زمان: سخت ضریب کمتر از آسان دارد
+	var base := {"x": 0.0, "z": 0.0, "r": 10.0, "time": 60.0, "kind": "football", "coins": 3}
+	var te: float = Arenas.run_limit(base.merged({"diff": 0}, true), [])
+	var tm: float = Arenas.run_limit(base.merged({"diff": 1}, true), [])
+	var th: float = Arenas.run_limit(base.merged({"diff": 2}, true), [])
+	check(te > tm and tm > th and is_equal_approx(tm, 60.0), "time shrinks with difficulty (easy %.0f, medium %.0f, hard %.0f)" % [te, tm, th])
+	# پارکور: مسیر از میدان تا جای دور، بیرون از میدان و بلندتر با سختی
+	var pk := {"id": 7, "x": at.x, "z": at.y, "r": 12.0, "coins": 6, "kind": "parkour", "time": 60.0, "diff": 0}
+	var pe: Array = Arenas.make_checkpoints(cs.world, cs.seed_value, pk)
+	var ph: Array = Arenas.make_checkpoints(cs.world, cs.seed_value, pk.merged({"diff": 2}, true))
+	var far_e := 0.0
+	var far_h := 0.0
+	var out_ok := true
+	for p in pe:
+		far_e = maxf(far_e, (p as Vector2).distance_to(at))
+		if (p as Vector2).distance_to(at) < 12.0 + FWConst.ARENA_COURSE_GAP - 0.5:
+			out_ok = false
+	for p in ph:
+		far_h = maxf(far_h, (p as Vector2).distance_to(at))
+	check(out_ok and pe.size() >= FWConst.ARENA_COINS_MIN, "parkour checkpoints all lie outside the start arena")
+	check(far_h > far_e, "the hard parkour route ends farther away")
+	# موانع پارکور روی مسیرند و با سختی بیشتر می‌شوند
+	check(Arenas.eff_obs("parkour", 3, 0) == 1 and Arenas.eff_obs("parkour", 3, 1) == 3 and Arenas.eff_obs("parkour", 3, 2) == 5, "difficulty adds or removes moving obstacles")
+	check(Arenas.eff_obs("coins", 3, 2) == 0, "other kinds never get obstacles")
+	var obs: Array = Arenas.make_obstacles(cs.seed_value, pk.merged({"obs": 3, "diff": 1}, true), pe)
+	check(obs.size() == 3, "route obstacles follow the obstacle count")
+	# بقا: دشمن سخت سریع‌تر و پرآسیب‌تر است
+	var svr: Dictionary = cs.arena_create("maker", "Fight", spots[3], 14.0, 5, 60.0, 1, "survival", 0, 0, 2)
+	check(bool(svr["ok"]), "a hard survival arena can be built")
+	var sv: int = int(svr.get("id", 0))
+	if sv > 0:
+		cs.arena_play("guest", sv, spots[3])
+		var run: Dictionary = cs.minigame.runs.get("guest", {})
+		check(is_equal_approx(float(run.get("fs", 0.0)), 1.25) and is_equal_approx(float(run.get("fd", 0.0)), 1.4), "hard survival makes foes faster and stronger")
+		cs.minigame.cancel("guest")
+	# کد اشتراک و ذخیره
+	var code: String = Arenas.export_code(cs.arenas.items[ids[0]])
+	var pr: Dictionary = Arenas.parse_code(code)
+	check(bool(pr["ok"]) and int(pr["def"]["diff"]) == 0, "the share code carries the difficulty")
+	var a2 = Arenas.new()
+	a2.load_dict(cs.arenas.to_dict())
+	check(int(a2.items[ids[1]]["diff"]) == 2, "difficulty survives saving and loading")
+	check(FWConst.PROTOCOL_VERSION >= 46, "protocol bumped for the arena difficulty field")

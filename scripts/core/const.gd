@@ -1,7 +1,7 @@
 extends RefCounted
 ## ثابت‌های مشترک بین سرور و کلاینت.
 
-const PROTOCOL_VERSION := 45
+const PROTOCOL_VERSION := 46
 # ترافیک شبکه با DTLS رمز می‌شود (نسخهٔ ۴ به بعد). فقط برای عیب‌یابی خاموش شود.
 const USE_DTLS := true
 const DEFAULT_PORT := 7777
@@ -280,6 +280,21 @@ const ARENA_BONUS_TIME := 5.0       # ثانیه‌ای که جایزهٔ زما
 const ARENA_RESPAWN_PENALTY := 3.0   # ثانیه‌ای که با بازگشت به نقطهٔ ذخیرهٔ پارکور از زمان کم می‌شود
 const ARENA_OBS_COOLDOWN := 1.5   # بین دو برخورد پشت‌سرهم
 const ARENA_WIN_MAX := 100   # درصد لازم برای برد؛ ۰ = بدون شرط برد (پروتکل ۳۷)
+# سختی بازی (پروتکل ۴۶): ۰ آسان، ۱ متوسط، ۲ سخت. برای همهٔ نوع‌ها یکسان است و زمان، جایزه، مانع، دشمن و طول مسیر را عوض می‌کند.
+const ARENA_DIFF_DEFAULT := 1
+const ARENA_DIFF_TIME := [1.35, 1.0, 0.75]      # ضریب زمان دور
+const ARENA_DIFF_REWARD := [0.75, 1.0, 1.5]     # ضریب جایزهٔ هر هدف
+const ARENA_DIFF_PENALTY := [0.75, 1.0, 1.5]    # ضریب جریمهٔ برخورد با مانع یا تله
+const ARENA_DIFF_FOE_SPEED := [0.8, 1.0, 1.25]  # سرعت دشمن در مبارزه و بقا
+const ARENA_DIFF_FOE_DAMAGE := [0.7, 1.0, 1.4]  # آسیب دشمن
+const ARENA_DIFF_GOAL := [1.35, 1.0, 0.75]      # اندازهٔ دروازهٔ فوتبال
+const ARENA_DIFF_OBS_ADD := [-2, 0, 2]          # مانع متحرک اضافه یا کم نسبت به تنظیم سازنده
+# مسیر بازی بیرون از میدان: میدان فقط «نقطهٔ شروع» است و هدف‌ها در شهر پخش می‌شوند (سکه‌یاب، پارکور، مسابقه، ماجراجویی).
+const ARENA_COURSE_GAP := 8.0                   # کمینهٔ فاصلهٔ هدف از لبهٔ میدان
+const ARENA_COURSE_RANGE := {"coins": [60.0, 100.0, 150.0], "parkour": [90.0, 140.0, 200.0], "race": [55.0, 85.0, 120.0], "adventure": [80.0, 130.0, 190.0]}
+const ARENA_COURSE_SPEED := {"coins": 5.0, "parkour": 5.0, "race": 14.0, "adventure": 5.0}   # سرعت مرجع برای زمان سفر (متر بر ثانیه)
+const ARENA_TIME_CAP := 600.0                   # سقف زمان کل دور پس از افزودن زمان سفر
+const ARENA_PROP_BOUND := 260.0                 # دورترین فاصلهٔ شیء سفارشی از مرکز میدان
 const SURV_HP := 100.0            # سلامت بازیکن در دور مبارزه و بقا (پروتکل ۴۳)
 const SURV_FOE_HP := 3            # ضربه‌های لازم برای شکست یک دشمن
 const SURV_FOE_SPEED := 2.6       # سرعت دشمن (متر بر ثانیه)

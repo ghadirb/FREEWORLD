@@ -336,14 +336,14 @@ func paste_blocks(origin: Vector3i, data: PackedInt32Array) -> void:
 var arenas: Array = []   # {id, name, owner, x, z, r, coins, time, reward, top: [نام, امتیاز]}
 
 
-func arena_create(arena_name: String, radius: float, coins: int, time: float, reward: int, kind: String = "coins", win_pct: int = 0, obstacles: int = 0) -> void:
+func arena_create(arena_name: String, radius: float, coins: int, time: float, reward: int, kind: String = "coins", win_pct: int = 0, obstacles: int = 0, diff: int = 1) -> void:
 	if is_logged_in:
-		_tx("c2s_arena_create", [arena_name, radius, coins, time, reward, kind, win_pct, obstacles])
+		_tx("c2s_arena_create", [arena_name, radius, coins, time, reward, kind, win_pct, obstacles, diff])
 
 
-func arena_edit(id: int, arena_name: String, radius: float, coins: int, time: float, reward: int, kind: String = "coins", win_pct: int = 0, obstacles: int = 0) -> void:
+func arena_edit(id: int, arena_name: String, radius: float, coins: int, time: float, reward: int, kind: String = "coins", win_pct: int = 0, obstacles: int = 0, diff: int = 1) -> void:
 	if is_logged_in:
-		_tx("c2s_arena_edit", [id, arena_name, radius, coins, time, reward, kind, win_pct, obstacles])
+		_tx("c2s_arena_edit", [id, arena_name, radius, coins, time, reward, kind, win_pct, obstacles, diff])
 
 
 func arena_import(code: String) -> void:

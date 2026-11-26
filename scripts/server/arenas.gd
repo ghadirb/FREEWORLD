@@ -1,6 +1,8 @@
 extends RefCounted
 ## میدان‌های ساخته‌شده توسط بازیکن (لایهٔ سازنده، حس Roblox): بازیکن یک میدان «سکه‌یاب» با نام، شعاع،
 ## تعداد سکه، زمان و جایزهٔ هر سکه می‌سازد؛ بقیه می‌توانند داخل آن بازی کنند و رکورد جدا دارند.
+## از پروتکل ۴۶: میدان فقط «نقطهٔ شروع» است و هدف‌های سکه‌یاب، پارکور، مسابقه و ماجراجویی بیرون از آن، در شهر پخش می‌شوند؛
+## همهٔ نوع‌ها سطح سختی (آسان/متوسط/سخت) دارند که زمان، جایزه، مانع، دشمن و طول مسیر را عوض می‌کند.
 ## جایزه را سازنده از پول خودش می‌دهد (در جهان خلاقانه بدون سکه). این ماژول فقط تعریف میدان‌ها،
 ## اعتبارسنجی و چیدمان قطعی سکه‌ها را دارد؛ اجرای دور در minigame.gd و پرداخت در city_state.gd است.
 
@@ -26,6 +28,77 @@ static func clean_name(raw: String) -> String:
 static func clean_kind(raw: Variant) -> String:
 	var k := str(raw)
 	return k if k == "parkour" or k == "race" or k == "football" or k == "survival" or k == "adventure" else "coins"
+
+
+## سطح سختی: ۰ آسان، ۱ متوسط، ۲ سخت؛ هر مقدار نامعتبر متوسط است.
+static func clean_diff(raw: Variant) -> int:
+	if raw is int or raw is float:
+		return clampi(int(raw), 0, 2)
+	return FWConst.ARENA_DIFF_DEFAULT
+
+
+## نوع‌هایی که هدف‌هایشان بیرون از میدان و در شهر پخش می‌شود (فوتبال و بقا ذاتاً داخل زمین بازی می‌شوند).
+static func is_course(kind: String) -> bool:
+	return FWConst.ARENA_COURSE_RANGE.has(kind)
+
+
+## شعاع پخش هدف‌ها از لبهٔ میدان (متر) برای نوع و سختی؛ نوع‌های داخل زمین صفر برمی‌گردانند.
+static func course_range(kind: String, diff: int) -> float:
+	if not FWConst.ARENA_COURSE_RANGE.has(kind):
+		return 0.0
+	return float(FWConst.ARENA_COURSE_RANGE[kind][clean_diff(diff)])
+
+
+## نقطهٔ قابل‌قبول برای هدف: خشکی کم‌ارتفاع و داخل مرز جهان.
+static func on_land(world, c: Vector2) -> bool:
+	var lo: float = -FWConst.WORLD_LIMIT
+	var hi: float = FWConst.CITY_SIZE + FWConst.WORLD_LIMIT
+	if c.x < lo or c.x > hi or c.y < lo or c.y > hi:
+		return false
+	var h: float = world.height_at(c.x, c.y)
+	return h >= 0.5 and h <= FWConst.MINIGAME_MAX_HEIGHT
+
+
+## طول مسیر از start: برای هدف‌های مرتب به ترتیب، برای سکه‌ها با نزدیک‌ترین‌همسایه.
+static func route_length(targets: Array, start: Vector2, ordered: bool) -> float:
+	var total := 0.0
+	var cur := start
+	if ordered:
+		for t in targets:
+			total += cur.distance_to(t)
+			cur = t
+		return total
+	var left: Array = targets.duplicate()
+	while not left.is_empty():
+		var bi := 0
+		var bd := INF
+		for i in left.size():
+			var d: float = cur.distance_to(left[i])
+			if d < bd:
+				bd = d
+				bi = i
+		total += bd
+		cur = left[bi]
+		left.remove_at(bi)
+	return total
+
+
+## زمان کل دور: زمان پایهٔ سازنده + زمان سفر روی مسیر (نوع‌های بیرون از میدان)، ضرب در ضریب سختی.
+static func run_limit(a: Dictionary, targets: Array) -> float:
+	var kd := clean_kind(a.get("kind", "coins"))
+	var diff := clean_diff(a.get("diff", FWConst.ARENA_DIFF_DEFAULT))
+	var t: float = float(a["time"])
+	if is_course(kd):
+		var speed: float = float(FWConst.ARENA_COURSE_SPEED[kd])
+		t += route_length(targets, Vector2(float(a["x"]), float(a["z"])), is_ordered(kd)) / speed
+	return clampf(t * float(FWConst.ARENA_DIFF_TIME[diff]), 5.0, FWConst.ARENA_TIME_CAP)
+
+
+## تعداد مانع متحرک مؤثر: تنظیم سازنده به‌علاوهٔ اثر سختی (فقط پارکور).
+static func eff_obs(kind: String, n: int, diff: int) -> int:
+	if kind != "parkour":
+		return 0
+	return clampi(n + int(FWConst.ARENA_DIFF_OBS_ADD[clean_diff(diff)]), 0, FWConst.ARENA_OBS_MAX)
 
 
 ## کمینهٔ تعداد هدف لازم برای ساخت: فوتبال فقط یک دروازه دارد.
@@ -61,10 +134,11 @@ static func clamp_obs(kind: String, n: int) -> int:
 	return clampi(n, 0, FWConst.ARENA_OBS_MAX) if kind == "parkour" else 0
 
 
-## موانع متحرک: هر مانع روی یک پاره‌خط مماس بر حلقهٔ میدان با سرعت و فازِ قطعی (از Seed و شناسه) رفت‌وبرگشت می‌کند.
+## موانع متحرک: هر مانع روی یک پاره‌خط با سرعت و فازِ قطعی (از Seed و شناسه) رفت‌وبرگشت می‌کند. با route (ایستگاه‌های پارکور)
+## موانع روی مسیر میان ایستگاه‌ها می‌افتند و عمود بر مسیر می‌روند؛ بدون route (حالت قدیمی) مماس بر حلقهٔ میدان‌اند.
 ## هر مانع [ax, az, bx, bz, سرعت, فاز] است؛ موقعیتش فقط تابعی از ساعت دور است، پس کلاینت هم می‌تواند بکشدش.
-static func make_obstacles(seed_value: int, a: Dictionary) -> Array:
-	var n: int = int(a.get("obs", 0))
+static func make_obstacles(seed_value: int, a: Dictionary, route: Array = []) -> Array:
+	var n: int = eff_obs(clean_kind(a.get("kind", "parkour")), int(a.get("obs", 0)), clean_diff(a.get("diff", FWConst.ARENA_DIFF_DEFAULT)))
 	var out: Array = []
 	if n <= 0:
 		return out
@@ -73,12 +147,24 @@ static func make_obstacles(seed_value: int, a: Dictionary) -> Array:
 	var center := Vector2(float(a["x"]), float(a["z"]))
 	var r: float = float(a["r"])
 	for i in n:
+		if not route.is_empty():
+			var k: int = i % route.size()
+			var from: Vector2 = center if k == 0 else route[k - 1]
+			var to: Vector2 = route[k]
+			var mid: Vector2 = from.lerp(to, lerpf(0.35, 0.65, rng.randf()))
+			var dir: Vector2 = (to - from)
+			var perp: Vector2 = Vector2(-dir.y, dir.x).normalized() * 4.0 if dir.length() > 0.1 else Vector2(4.0, 0.0)
+			var p0 := mid - perp
+			var p1 := mid + perp
+			out.append([snappedf(p0.x, 0.1), snappedf(p0.y, 0.1), snappedf(p1.x, 0.1), snappedf(p1.y, 0.1),
+				snappedf(lerpf(0.8, 1.7, rng.randf()), 0.01), snappedf(rng.randf() * TAU, 0.01)])
+			continue
 		var ang: float = TAU * (float(i) + rng.randf() * 0.6) / float(n)
-		var mid := center + Vector2(cos(ang), sin(ang)) * r * lerpf(0.4, 0.8, rng.randf())
+		var mid2 := center + Vector2(cos(ang), sin(ang)) * r * lerpf(0.4, 0.8, rng.randf())
 		var tangent := Vector2(-sin(ang), cos(ang)) * minf(r * 0.35, 4.0)
-		var p0 := mid - tangent
-		var p1 := mid + tangent
-		out.append([snappedf(p0.x, 0.1), snappedf(p0.y, 0.1), snappedf(p1.x, 0.1), snappedf(p1.y, 0.1),
+		var q0 := mid2 - tangent
+		var q1 := mid2 + tangent
+		out.append([snappedf(q0.x, 0.1), snappedf(q0.y, 0.1), snappedf(q1.x, 0.1), snappedf(q1.y, 0.1),
 			snappedf(lerpf(0.8, 1.7, rng.randf()), 0.01), snappedf(rng.randf() * TAU, 0.01)])
 	return out
 
@@ -102,7 +188,7 @@ static func clean_props(raw: Variant, a: Dictionary) -> Array:
 			continue
 		var x := float(p[1])
 		var z := float(p[2])
-		if not (is_finite(x) and is_finite(z)) or Vector2(x, z).distance_to(center) > float(a["r"]):
+		if not (is_finite(x) and is_finite(z)) or Vector2(x, z).distance_to(center) > FWConst.ARENA_PROP_BOUND:
 			continue
 		out.append([str(p[0]), x, z])
 	return out
@@ -115,7 +201,7 @@ static func export_code(a: Dictionary) -> String:
 	for p in (a.get("props", []) as Array):
 		props.append([str(p[0]), snappedf(float(p[1]) - center.x, 0.1), snappedf(float(p[2]) - center.y, 0.1)])
 	var d := {"v": 1, "n": str(a["name"]), "k": clean_kind(a.get("kind", "coins")), "r": float(a["r"]), "c": int(a["coins"]),
-		"t": float(a["time"]), "x": int(a["reward"]), "w": int(a.get("win", 0)), "o": int(a.get("obs", 0)), "p": props}
+		"t": float(a["time"]), "x": int(a["reward"]), "w": int(a.get("win", 0)), "o": int(a.get("obs", 0)), "d": clean_diff(a.get("diff", FWConst.ARENA_DIFF_DEFAULT)), "p": props}
 	return "FWA1:" + Marshalls.raw_to_base64(JSON.stringify(d).to_utf8_buffer())
 
 
@@ -143,7 +229,7 @@ static func parse_code(code: String) -> Dictionary:
 			if p is Array and p.size() == 3 and PROP_TYPES.has(str(p[0])) and (p[1] is float or p[1] is int) and (p[2] is float or p[2] is int):
 				var dx := float(p[1])
 				var dz := float(p[2])
-				if is_finite(dx) and is_finite(dz) and absf(dx) <= FWConst.ARENA_R_MAX and absf(dz) <= FWConst.ARENA_R_MAX:
+				if is_finite(dx) and is_finite(dz) and absf(dx) <= FWConst.ARENA_PROP_BOUND and absf(dz) <= FWConst.ARENA_PROP_BOUND:
 					props.append([str(p[0]), dx, dz])
 	for k in ["r", "t"]:
 		var v: Variant = parsed.get(k, 0)
@@ -151,7 +237,7 @@ static func parse_code(code: String) -> Dictionary:
 			return bad
 	var kd := clean_kind(parsed.get("k", "coins"))
 	return {"ok": true, "def": {"name": nm, "kind": kd, "r": float(parsed["r"]), "coins": int(parsed.get("c", FWConst.ARENA_COINS_MIN)),
-		"time": float(parsed["t"]), "reward": int(parsed.get("x", 0)), "win": int(parsed.get("w", 0)), "obs": int(parsed.get("o", 0)), "props": props}}
+		"time": float(parsed["t"]), "reward": int(parsed.get("x", 0)), "win": int(parsed.get("w", 0)), "obs": int(parsed.get("o", 0)), "diff": clean_diff(parsed.get("d", FWConst.ARENA_DIFF_DEFAULT)), "props": props}}
 
 
 static func clamp_count(kind: String, n: int) -> int:
@@ -165,45 +251,71 @@ static func clamp_count(kind: String, n: int) -> int:
 	return clampi(n, FWConst.ARENA_COINS_MIN, hi)
 
 
-## ایستگاه‌های پارکور: دور میدان به ترتیب زاویه، با فاصلهٔ متغیر از مرکز تا مسیر موج‌دار شود. قطعی از Seed و شناسه.
+## ایستگاه‌های پارکور: مسیری از میدان تا مکانی دور در شهر، با انحراف جانبی موج‌دار. بیرون از میدان است و با سختی بلندتر می‌شود.
+## قطعی از Seed و شناسه؛ از چند جهت امتحان می‌شود تا همهٔ ایستگاه‌ها روی خشکی بیفتند.
 static func make_checkpoints(world, seed_value: int, a: Dictionary) -> Array:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash("%d:parkour:%d:%d" % [seed_value, int(a.get("id", 0)), int(a["coins"])])
 	var center := Vector2(float(a["x"]), float(a["z"]))
 	var r: float = float(a["r"])
 	var n: int = int(a["coins"])
-	var out: Array = []
-	for i in n:
-		for attempt in 4:
-			var ang: float = TAU * (float(i) + rng.randf() * 0.4) / float(n)
-			var dist: float = lerpf(r * 0.45, r * 0.95, rng.randf())
-			var c := center + Vector2(cos(ang), sin(ang)) * dist
-			var h: float = world.height_at(c.x, c.y)
-			if h < 0.5 or h > FWConst.MINIGAME_MAX_HEIGHT:
-				continue
-			out.append(Vector2(snappedf(c.x, 0.1), snappedf(c.y, 0.1)))
-			break
-	return out
+	var diff := clean_diff(a.get("diff", FWConst.ARENA_DIFF_DEFAULT))
+	var reach: float = minf(maxf(course_range("parkour", diff), float(n) * 10.0), 250.0)
+	var inner: float = r + FWConst.ARENA_COURSE_GAP
+	var base: float = rng.randf() * TAU
+	var best: Array = []
+	for t in 8:
+		var ang: float = base + TAU * float(t) / 8.0
+		var dir := Vector2(cos(ang), sin(ang))
+		var side := Vector2(-dir.y, dir.x)
+		var phase: float = rng.randf() * TAU
+		var pts: Array = []
+		for i in n:
+			var f: float = float(i + 1) / float(n)
+			var along: float = lerpf(inner, r + reach, f)
+			var wig: float = sin(phase + float(i) * 1.7) * reach * 0.12 * f
+			for k in 3:
+				var lat: float = wig * (1.0 if k == 0 else (-0.6 if k == 1 else 0.0))
+				var c: Vector2 = center + dir * along + side * lat
+				if on_land(world, c):
+					pts.append(Vector2(snappedf(c.x, 0.1), snappedf(c.y, 0.1)))
+					break
+		if pts.size() == n:
+			return pts
+		if pts.size() > best.size():
+			best = pts
+	return best
 
 
-## دروازه‌های مسابقهٔ ماشین: یک پیست حلقه‌ای تقریباً گرد با فاصلهٔ ثابت از مرکز (نه موج‌دار مثل پارکور) تا با ماشین
-## روان رانده شود. هر دروازه بر یک زاویهٔ مرتب با کمی انحراف قطعی از Seed می‌افتد؛ دروازهٔ روی آب یا کوه رد می‌شود.
+## دروازه‌های مسابقهٔ ماشین: یک مسیر حلقه‌ای در شهر که از خود میدان شروع می‌شود و به آن برمی‌گردد (دایره‌ای که از مرکز میدان
+## می‌گذرد). همهٔ دروازه‌ها بیرون از میدان‌اند؛ دروازهٔ روی آب یا کوه از جهت دیگری امتحان می‌شود. قطعی از Seed.
 static func make_race_gates(world, seed_value: int, a: Dictionary) -> Array:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash("%d:race:%d:%d" % [seed_value, int(a.get("id", 0)), int(a["coins"])])
 	var center := Vector2(float(a["x"]), float(a["z"]))
 	var r: float = float(a["r"])
 	var n: int = int(a["coins"])
-	var out: Array = []
-	for i in n:
-		var ang: float = TAU * (float(i) + rng.randf() * 0.2) / float(n)
-		var dist: float = r * lerpf(0.72, 0.86, rng.randf())
-		var c := center + Vector2(cos(ang), sin(ang)) * dist
-		var h: float = world.height_at(c.x, c.y)
-		if h < 0.5 or h > FWConst.MINIGAME_MAX_HEIGHT:
-			continue
-		out.append(Vector2(snappedf(c.x, 0.1), snappedf(c.y, 0.1)))
-	return out
+	var diff := clean_diff(a.get("diff", FWConst.ARENA_DIFF_DEFAULT))
+	var rr: float = course_range("race", diff)
+	var inner: float = r + FWConst.ARENA_COURSE_GAP
+	var phi_min: float = 2.0 * asin(minf(1.0, inner / (2.0 * rr)))
+	var base: float = rng.randf() * TAU
+	var best: Array = []
+	for t in 8:
+		var ang: float = base + TAU * float(t) / 8.0
+		var loop_c: Vector2 = center + Vector2(cos(ang), sin(ang)) * rr
+		var out: Array = []
+		for i in n:
+			var phi: float = lerpf(phi_min, TAU - phi_min, float(i) / float(maxi(n - 1, 1)))
+			var pa: float = ang + PI + phi
+			var c: Vector2 = loop_c + Vector2(cos(pa), sin(pa)) * rr * lerpf(0.94, 1.06, rng.randf())
+			if on_land(world, c):
+				out.append(Vector2(snappedf(c.x, 0.1), snappedf(c.y, 0.1)))
+		if out.size() == n:
+			return out
+		if out.size() > best.size():
+			best = out
+	return best
 
 
 ## نقطه‌های زایش دشمن در مبارزه و بقا: ۸ نقطهٔ قطعی روی حلقهٔ ۸۵٪ شعاع که روی خشکی‌اند.
@@ -222,24 +334,26 @@ static func make_survival_spawns(world, seed_value: int, a: Dictionary) -> Array
 	return out
 
 
-## مرحله‌های ماجراجویی: مارپیچ از نزدیک مرکز به دور (۳۰٪ تا ۹۰٪ شعاع) با زاویهٔ طلایی؛ هر مرحله دورتر از قبلی است و
-## آخرین مرحله «گنج» است. قطعی از Seed و شناسه؛ نقطهٔ روی آب یا کوه رد می‌شود.
+## مرحله‌های ماجراجویی: مارپیچ از بیرون میدان به دورِ شهر (با زاویهٔ طلایی)؛ هر مرحله دورتر از قبلی است و آخرین مرحله «گنج» است.
+## قطعی از Seed و شناسه؛ نقطهٔ روی آب یا کوه رد می‌شود.
 static func make_adventure_stages(world, seed_value: int, a: Dictionary) -> Array:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash("%d:adv:%d:%d" % [seed_value, int(a.get("id", 0)), int(a["coins"])])
 	var center := Vector2(float(a["x"]), float(a["z"]))
 	var r: float = float(a["r"])
 	var n: int = int(a["coins"])
+	var diff := clean_diff(a.get("diff", FWConst.ARENA_DIFF_DEFAULT))
+	var inner: float = r + FWConst.ARENA_COURSE_GAP
+	var outer: float = r + course_range("adventure", diff)
 	var base: float = rng.randf() * TAU
 	var out: Array = []
 	for i in n:
 		var t: float = float(i) / float(maxi(n - 1, 1))
-		for attempt in 4:
+		for attempt in 6:
 			var ang: float = base + float(i) * 2.399963 + float(attempt) * 0.9
-			var dist: float = r * lerpf(0.3, 0.9, t)
+			var dist: float = lerpf(inner, outer, t)
 			var c := center + Vector2(cos(ang), sin(ang)) * dist
-			var h: float = world.height_at(c.x, c.y)
-			if h < 0.5 or h > FWConst.MINIGAME_MAX_HEIGHT:
+			if not on_land(world, c):
 				continue
 			out.append(Vector2(snappedf(c.x, 0.1), snappedf(c.y, 0.1)))
 			break
@@ -262,22 +376,24 @@ static func make_targets(world, seed_value: int, player_name: String, counter: i
 	return make_coins(world, seed_value, player_name, counter, a)
 
 
-## چیدمان قطعی سکه‌ها درون دایرهٔ میدان، فقط روی خشکی کم‌ارتفاع.
+## چیدمان قطعی سکه‌ها در شهر، در حلقه‌ای بیرون از میدان (از لبهٔ میدان + فاصلهٔ امن تا شعاع سختی)، فقط روی خشکی کم‌ارتفاع.
 static func make_coins(world, seed_value: int, player_name: String, counter: int, a: Dictionary) -> Array:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash("%d:%s:%d:%d" % [seed_value, player_name, counter, int(a.get("id", 0))])
 	var center := Vector2(float(a["x"]), float(a["z"]))
 	var r: float = float(a["r"])
 	var want: int = int(a["coins"])
+	var diff := clean_diff(a.get("diff", FWConst.ARENA_DIFF_DEFAULT))
+	var inner: float = r + FWConst.ARENA_COURSE_GAP
+	var outer: float = r + course_range("coins", diff)
 	var out: Array = []
 	var tries := 0
-	while out.size() < want and tries < 600:
+	while out.size() < want and tries < 800:
 		tries += 1
 		var ang := rng.randf() * TAU
-		var dist := lerpf(1.5, r, sqrt(rng.randf()))
+		var dist := lerpf(inner, outer, sqrt(rng.randf()))
 		var c := center + Vector2(cos(ang), sin(ang)) * dist
-		var h: float = world.height_at(c.x, c.y)
-		if h < 0.5 or h > FWConst.MINIGAME_MAX_HEIGHT:
+		if not on_land(world, c):
 			continue
 		out.append(Vector2(snappedf(c.x, 0.1), snappedf(c.y, 0.1)))
 	return out
@@ -285,7 +401,7 @@ static func make_coins(world, seed_value: int, player_name: String, counter: int
 
 ## ویرایش میدان موجود (مکان ثابت می‌ماند): فقط سازنده یا مدیر. فاصله با میدان‌های دیگر و جای سکه‌ها دوباره
 ## بررسی می‌شود. خروجی {ok, arena} (میدان جدید، هنوز اعمال نشده) یا {ok: false, error}.
-func validate_edit(world, seed_value: int, who: String, is_admin: bool, id: int, arena_name: String, radius: float, coins: int, time: float, reward: int, kind: String = "coins", win_pct: int = 0, obstacles: int = 0) -> Dictionary:
+func validate_edit(world, seed_value: int, who: String, is_admin: bool, id: int, arena_name: String, radius: float, coins: int, time: float, reward: int, kind: String = "coins", win_pct: int = 0, obstacles: int = 0, diff: int = 1) -> Dictionary:
 	if not items.has(id):
 		return {"ok": false, "error": "arena_missing"}
 	var old: Dictionary = items[id]
@@ -298,7 +414,7 @@ func validate_edit(world, seed_value: int, who: String, is_admin: bool, id: int,
 		return {"ok": false, "error": "arena_bounds"}
 	var kd := clean_kind(kind)
 	var a := {
-		"id": id, "name": nm, "owner": old["owner"], "x": old["x"], "z": old["z"], "kind": kd, "win": clampi(win_pct, 0, FWConst.ARENA_WIN_MAX), "obs": clamp_obs(kd, obstacles),
+		"id": id, "name": nm, "owner": old["owner"], "x": old["x"], "z": old["z"], "kind": kd, "win": clampi(win_pct, 0, FWConst.ARENA_WIN_MAX), "obs": clamp_obs(kd, obstacles), "diff": clean_diff(diff),
 		"r": clampf(radius, FWConst.ARENA_R_MIN, FWConst.ARENA_R_MAX),
 		"coins": clamp_count(kd, coins),
 		"time": clampf(time, FWConst.ARENA_TIME_MIN, FWConst.ARENA_TIME_MAX),
@@ -336,7 +452,7 @@ func prop_op(world, who: String, is_admin: bool, id: int, op: String, pos: Vecto
 		return "arena_missing"
 	if props.size() >= FWConst.ARENA_PROPS_MAX:
 		return "prop_limit"
-	if not (is_finite(pos.x) and is_finite(pos.y)) or pos.distance_to(Vector2(float(a["x"]), float(a["z"]))) > float(a["r"]) - 0.5:
+	if not (is_finite(pos.x) and is_finite(pos.y)) or pos.distance_to(Vector2(float(a["x"]), float(a["z"]))) > FWConst.ARENA_PROP_BOUND:
 		return "prop_far"
 	if world.height_at(pos.x, pos.y) < 0.5:
 		return "arena_land"
@@ -353,7 +469,7 @@ func apply_edit(a: Dictionary) -> void:
 
 
 ## بررسی یک میدان جدید؛ خروجی {ok, arena} یا {ok: false, error}.
-func validate_new(world, seed_value: int, owner: String, arena_name: String, pos: Vector2, radius: float, coins: int, time: float, reward: int, kind: String = "coins", win_pct: int = 0, obstacles: int = 0) -> Dictionary:
+func validate_new(world, seed_value: int, owner: String, arena_name: String, pos: Vector2, radius: float, coins: int, time: float, reward: int, kind: String = "coins", win_pct: int = 0, obstacles: int = 0, diff: int = 1) -> Dictionary:
 	var nm := clean_name(arena_name)
 	if nm.is_empty():
 		return {"ok": false, "error": "arena_name"}
@@ -367,7 +483,7 @@ func validate_new(world, seed_value: int, owner: String, arena_name: String, pos
 		return {"ok": false, "error": "arena_limit"}
 	var kd := clean_kind(kind)
 	var a := {
-		"id": 0, "name": nm, "owner": owner, "x": snappedf(pos.x, 0.1), "z": snappedf(pos.y, 0.1), "kind": kd, "win": clampi(win_pct, 0, FWConst.ARENA_WIN_MAX), "obs": clamp_obs(kd, obstacles),
+		"id": 0, "name": nm, "owner": owner, "x": snappedf(pos.x, 0.1), "z": snappedf(pos.y, 0.1), "kind": kd, "win": clampi(win_pct, 0, FWConst.ARENA_WIN_MAX), "obs": clamp_obs(kd, obstacles), "diff": clean_diff(diff),
 		"r": clampf(radius, FWConst.ARENA_R_MIN, FWConst.ARENA_R_MAX),
 		"coins": clamp_count(kd, coins),
 		"time": clampf(time, FWConst.ARENA_TIME_MIN, FWConst.ARENA_TIME_MAX),
@@ -466,7 +582,7 @@ func list_public(arena_scores: Dictionary, arena_times: Dictionary = {}) -> Arra
 					best_time = tv
 					best_name = str(k)
 		rows.append({"id": int(id), "name": a["name"], "owner": a["owner"], "x": a["x"], "z": a["z"], "r": a["r"],
-			"coins": a["coins"], "time": a["time"], "reward": a["reward"], "kind": clean_kind(a.get("kind", "coins")), "win": int(a.get("win", 0)), "obs": int(a.get("obs", 0)), "props": a.get("props", []),
+			"coins": a["coins"], "time": a["time"], "reward": a["reward"], "kind": clean_kind(a.get("kind", "coins")), "win": int(a.get("win", 0)), "obs": int(a.get("obs", 0)), "diff": clean_diff(a.get("diff", FWConst.ARENA_DIFF_DEFAULT)), "props": a.get("props", []),
 			"top": [top_name, top_score], "best_time": [best_name, best_time], "rating": rating_of(int(id))})
 	return rows
 
@@ -493,7 +609,7 @@ func load_dict(d: Variant) -> void:
 				continue
 			var kd := clean_kind(v.get("kind", "coins"))
 			items[id] = {
-				"kind": kd, "win": clampi(int(v.get("win", 0)), 0, FWConst.ARENA_WIN_MAX), "obs": clamp_obs(kd, int(v.get("obs", 0))),
+				"kind": kd, "win": clampi(int(v.get("win", 0)), 0, FWConst.ARENA_WIN_MAX), "obs": clamp_obs(kd, int(v.get("obs", 0))), "diff": clean_diff(v.get("diff", FWConst.ARENA_DIFF_DEFAULT)),
 				"id": id, "name": nm, "owner": str(v.get("owner", "")).substr(0, 32),
 				"x": float(v.get("x", 0.0)), "z": float(v.get("z", 0.0)),
 				"r": clampf(float(v.get("r", FWConst.ARENA_R_MIN)), FWConst.ARENA_R_MIN, FWConst.ARENA_R_MAX),

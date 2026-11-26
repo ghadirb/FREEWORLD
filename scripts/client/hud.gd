@@ -10,6 +10,7 @@ const Loc = preload("res://scripts/client/loc.gd")
 const Sfx = preload("res://scripts/client/sfx.gd")
 const BlockView = preload("res://scripts/client/block_view.gd")
 const UiTheme = preload("res://scripts/client/ui_theme.gd")
+const Stepper = preload("res://scripts/client/stepper.gd")
 
 signal disconnect_requested
 signal quality_changed(q: int)
@@ -83,6 +84,8 @@ var _arena_rows: VBoxContainer
 var _arena_create_btn: Button
 var _arena_kind: String = "coins"   # coins | parkour | race (پروتکل ۳۶ و ۴۱)
 var _arena_kind_btn: Button
+var _arena_diff: int = 1   # 0 آسان، 1 متوسط، 2 سخت (پروتکل ۴۶)
+var _arena_diff_btn: Button
 var _arena_sort_pop: bool = false   # false: جدیدترین، true: محبوب‌ترین
 var _arena_sort_btn: Button
 var _arena_tip_shown: bool = false
@@ -1203,6 +1206,18 @@ func _refresh_minigame() -> void:
 	_update_mg_bar()
 
 
+## فلش جهت هدف نسبت به جهت نگاه دوربین (هدف‌ها حالا دور از میدان‌اند).
+func _target_arrow(d: Vector2) -> String:
+	if view == null or view.cam == null or d.length() < 0.5:
+		return "◎"
+	var yaw: float = view.cam.yaw
+	var fwd := Vector2(-sin(yaw), -cos(yaw))
+	var right := Vector2(cos(yaw), -sin(yaw))
+	var ang: float = atan2(d.dot(right), d.dot(fwd))
+	var arrows := ["⬆", "↗", "➡", "↘", "⬇", "↙", "⬅", "↖"]
+	return arrows[posmod(int(round(ang / (PI / 4.0))), 8)]
+
+
 func _update_mg_bar() -> void:
 	if _mg_bar == null:
 		return
@@ -1214,11 +1229,15 @@ func _update_mg_bar() -> void:
 		if client.minigame.has("hp"):
 			_mg_bar.text += "   ❤ " + Loc.digits(str(int(client.minigame["hp"])))
 		var near := INF
+		var near_d := Vector2.ZERO
 		if view != null:
 			for c in client.minigame.get("coins", []):
-				near = minf(near, Vector2(float(c[0]) - view.my_pos.x, float(c[1]) - view.my_pos.z).length())
+				var dv := Vector2(float(c[0]) - view.my_pos.x, float(c[1]) - view.my_pos.z)
+				if dv.length() < near:
+					near = dv.length()
+					near_d = dv
 		if near < INF:
-			_mg_bar.text += "\n" + Loc.fmt("mg_target_dist", [Loc.digits(str(int(round(near))))])
+			_mg_bar.text += "\n" + _target_arrow(near_d) + " " + Loc.fmt("mg_target_dist", [Loc.digits(str(int(round(near))))])
 
 
 func _build_npc_panel() -> void:
@@ -1599,12 +1618,8 @@ func _arena_spin_row(parent: Control, key: String, lo: float, hi: float, val: fl
 	var l := _label(Loc.t(key), 18, Color("d6e4ff"))
 	l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	r.add_child(l)
-	var sp := SpinBox.new()
-	sp.min_value = lo
-	sp.max_value = hi
-	sp.step = 1
-	sp.value = val
-	sp.custom_minimum_size = Vector2(150, 48)
+	var sp := Stepper.new()
+	sp.setup(lo, hi, val, 1.0)
 	r.add_child(sp)
 	_arena_spin[key] = sp
 
@@ -1658,6 +1673,13 @@ func _build_arena_panel() -> void:
 		_arena_kind_refresh())
 	v.add_child(_arena_kind_btn)
 	_arena_kind_refresh()
+	_arena_diff_btn = UiTheme.button("", Vector2(0, 52))
+	_arena_diff_btn.pressed.connect(func():
+		Sfx.play(self, "click")
+		_arena_diff = (_arena_diff + 1) % 3
+		_arena_diff_refresh())
+	v.add_child(_arena_diff_btn)
+	_arena_diff_refresh()
 	_arena_spin_row(v, "arena_radius", FWConst.ARENA_R_MIN, FWConst.ARENA_R_MAX, 12)
 	_arena_spin_row(v, "arena_coins", FWConst.ARENA_COINS_MIN, FWConst.ARENA_COINS_MAX, 12)
 	_arena_spin_row(v, "arena_time", FWConst.ARENA_TIME_MIN, FWConst.ARENA_TIME_MAX, 45)
@@ -1674,10 +1696,10 @@ func _build_arena_panel() -> void:
 		Sfx.play(self, "click")
 		if _arena_edit_id > 0:
 			client.arena_edit(_arena_edit_id, _arena_name.text, float(_arena_spin["arena_radius"].value), int(_arena_spin["arena_coins"].value),
-				float(_arena_spin["arena_time"].value), int(_arena_spin["arena_reward"].value), _arena_kind, int(_arena_spin["arena_win"].value), int(_arena_spin["arena_obs"].value))
+				float(_arena_spin["arena_time"].value), int(_arena_spin["arena_reward"].value), _arena_kind, int(_arena_spin["arena_win"].value), int(_arena_spin["arena_obs"].value), _arena_diff)
 		else:
 			client.arena_create(_arena_name.text, float(_arena_spin["arena_radius"].value), int(_arena_spin["arena_coins"].value),
-				float(_arena_spin["arena_time"].value), int(_arena_spin["arena_reward"].value), _arena_kind, int(_arena_spin["arena_win"].value), int(_arena_spin["arena_obs"].value))
+				float(_arena_spin["arena_time"].value), int(_arena_spin["arena_reward"].value), _arena_kind, int(_arena_spin["arena_win"].value), int(_arena_spin["arena_obs"].value), _arena_diff)
 		_arena_set_edit(0, {}))
 	row.add_child(cb)
 	var close := UiTheme.button("✕", Vector2(64, 60))
@@ -1723,6 +1745,10 @@ func _arena_apply_preset(pr: Dictionary) -> void:
 	_arena_spin["arena_obs"].value = float(pr["obs"])
 
 
+func _arena_diff_refresh() -> void:
+	_arena_diff_btn.text = Loc.t("arena_diff_%d" % _arena_diff)
+
+
 func _arena_kind_refresh() -> void:
 	_arena_kind_btn.text = Loc.t("arena_kind_" + _arena_kind)
 
@@ -1731,6 +1757,8 @@ func _arena_set_edit(id: int, a: Dictionary) -> void:
 	_arena_edit_id = id
 	if id > 0:
 		_arena_kind = str(a.get("kind", "coins"))
+		_arena_diff = clampi(int(a.get("diff", 1)), 0, 2)
+		_arena_diff_refresh()
 		_arena_name.text = str(a["name"])
 		_arena_spin["arena_radius"].value = float(a["r"])
 		_arena_spin["arena_coins"].value = float(a["coins"])
@@ -1741,6 +1769,8 @@ func _arena_set_edit(id: int, a: Dictionary) -> void:
 		_arena_create_btn.text = Loc.t("arena_save")
 	else:
 		_arena_kind = "coins"
+		_arena_diff = 1
+		_arena_diff_refresh()
 		_arena_name.text = ""
 		_arena_create_btn.text = Loc.fmt("arena_create", [Loc.digits(str(FWConst.ARENA_COST))])
 
@@ -1776,6 +1806,7 @@ func _fill_arena_list() -> void:
 			Loc.fmt("arena_info", [Loc.digits(str(a["coins"])), Loc.digits(str(int(a["time"]))), Loc.digits(str(a["reward"]))])]
 		if int(top[1]) > 0:
 			sub += "  ·  %s: %s %s" % [Loc.t("arena_top"), str(top[0]), Loc.digits(str(top[1]))]
+		sub += "  ·  " + Loc.t("arena_diff_short_%d" % clampi(int(a.get("diff", 1)), 0, 2))
 		var rt: Array = a.get("rating", [0.0, 0])
 		if int(rt[1]) > 0:
 			sub += "  ·  ⭐ %s (%s)" % [Loc.digits("%.1f" % float(rt[0])), Loc.digits(str(rt[1]))]
