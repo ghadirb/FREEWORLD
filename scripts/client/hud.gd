@@ -128,6 +128,8 @@ var _npc_speech: Label
 var _quest_label: Label
 var _quest_btn: Button
 var _npc_item: OptionButton
+var _fam_label: Label
+var _fam_btns: Dictionary = {}
 var _npc_id: int = -1
 var _offer_panel: PanelContainer
 var _offer_label: Label
@@ -1316,6 +1318,19 @@ func _build_npc_panel() -> void:
 		sb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		sb.pressed.connect(func(): client.npc_sell(_npc_id, str(FWConst.ITEM_ORDER[_npc_item.selected]), amount))
 		srow.add_child(sb)
+	_fam_label = _label("", 19, Color("ffd9a0"))
+	_fam_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_fam_label.custom_minimum_size = Vector2(520, 0)
+	v.add_child(_fam_label)
+	var frow := HBoxContainer.new()
+	frow.add_theme_constant_override("separation", 8)
+	v.add_child(frow)
+	for op in ["hire", "fire", "marry", "divorce"]:
+		var fb := UiTheme.button(Loc.t("fam_btn_" + op), Vector2(0, 56))
+		fb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		fb.pressed.connect(func(): client.npc_family(_npc_id, op))
+		frow.add_child(fb)
+		_fam_btns[op] = fb
 	var brow := HBoxContainer.new()
 	brow.add_theme_constant_override("separation", 8)
 	v.add_child(brow)
@@ -1437,6 +1452,29 @@ func _fill_npc() -> void:
 	_npc_body.text = "%s: %s (%s/%s)\n%s" % [Loc.t("npc_friendship"), Loc.t("npc_level_%d" % lv), Loc.digits(str(pts)), Loc.digits(str(FWConst.FRIEND_MAX)),
 		Loc.fmt("npc_bonus", [Loc.digits(str(int(round(float(FWConst.NPC_TRADE_BONUS[lv]) * 100.0))))])]
 	_fill_quest(role, lv)
+	_fill_family()
+
+
+## وضعیت خانوادهٔ NPC (از تگ ستون هفتم لیست NPC) و دکمه‌های فعال؛ حکم نهایی با سرور است.
+func _fill_family() -> void:
+	if _fam_label == null:
+		return
+	var tag := ""
+	for n in client.npcs:
+		if int(n[0]) == _npc_id and n.size() > 6:
+			tag = str(n[6])
+	var kind := tag.substr(0, 1)
+	var who := tag.substr(2)
+	var mine: bool = who == client.my_name
+	var key := ""
+	if kind != "":
+		key = "fam_%s_%s" % [kind, "mine" if mine else "other"]
+	_fam_label.text = Loc.fmt(key, [who]) if key != "" else ""
+	_fam_label.visible = key != ""
+	(_fam_btns["hire"] as Button).disabled = kind in ["k", "h"]
+	(_fam_btns["fire"] as Button).disabled = not (kind == "h" and mine)
+	(_fam_btns["marry"] as Button).disabled = kind in ["k", "s", "h"]
+	(_fam_btns["divorce"] as Button).disabled = not (kind == "s" and mine)
 
 
 ## مأموریت جاری این NPC: متن مرحله، پاداش و شرط دوستی؛ دکمه فقط وقتی فعال است که کالا و سطح دوستی کافی باشد.
@@ -2305,6 +2343,27 @@ func _on_notice(code: String, args: Dictionary) -> void:
 		"npc_sold":
 			Sfx.play(self, "coin")
 			toast(Loc.fmt("msg_npc_sold", [str(args["npc"]), Loc.digits(str(args["count"])), Loc.t("item_" + str(args["item"])), Loc.digits(str(args["total"]))]), Color("c8f08a"))
+		"family_hire":
+			Sfx.play(self, "coin")
+			toast(Loc.fmt("msg_family_hire", [str(args.get("npc", ""))]), Color("c8f08a"))
+			_fill_family()
+		"family_fire":
+			toast(Loc.fmt("msg_family_fire", [str(args.get("npc", ""))]))
+			_fill_family()
+		"family_marry":
+			Sfx.play(self, "notify")
+			toast(Loc.fmt("msg_family_marry", [str(args.get("npc", ""))]), Color("ffb6d9"))
+			_fill_family()
+		"family_divorce":
+			toast(Loc.fmt("msg_family_divorce", [str(args.get("npc", ""))]))
+			_fill_family()
+		"family_birth":
+			Sfx.play(self, "notify")
+			toast(Loc.fmt("msg_family_birth", [str(args.get("npc", ""))]), Color("ffb6d9"))
+		"family_child_grown":
+			toast(Loc.fmt("msg_family_grown", [str(args.get("npc", ""))]), Color("c8f08a"))
+		"family_hire_quit":
+			toast(Loc.fmt("msg_family_quit", [str(args.get("npc", ""))]), Color("ff9a8a"))
 		"npc_bought":
 			Sfx.play(self, "coin")
 			toast(Loc.fmt("msg_npc_bought", [str(args["npc"]), Loc.digits(str(args["count"])), Loc.t("item_" + str(args["item"])), Loc.digits(str(args["total"]))]), Color("c8f08a"))

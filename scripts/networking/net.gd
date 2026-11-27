@@ -231,6 +231,12 @@ func c2s_npc_sell(npc_id: int, item: String, n: int) -> void:
 
 
 @rpc("any_peer", "call_remote", "reliable")
+func c2s_npc_family(npc_id: int, op: String) -> void:
+	if server:
+		server.on_npc_family(multiplayer.get_remote_sender_id(), npc_id, op)
+
+
+@rpc("any_peer", "call_remote", "reliable")
 func c2s_npc_buy(npc_id: int, item: String, n: int) -> void:
 	if server:
 		server.on_npc_buy(multiplayer.get_remote_sender_id(), npc_id, item, n)

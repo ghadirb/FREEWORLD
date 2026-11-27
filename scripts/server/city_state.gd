@@ -18,6 +18,7 @@ const Mine = preload("res://scripts/shared/mine.gd")
 const RailNetwork = preload("res://scripts/shared/rail_network.gd")
 const Scenarios = preload("res://scripts/shared/scenarios.gd")
 const Story = preload("res://scripts/shared/story.gd")
+const Family = preload("res://scripts/server/family.gd")
 const Book = preload("res://scripts/server/book.gd")
 
 const SAVE_VERSION := 1
@@ -68,6 +69,8 @@ var market: Dictionary = {"wheat": 0.0, "flour": 0.0, "bread": 0.0, "egg": 0.0, 
 ## قیمت کالاهای دامی (تخم‌مرغ و شیر).
 var prices: Dictionary = {"egg": 6.0, "milk": 14.0, "flour": 16.0, "bread": 20.0, "cheese": 34.0}
 var npcs: Array = []
+var family_events: Array = []   # {kind, player, npc}؛ سرور بعد از هر گام اعلام می‌کند
+var family_day: int = -1
 var minigame = Minigame.new()
 var race = Race.new()
 var blueprints = Blueprints.new()
@@ -507,6 +510,10 @@ func collect(player_name: String, id: int) -> Dictionary:
 
 func _clear_jobs_for(building_id: int) -> Array:
 	var fired: Array = []
+	for npc in npcs:
+		if int(npc.get("wb", -1)) == building_id:
+			npc["emp"] = ""
+			npc["wb"] = -1
 	for n in accounts:
 		if int(accounts[n].get("job", 0)) == building_id:
 			accounts[n]["job"] = 0
@@ -3000,6 +3007,7 @@ static func from_dict(d: Dictionary):
 			"horse": bool(a.get("horse", false)),
 			"car": bool(a.get("car", false)),
 			"friends": _load_friends(a.get("friends", null)),
+			"spouse": maxi(0, int(a.get("spouse", 0))),
 			"npc_day": _load_npc_day(a.get("npc_day", null)),
 			"book": _load_book(a.get("book", null)),
 			"stats": _load_stats(a.get("stats", null)),
@@ -3036,6 +3044,9 @@ static func from_dict(d: Dictionary):
 				"home_b": int(n.get("home_b", -1)), "home_v": str(n.get("home_v", "")),
 				"vx": float(n.get("vx", 0.0)), "vz": float(n.get("vz", 0.0)),
 				"wk_day": int(n.get("wk_day", -1)),
+				"emp": str(n.get("emp", "")), "wb": int(n.get("wb", -1)), "spouse_of": str(n.get("spouse_of", "")),
+				"kid": bool(n.get("kid", false)), "parent": str(n.get("parent", "")), "born_day": int(n.get("born_day", 0)),
+				"last_birth": int(n.get("last_birth", 0)),
 			})
 	var bl = d.get("blocks", [])
 	cs.track_nav = false

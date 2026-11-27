@@ -645,6 +645,11 @@ func npc_sell(npc_id: int, item: String, n: int) -> void:
 		_tx("c2s_npc_sell", [npc_id, item, n])
 
 
+func npc_family(npc_id: int, op: String) -> void:
+	if is_logged_in:
+		_tx("c2s_npc_family", [npc_id, op])
+
+
 func npc_buy(npc_id: int, item: String, n: int) -> void:
 	if is_logged_in:
 		_tx("c2s_npc_buy", [npc_id, item, n])

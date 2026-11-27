@@ -86,6 +86,7 @@ func _init() -> void:
 	test_boat()
 	test_god_tools()
 	test_species_breeding()
+	test_family()
 	test_stairs_and_floors()
 	test_p2p_trade()
 	test_world_slots()
@@ -2060,6 +2061,141 @@ func _breed_count(cs, kind: String) -> int:
 	var n := 0
 	for id in cs.god:
 		if str(cs.god[id]["kind"]) == kind:
+			n += 1
+	return n
+
+
+func test_family() -> void:
+	print("== hiring NPCs and family ==")
+	var NpcSim = load("res://scripts/server/npc_sim.gd")
+	var Family = load("res://scripts/server/family.gd")
+	var cs = CityState.new(4242)
+	_login(cs, "boss")
+	NpcSim.ensure_npcs(cs)
+	var acc: Dictionary = cs.accounts["boss"]
+	acc["money"] = 2000
+	cs.buildings[900] = {"id": 900, "type": "farm", "owner": "boss", "cx": 30, "cz": 30, "stock": 0.0, "prog": 0.0}
+	cs.buildings[901] = {"id": 901, "type": "house", "owner": "boss", "cx": 40, "cz": 30, "stock": 0.0, "prog": 0.0}
+	var npc: Dictionary = {}
+	for n in cs.npcs:
+		if str(n.get("home_v", "")) == "" and str(n.get("job", "")) == "":
+			npc = n
+			break
+	check(not npc.is_empty(), "found a free NPC")
+	var nid: int = int(npc["id"])
+	var at := Vector2(float(npc["x"]), float(npc["z"]))
+	check(Family.hire(cs, "boss", 9999, at)["error"] == "no_npc", "unknown NPC")
+	check(Family.hire(cs, "boss", nid, at + Vector2(FWConst.NPC_TALK_RANGE + 3.0, 0.0))["error"] == "too_far", "hiring needs closeness")
+	check(Family.hire(cs, "boss", nid, at)["error"] == "need_friend", "a stranger cannot be hired")
+	acc["friends"] = {str(nid): FWConst.FRIEND_LEVELS[0]}
+	var m0: int = int(acc["money"])
+	var h: Dictionary = Family.hire(cs, "boss", nid, at)
+	check(bool(h["ok"]) and int(h["building"]) == 900 and int(acc["money"]) == m0 - FWConst.HIRE_FEE, "a friend is hired at the nearest own workplace for the fee")
+	check(Family.tag(npc) == "h:boss", "the public tag marks the worker")
+	check(Family.hire(cs, "boss", nid, at)["error"] == "npc_employed", "already employed")
+	check(Family.fire(cs, "other", nid)["error"] == "not_yours", "only the employer can dismiss")
+	# تولید
+	var s0: float = float(cs.buildings[900]["stock"])
+	Family.work(cs, npc, 30.0)
+	check(float(cs.buildings[900]["stock"]) > s0, "a hired worker speeds up production")
+	# حقوق روزانه
+	var day: int = cs.day_count + 1
+	var m1: int = int(acc["money"])
+	var nm1: int = int(npc["money"])
+	Family.daily(cs, day)
+	check(int(acc["money"]) == m1 - FWConst.HIRE_WAGE and int(npc["money"]) == nm1 + FWConst.HIRE_WAGE, "the wage is paid once a day")
+	Family.daily(cs, day)
+	check(int(acc["money"]) == m1 - FWConst.HIRE_WAGE, "the daily step is idempotent within a day")
+	acc["money"] = 0
+	Family.daily(cs, day + 1)
+	check(str(npc["emp"]) == "" and cs.family_events.size() == 1 and cs.family_events[0]["kind"] == "hire_quit", "an unpaid worker quits and the owner is told")
+	cs.family_events.clear()
+	acc["money"] = 2000
+	check(bool(Family.hire(cs, "boss", nid, at)["ok"]), "rehire works")
+	var gone: Array = cs._clear_jobs_for(900)
+	check(str(npc["emp"]) == "" and int(npc["wb"]) == -1, "removing the workplace releases its workers")
+	check(bool(Family.fire(cs, "boss", nid).get("ok", false)) == false, "dismissing a free NPC is refused")
+	# ازدواج
+	cs.buildings[900] = {"id": 900, "type": "farm", "owner": "boss", "cx": 30, "cz": 30, "stock": 0.0, "prog": 0.0}
+	check(Family.marry(cs, "boss", nid, at)["error"] == "need_friend", "marriage needs a close friend")
+	acc["friends"] = {str(nid): FWConst.FRIEND_LEVELS[1]}
+	cs.buildings.erase(901)
+	check(Family.marry(cs, "boss", nid, at)["error"] == "need_house", "marriage needs a house")
+	cs.buildings[901] = {"id": 901, "type": "house", "owner": "boss", "cx": 40, "cz": 30, "stock": 0.0, "prog": 0.0}
+	acc["money"] = FWConst.MARRY_COST - 1
+	check(Family.marry(cs, "boss", nid, at)["error"] == "no_money", "the wedding costs money")
+	acc["money"] = 2000
+	var mm: Dictionary = Family.marry(cs, "boss", nid, at)
+	check(bool(mm["ok"]) and int(acc["spouse"]) == nid and int(npc["home_b"]) == 901 and Family.tag(npc) == "s:boss", "marriage moves the spouse into the house")
+	check(int(acc["money"]) == 2000 - FWConst.MARRY_COST, "the wedding is paid for")
+	check(Family.marry(cs, "boss", nid, at)["error"] == "has_spouse", "only one spouse")
+	# سهم همسر
+	var before: int = int(acc["money"])
+	var wed_day: int = int(npc["last_birth"])
+	Family.daily(cs, wed_day + 1)
+	check(int(acc["money"]) > before, "the spouse shares part of their money each day")
+	# فرزند
+	check(cs.npcs.size() > 0 and _kids(cs) == 0, "no child at first")
+	Family.daily(cs, wed_day + FWConst.FAMILY_CHILD_DAYS)
+	check(_kids(cs) == 1, "a child is born after the interval")
+	var kid: Dictionary = cs.npcs[cs.npcs.size() - 1]
+	check(bool(kid["kid"]) and str(kid["parent"]) == "boss" and Family.tag(kid) == "k:boss", "the child is marked as a young child of the player")
+	check(Family.hire(cs, "boss", int(kid["id"]), Vector2(float(kid["x"]), float(kid["z"])))["error"] == "npc_kid", "a young child cannot be hired")
+	var born_day: int = int(kid["born_day"])
+	Family.daily(cs, born_day + FWConst.FAMILY_CHILD_DAYS)
+	check(_kids_total(cs) == 2, "a second child arrives")
+	Family.daily(cs, born_day + FWConst.FAMILY_CHILD_DAYS * 3)
+	check(_kids_total(cs) == 2, "the child cap is respected")
+	Family.daily(cs, born_day + FWConst.FAMILY_GROW_DAYS)
+	check(not bool(kid["kid"]) and Family.tag(kid) == "a:boss", "the child grows up")
+	# بچه‌ی بالغ بی‌هزینه و بی‌حقوق کار می‌کند
+	var mf: int = int(acc["money"])
+	var hk: Dictionary = Family.hire(cs, "boss", int(kid["id"]), Vector2(float(kid["x"]), float(kid["z"])))
+	check(bool(hk["ok"]) and int(hk["fee"]) == 0 and int(acc["money"]) == mf, "family members are hired for free")
+	var mw: int = int(acc["money"])
+	Family.daily(cs, born_day + FWConst.FAMILY_GROW_DAYS + 1)
+	check(int(acc["money"]) >= mw, "family members work without wage")
+	# ذخیره و بازیابی
+	var cs2 = CityState.from_dict(JSON.parse_string(JSON.stringify(cs.to_dict())))
+	check(cs2 != null and int(cs2.accounts["boss"]["spouse"]) == nid, "the spouse link survives save/load")
+	var k2: Dictionary = Family.find_npc(cs2, int(kid["id"]))
+	check(not k2.is_empty() and str(k2["emp"]) == "boss" and str(k2["parent"]) == "boss" and int(k2["wb"]) == int(kid["wb"]), "employment and parentage survive save/load")
+	# طلاق
+	check(bool(Family.divorce(cs, "boss")["ok"]) and int(acc["spouse"]) == 0 and str(npc["spouse_of"]) == "", "divorce clears the link")
+	check(Family.divorce(cs, "boss")["error"] == "no_spouse", "divorce needs a spouse")
+	# شبیه‌سازی: فرزند خردسال دم خانه می‌ماند و کارگر سر کار می‌رود
+	var cs3 = CityState.new(4242)
+	_login(cs3, "boss")
+	NpcSim.ensure_npcs(cs3)
+	cs3.buildings[901] = {"id": 901, "type": "house", "owner": "boss", "cx": 40, "cz": 30, "stock": 0.0, "prog": 0.0}
+	cs3.buildings[900] = {"id": 900, "type": "farm", "owner": "boss", "cx": 30, "cz": 30, "stock": 0.0, "prog": 0.0}
+	var worker: Dictionary = {}
+	for n in cs3.npcs:
+		if str(n.get("home_v", "")) == "" and str(n.get("job", "")) == "":
+			worker = n
+			break
+	worker["emp"] = "boss"
+	worker["wb"] = 900
+	cs3.world_time = 10.0 * 3600.0
+	for i in 600:
+		NpcSim.step(cs3, 0.5)
+	var door: Vector2 = cs3.door_point(cs3.buildings[900])
+	check(Vector2(float(worker["x"]), float(worker["z"])).distance_to(door) < 6.0, "a hired NPC walks to their employer's workplace in the daytime")
+	check(float(cs3.buildings[900]["stock"]) > 0.0, "and produces there")
+
+
+func _kids(cs) -> int:
+	var n := 0
+	for x in cs.npcs:
+		if bool(x.get("kid", false)):
+			n += 1
+	return n
+
+
+func _kids_total(cs) -> int:
+	var n := 0
+	for x in cs.npcs:
+		if str(x.get("parent", "")) == "boss":
 			n += 1
 	return n
 

@@ -1,7 +1,7 @@
 extends RefCounted
 ## ثابت‌های مشترک بین سرور و کلاینت.
 
-const PROTOCOL_VERSION := 51
+const PROTOCOL_VERSION := 52
 # ترافیک شبکه با DTLS رمز می‌شود (نسخهٔ ۴ به بعد). فقط برای عیب‌یابی خاموش شود.
 const USE_DTLS := true
 const DEFAULT_PORT := 7777
@@ -126,6 +126,19 @@ const NPC_DAILY_INCOME := 15
 const NPC_MAX_MONEY := 200
 const NPC_WORK_BONUS := 0.5
 const NPC_NAMES := ["علی", "مریم", "رضا", "زهرا", "حسین", "سارا", "کامران", "نیما", "آیدا", "پوریا", "مینا", "بهروز", "لیلا", "سینا", "نگار", "داریوش"]
+# استخدام NPC و خانواده (پروتکل ۵۲، docs/FAMILY.md)
+const HIRE_FRIEND_LEVEL := 1      # دوست (خانواده معاف است)
+const HIRE_FEE := 50              # پاداش استخدام (به کیف NPC)
+const HIRE_WAGE := 20             # حقوق روزانه از کارفرما (خانواده بی‌حقوق)
+const HIRE_BONUS := 0.4           # شتاب تولید کارگر NPC (کارگر بازیکن ۰٫۵)
+const HIRE_PER_BUILDING := 2
+const HIRE_PER_PLAYER := 4
+const MARRY_FRIEND_LEVEL := 2     # دوست صمیمی
+const MARRY_COST := 300
+const FAMILY_SPOUSE_DAILY := 12   # سهم روزانهٔ همسر از پول خودش
+const FAMILY_CHILD_DAYS := 6      # فاصلهٔ تولد فرزندان
+const FAMILY_CHILD_MAX := 2
+const FAMILY_GROW_DAYS := 8       # روز تا بالغ شدن
 const NPC_MAX := 24             # سقف کل NPCها (برای گوشی‌های ضعیف)؛ شامل انسان‌هایی که مدیر می‌گذارد
 # ساکنان خانه‌ها (روستاهای آماده + مهاجران خانه‌های بازیکن)
 const RESIDENT_JOBS := ["farmer", "baker", "miner", "seller"]
