@@ -152,6 +152,7 @@ var _drawers: Array = []
 var _race_title: Label
 var _race_start_btn: Button
 var _forest_btn: Button
+var _cap_btns: Dictionary = {}
 var _fly_pad: HBoxContainer
 var _race_panel: PanelContainer
 var _race_best: Label
@@ -2747,6 +2748,23 @@ func _build_admin_panel() -> void:
 	_forest_btn.pressed.connect(func(): client.set_world("forest_growth", not client.forest_growth))
 	v.add_child(_forest_btn)
 	client.world_changed.connect(func(): _forest_btn.button_pressed = client.forest_growth)
+	v.add_child(_label(Loc.t("law_cap_scale"), 22, Color("c8f08a")))
+	var caprow := HBoxContainer.new()
+	caprow.add_theme_constant_override("separation", 8)
+	v.add_child(caprow)
+	for sc in FWConst.CAP_SCALES:
+		var cb := UiTheme.button("×" + Loc.digits(str(int(sc))), Vector2(0, 56))
+		cb.toggle_mode = true
+		cb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		cb.pressed.connect(func(): client.set_world("cap_scale", int(sc)))
+		caprow.add_child(cb)
+		_cap_btns[int(sc)] = cb
+	v.add_child(_label(Loc.t("cap_scale_warn"), 18, Color("e8c870")))
+	var _sync_caps := func():
+		for k in _cap_btns:
+			_cap_btns[k].button_pressed = (int(k) == client.cap_scale)
+	client.world_changed.connect(_sync_caps)
+	_sync_caps.call()
 	v.add_child(_label(Loc.t("disasters"), 22, Color("c8f08a")))
 	var drow := HBoxContainer.new()
 	drow.add_theme_constant_override("separation", 8)

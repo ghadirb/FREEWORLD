@@ -557,7 +557,7 @@ func apply_edit(a: Dictionary) -> void:
 
 
 ## بررسی یک میدان جدید؛ خروجی {ok, arena} یا {ok: false, error}.
-func validate_new(world, seed_value: int, owner: String, arena_name: String, pos: Vector2, radius: float, coins: int, time: float, reward: int, kind: String = "coins", win_pct: int = 0, obstacles: int = 0, diff: int = 1) -> Dictionary:
+func validate_new(world, seed_value: int, owner: String, arena_name: String, pos: Vector2, radius: float, coins: int, time: float, reward: int, kind: String = "coins", win_pct: int = 0, obstacles: int = 0, diff: int = 1, scale: int = 1) -> Dictionary:
 	var nm := clean_name(arena_name)
 	if nm.is_empty():
 		return {"ok": false, "error": "arena_name"}
@@ -567,7 +567,7 @@ func validate_new(world, seed_value: int, owner: String, arena_name: String, pos
 	var hi: float = FWConst.CITY_SIZE + FWConst.WORLD_LIMIT
 	if pos.x < lo or pos.x > hi or pos.y < lo or pos.y > hi:
 		return {"ok": false, "error": "arena_bounds"}
-	if items.size() >= FWConst.ARENA_MAX_TOTAL or count_of(owner) >= FWConst.ARENA_MAX_PER_PLAYER:
+	if items.size() >= FWConst.scaled_cap(FWConst.ARENA_MAX_TOTAL, scale) or count_of(owner) >= FWConst.scaled_cap(FWConst.ARENA_MAX_PER_PLAYER, scale):
 		return {"ok": false, "error": "arena_limit"}
 	var kd := clean_kind(kind)
 	var a := {
@@ -689,7 +689,7 @@ func load_dict(d: Variant) -> void:
 	if src is Dictionary:
 		for k in src:
 			var v: Variant = src[k]
-			if not (v is Dictionary) or items.size() >= FWConst.ARENA_MAX_TOTAL:
+			if not (v is Dictionary) or items.size() >= FWConst.scaled_cap(FWConst.ARENA_MAX_TOTAL, FWConst.CAP_SCALES.max()):
 				continue
 			var id := int(k)
 			var nm := clean_name(str(v.get("name", "")))

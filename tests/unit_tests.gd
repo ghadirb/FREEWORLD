@@ -97,6 +97,7 @@ func _init() -> void:
 	test_day_night_and_creative_switch()
 	test_clear_resource()
 	test_world_rules()
+	test_capacity_scale()
 	test_civilization()
 	test_wild()
 	test_weapons()
@@ -2834,6 +2835,45 @@ func test_tls_pinning() -> void:
 			d.remove(f)
 		DirAccess.remove_absolute(dir)
 	Settings.clear_pins()
+
+
+func test_capacity_scale() -> void:
+	print("[capacity scale]")
+	check(FWConst.PROTOCOL_VERSION >= 58, "protocol bumped for the capacity scale")
+	var cs = CityState.new(4242)
+	_login(cs, "mortal")
+	cs.provision_admin("maker", "secret-secret-1", FWConst.ROLE_CITY_ADMIN)
+	check(cs.cap_scale == 1 and cs.cap(FWConst.MAX_BLOCKS_TOTAL) == FWConst.MAX_BLOCKS_TOTAL, "default scale keeps the base caps")
+	check(cs.set_world("mortal", "cap_scale", 4)["error"] == "forbidden", "players cannot change the capacity scale")
+	check(cs.set_world("maker", "cap_scale", 3)["error"] == "bad_request", "unknown scales are refused")
+	check(cs.set_world("maker", "cap_scale", 0)["error"] == "bad_request", "zero scale is refused")
+	var res: Dictionary = cs.set_world("maker", "cap_scale", 4)
+	check(res["ok"] and int(res["world"]["cap_scale"]) == 4, "an admin sets the scale and it is broadcast in the world info")
+	check(cs.cap(FWConst.MAX_BLOCKS_TOTAL) == FWConst.MAX_BLOCKS_TOTAL * 4, "block cap scales")
+	check(cs.cap(FWConst.TERRAIN_MAX_EDITS) == FWConst.TERRAIN_MAX_EDITS * 4, "terrain cap scales")
+	check(FWConst.scaled_cap(10, 999) == 10, "invalid scale falls back to x1")
+	var cs2 = CityState.from_dict(cs.to_dict())
+	check(cs2 != null and cs2.cap_scale == 4, "scale survives save/load")
+	var old: Dictionary = cs.to_dict()
+	old.erase("cap_scale")
+	var cs3 = CityState.from_dict(old)
+	check(cs3 != null and cs3.cap_scale == 1, "older saves load with scale x1")
+	var bad: Dictionary = cs.to_dict()
+	bad["cap_scale"] = 77
+	var cs4 = CityState.from_dict(bad)
+	check(cs4 != null and cs4.cap_scale == 1, "a corrupt scale in a save falls back to x1")
+	# ساختمان: سقف ۴۰ در ×۱ و بالاتر رفتن در ×۲.
+	var cs5 = CityState.new(4243)
+	_login(cs5, "builder")
+	cs5.provision_admin("boss", "secret-secret-1", FWConst.ROLE_CITY_ADMIN)
+	cs5.accounts["builder"]["money"] = 1000000
+	for i in range(60):
+		cs5.place_building("builder", 2000 + i, "road", 40 + (i % 20), 40 + int(i / 20.0))
+	check(cs5.count_owned("builder") == FWConst.MAX_BUILDINGS_PER_PLAYER, "x1 stops at the base building limit")
+	check(cs5.set_world("boss", "cap_scale", 2)["ok"], "admin raises the scale to x2")
+	for i in range(60, 100):
+		cs5.place_building("builder", 2000 + i, "road", 40 + (i % 20), 40 + int(i / 20.0))
+	check(cs5.count_owned("builder") > FWConst.MAX_BUILDINGS_PER_PLAYER and cs5.count_owned("builder") <= FWConst.MAX_BUILDINGS_PER_PLAYER * 2, "x2 allows more buildings but still enforces its own limit")
 
 
 func test_civilization() -> void:
