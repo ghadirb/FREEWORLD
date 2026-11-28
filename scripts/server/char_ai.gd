@@ -13,6 +13,7 @@ const Personality = preload("res://scripts/server/char_personality.gd")
 const Memory = preload("res://scripts/server/char_memory.gd")
 const Social = preload("res://scripts/server/char_social.gd")
 const Placement = preload("res://scripts/shared/placement.gd")
+const Fortify = preload("res://scripts/server/char_fortify.gd")
 
 const BUILD_TYPES := ["house", "farm", "coop", "shop", "well"]
 const MULTI_OK := ["farm", "coop"]          # از این‌ها چند تا هم می‌شود ساخت
@@ -107,7 +108,7 @@ static func load_ai(raw: Variant, nid: int) -> Variant:
 	var rg: Variant = raw.get("goals", [])
 	if rg is Array:
 		for g in rg:
-			if g is Dictionary and (BUILD_TYPES.has(str(g.get("type", ""))) or str(g.get("kind", "")) == "income"):
+			if g is Dictionary and (BUILD_TYPES.has(str(g.get("type", ""))) or str(g.get("kind", "")) in ["income", "fortify"]):
 				goals.append({"kind": str(g.get("kind", "build")), "type": str(g.get("type", "")), "prio": clampf(float(g.get("prio", 0.0)), 0.0, 2.0), "h": str(g.get("h", "short"))})
 	ai["goals"] = goals.slice(0, 6)
 	ai["mem"] = Memory.load_mem(raw.get("mem", null), ai)
@@ -208,6 +209,10 @@ static func rank_goals(cs, npc: Dictionary) -> Array:
 		prio *= pow(0.5, float(int(ai["fails"].get("build:" + type, 0))))
 		var horizon := "short" if prio >= 0.8 else ("mid" if prio >= 0.4 else "long")
 		goals.append({"kind": "build", "type": type, "prio": snappedf(prio, 0.01), "h": horizon})
+	# دیوار دفاعی و قلعه: فقط بعد از داشتن خانه، به نسبت احتیاط و پرخاشگری؛ ناقص‌شدن (تخریب) دوباره هدف را زنده می‌کند.
+	if int(owned.get("house", 0)) > 0 and bool(cs.ai_settings["build"]) and not Fortify.missing(cs, npc).is_empty():
+		var fp: float = Fortify.priority(ai)
+		goals.append({"kind": "fortify", "type": "wall", "prio": fp, "h": "mid" if fp >= 0.4 else "long"})
 	# ثروت‌اندوزی: هرچه خودخواه‌تر و جاه‌طلب‌تر، مهم‌تر.
 	var inc: float = 0.25 + 0.3 * float(t["selfishness"]) + 0.2 * float(t["ambition"])
 	goals.append({"kind": "income", "type": "", "prio": snappedf(inc, 0.01), "h": "long"})
@@ -246,6 +251,15 @@ static func think(cs, npc: Dictionary) -> void:
 				ai["plan"] = plan
 			ai["active"] = g
 			_log(ai, "%s:%s" % [g["kind"], g["type"]], cs)
+			return
+		elif g["kind"] == "fortify":
+			var fplan: Array = Fortify.plan(cs, npc, func(c, n, p, u): return find_resource(c, n, p, u, ["rock"]))
+			if fplan.is_empty():
+				_note_fail(ai, g, "no_resource")
+				continue
+			ai["plan"] = fplan
+			ai["active"] = g
+			_log(ai, "fortify", cs)
 			return
 		else:
 			var target: int = maxi(SAVINGS_TARGET - money, 0)
@@ -309,7 +323,7 @@ static func earn_plan(cs, npc: Dictionary, deficit: int) -> Array:
 
 
 ## نزدیک‌ترین منبع قابل‌برداشت (درخت/سنگ/خاک رس) با کمی ترجیح به کالای گران‌تر.
-static func find_resource(cs, npc: Dictionary, from: Vector2, used: Dictionary) -> Dictionary:
+static func find_resource(cs, npc: Dictionary, from: Vector2, used: Dictionary, kinds: Array = ["tree", "rock", "clay"]) -> Dictionary:
 	var ai: Dictionary = npc["ai"]
 	var cell := FWConst.RESOURCE_CELL
 	var cx0 := int(floor(from.x / cell))
@@ -328,7 +342,7 @@ static func find_resource(cs, npc: Dictionary, from: Vector2, used: Dictionary) 
 			if node.is_empty():
 				continue
 			var kind := str(node["kind"])
-			if not (kind in ["tree", "rock", "clay"]):
+			if not (kind in kinds):
 				continue
 			var def: Dictionary = FWConst.RESOURCES[kind]
 			var d: float = from.distance_to(Vector2(float(node["x"]), float(node["z"])))
@@ -385,7 +399,7 @@ static func _fail_step(cs, npc: Dictionary, st: Dictionary, err: String) -> void
 	if st.has("key"):
 		ai["bad"][str(st["key"])] = cs.day_count   # این منبع را چند روز نادیده بگیر
 	var g: Dictionary = ai["active"]
-	if not g.is_empty() and str(st["t"]) in ["build"]:
+	if not g.is_empty() and str(st["t"]) in ["build", "wall"]:
 		var k := _fail_key(g)
 		ai["fails"][k] = int(ai["fails"].get(k, 0)) + 1
 	_log(ai, "fail:%s:%s" % [st["t"], err], cs)
@@ -435,6 +449,8 @@ static func _exec(cs, npc: Dictionary, dt: float, advance: Callable) -> void:
 						var sr: Dictionary = Social.sell_to(cs, npc, buyer, str(item), own)
 						ai["stats"]["sold"] = int(ai["stats"]["sold"]) + int(sr["total"])
 						n = int(inv.get(item, 0))
+				if str(item) == "stone" and Fortify.keeps_stone(cs, npc):
+					continue   # سنگ برای دیوار خودش را نمی‌فروشد
 				if n > 0 and FWConst.ITEMS.has(item):
 					var r: Dictionary = cs.trade(acct, str(item), n, false)
 					if bool(r["ok"]):
@@ -449,6 +465,16 @@ static func _exec(cs, npc: Dictionary, dt: float, advance: Callable) -> void:
 			if bool(r2["ok"]):
 				ai["stats"]["sold"] = int(ai["stats"]["sold"]) + int(r2["earned"])
 			plan.pop_front()
+		"wall":
+			var wr: Dictionary = Fortify.build_step(cs, npc, dt, func(target: Vector2, reach: float) -> bool: return _move(cs, npc, target, reach, dt, advance))
+			if int(wr["placed"]) > 0:
+				ai["stats"]["built"] = int(ai["stats"]["built"]) + int(wr["placed"])
+				ai["fails"].erase("fortify:wall")
+				_log(ai, "wall:%d" % int(wr["placed"]), cs)
+			if str(wr["error"]) != "":
+				_fail_step(cs, npc, st, str(wr["error"]))
+			elif bool(wr["done"]):
+				plan.pop_front()
 		"build":
 			if not _move(cs, npc, Vector2(float(st["x"]), float(st["z"])), 2.5, dt, advance):
 				return

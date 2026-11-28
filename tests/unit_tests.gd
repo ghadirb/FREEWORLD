@@ -107,6 +107,7 @@ func _init() -> void:
 	test_autonomous_characters()
 	test_character_memory()
 	test_character_social()
+	test_character_fortify()
 	test_cave()
 	test_batch_build()
 	test_blueprints()
@@ -5915,3 +5916,91 @@ func test_cave() -> void:
 	cs.creative = true
 	cs.wild_step(0.5, {}, {"p": {"mine": mid, "pos": entry}})
 	check(not cs.caves.caves.has(mid), "creative worlds have no cave guards")
+
+
+func test_character_fortify() -> void:
+	print("-- autonomous characters: stage 2 walls, towers and repair")
+	var NpcSim = load("res://scripts/server/npc_sim.gd")
+	var CharAI = load("res://scripts/server/char_ai.gd")
+	var Fort = load("res://scripts/server/char_fortify.gd")
+	var cs = CityState.new(4242)
+	NpcSim.ensure_npcs(cs)
+	cs.provision_admin("boss", "secret")
+	var r: Dictionary = CharAI.spawn(cs, "warlord")
+	check(bool(r["ok"]), "a warlord character is created")
+	var npc: Dictionary = r["npc"]
+	var acct: String = str(npc["acct"])
+	var ai: Dictionary = npc["ai"]
+	# هنوز خانه ندارد ← هدف دیوار نیست
+	check(Fort.house_of(cs, acct).is_empty() and Fort.missing(cs, npc).is_empty(), "no wall is wanted before there is a house")
+	var have_fort := false
+	for g in CharAI.rank_goals(cs, npc):
+		if str(g["kind"]) == "fortify":
+			have_fort = true
+	check(not have_fort, "fortify is not a goal without a house")
+	# با خانه، هدف دیوار پدید می‌آید
+	_ai_run(cs, 6000)
+	var house: Dictionary = Fort.house_of(cs, acct)
+	check(not house.is_empty(), "it built its house first")
+	var blocks_before: int = int(cs.block_owner_count.get(acct, 0))
+	_ai_run(cs, 12000)
+	var placed: int = int(cs.block_owner_count.get(acct, 0))
+	check(placed > blocks_before and placed >= 20, "it placed real wall blocks around its house (%d)" % placed)
+	var all_stone := true
+	for v in cs.blocks:
+		if str(cs.blocks[v][2]) == acct and str(cs.blocks[v][0]) != "stone":
+			all_stone = false
+	check(all_stone, "the wall is made of stone")
+	check(int(ai["stats"]["built"]) > 1, "wall blocks count as built work in its stats")
+	# دروازه باز می‌ماند و دیوار داخل خانه نمی‌رود
+	var cells: Array = Fort.target_cells(cs, house, false)
+	var door_x: int = int(house["cx"]) * 2 + 2
+	var gate_open := true
+	for v in cells:
+		if v.x == door_x and v.z == int(house["cz"]) * 2 + 4 + Fort.MARGIN:
+			gate_open = false
+	check(gate_open, "a gate gap is left in front of the door")
+	# هزینهٔ واقعی: سنگ از کیف مصرف می‌شود، منفی نمی‌شود
+	check(int(cs.accounts[acct]["inv"].get("stone", 0)) >= 0, "stone is spent for real and never goes negative")
+	# تخریب بخشی از دیوار ← تعمیر
+	var mine: Array = []
+	for v in cs.blocks:
+		if str(cs.blocks[v][2]) == acct:
+			mine.append(v)
+	mine.sort()
+	var cut := 0
+	for v in mine:
+		if cut >= 5:
+			break
+		if bool(cs.remove_block("boss", v.x, v.y, v.z, false)["ok"]):
+			cut += 1
+	var after_cut: int = int(cs.block_owner_count.get(acct, 0))
+	_ai_run(cs, 9000)
+	check(int(cs.block_owner_count.get(acct, 0)) > after_cut, "it repairs a damaged wall by itself")
+	# ذخیره و بارگذاری: ادامه بدون هیچ فیلد جدیدی
+	var back = CityState.from_dict(cs.to_dict())
+	var bn: Dictionary = {}
+	for n in back.npcs:
+		if int(n["id"]) == int(npc["id"]):
+			bn = n
+	check(not bn.is_empty() and int(back.block_owner_count.get(acct, 0)) == int(cs.block_owner_count.get(acct, 0)), "wall blocks survive save and load")
+	# جهان خلاقانه: بدون هزینه
+	var cc = CityState.new(4242)
+	NpcSim.ensure_npcs(cc)
+	cc.creative = true
+	var rc: Dictionary = CharAI.spawn(cc, "mystery")
+	_ai_run(cc, 6000)
+	check(int(cc.block_owner_count.get(str(rc["npc"]["acct"]), 0)) > 0, "creative worlds build walls without stone cost")
+	# برج‌ها فقط برای تیپ‌های جاه‌طلب و جنگجو
+	check(Fort.wants_towers(ai), "a warlord wants towers")
+	for a in ["rival", "mystery", "trader"]:
+		var other: Dictionary = CharAI.spawn(cc, a)
+		check(other["ok"] and not Fort.wants_towers(other["npc"]["ai"]), "%s does not build towers" % a)
+	var tower := 0
+	for v in cs.blocks:
+		if str(cs.blocks[v][2]) == acct and v.y >= int(floor(cs.world.height_at(float(v.x) + 0.5, float(v.z) + 0.5))) + Fort.WALL_H:
+			tower += 1
+	check(tower > 0, "the warlord raised real tower blocks above the wall height (%d)" % tower)
+	# سنگ دیوار را نمی‌فروشد وقتی دیوار ناقص است
+	cs.remove_block("boss", mine[mine.size() - 1].x, mine[mine.size() - 1].y, mine[mine.size() - 1].z, false)
+	check(Fort.keeps_stone(cs, npc), "an unfinished wall makes it keep its stone")
