@@ -67,12 +67,12 @@ static func _place_columns(cs, cols: Array) -> int:
 					for gz in range(key.y - int(c[9]), key.y + int(c[9]) + 1):
 						var lv := _ground_level(cs, gx, gz)
 						for fy in range(lv, top):
-							if cs.blocks.size() < FWConst.MAX_BLOCKS_TOTAL and cs.check_block(FWConst.ROLE_WORLD_ADMIN, gx, fy, gz, "dirt") == "":
+							if cs.blocks.size() < cs.cap(FWConst.MAX_BLOCKS_TOTAL) and cs.check_block(FWConst.ROLE_WORLD_ADMIN, gx, fy, gz, "dirt") == "":
 								cs._add_block(Vector3i(gx, fy, gz), "dirt", 0, OWNER)
 								placed += 1
 			base = int(group_base[key])
 		for i in range(int(c[3])):
-			if cs.blocks.size() >= FWConst.MAX_BLOCKS_TOTAL:
+			if cs.blocks.size() >= cs.cap(FWConst.MAX_BLOCKS_TOTAL):
 				return placed
 			var y := base + int(c[2]) + i
 			var type := str(c[4])
@@ -139,7 +139,7 @@ static func _place_hall(cs, cx: int, cz: int) -> int:
 
 
 static func _put(cs, x: int, y: int, z: int, type: String) -> int:
-	if cs.blocks.size() >= FWConst.MAX_BLOCKS_TOTAL:
+	if cs.blocks.size() >= cs.cap(FWConst.MAX_BLOCKS_TOTAL):
 		return 0
 	if cs.check_block(FWConst.ROLE_WORLD_ADMIN, x, y, z, type) != "":
 		return 0

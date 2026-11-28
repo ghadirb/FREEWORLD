@@ -424,7 +424,7 @@ func load_dict(d: Variant) -> void:
 	if atm is Dictionary:
 		for k in atm:
 			var trow: Variant = atm[k]
-			if trow is Dictionary and int(k) > 0 and arena_times.size() < FWConst.ARENA_MAX_TOTAL:
+			if trow is Dictionary and int(k) > 0 and arena_times.size() < FWConst.scaled_cap(FWConst.ARENA_MAX_TOTAL, FWConst.CAP_SCALES.max()):
 				var tclean: Dictionary = {}
 				for pn in trow:
 					if tclean.size() < 500:
@@ -434,7 +434,7 @@ func load_dict(d: Variant) -> void:
 	if asc is Dictionary:
 		for k in asc:
 			var row: Variant = asc[k]
-			if row is Dictionary and int(k) > 0 and arena_scores.size() < FWConst.ARENA_MAX_TOTAL:
+			if row is Dictionary and int(k) > 0 and arena_scores.size() < FWConst.scaled_cap(FWConst.ARENA_MAX_TOTAL, FWConst.CAP_SCALES.max()):
 				var clean: Dictionary = {}
 				for pn in row:
 					if clean.size() < 500:

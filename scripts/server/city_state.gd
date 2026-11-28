@@ -61,6 +61,7 @@ var _god_rng := RandomNumberGenerator.new()
 var weather: String = "clear"
 var disaster: Dictionary = {"kind": "", "t": 0.0}   # حادثهٔ جاری؛ موقت و ذخیره‌نشده
 var disaster_cooldown: float = 0.0
+var cap_scale: int = 1                        # مقیاس ظرفیت ساخت‌وساز این جهان (×۱ تا ×۸؛ ذخیره می‌شود)
 var forest_growth: bool = false              # قانون جهان: درخت‌ها خودبه‌خود تکثیر می‌شوند (ذخیره می‌شود)
 var fire: Dictionary = {}                    # شناسهٔ درخت در حال سوختن -> ثانیهٔ باقی‌مانده؛ موقت و ذخیره‌نشده
 var nfire: Dictionary = {}                   # درخت‌های طبیعیِ در حال سوختن: "rx,rz" -> ثانیهٔ باقی‌مانده (موقت)
@@ -430,7 +431,7 @@ func place_building(player_name: String, req_id: int, type: String, cx: int, cz:
 		return {"ok": false, "error": err}
 	if blocks_in_footprint(type, cx, cz):
 		return {"ok": false, "error": "blocks_in_way"}
-	if not creative and not FWConst.is_admin(acc["role"]) and count_owned(player_name) >= FWConst.MAX_BUILDINGS_PER_PLAYER:
+	if not creative and not FWConst.is_admin(acc["role"]) and count_owned(player_name) >= cap(FWConst.MAX_BUILDINGS_PER_PLAYER):
 		return {"ok": false, "error": "limit"}
 	var cost := 0 if creative else int(FWConst.BUILDING_TYPES[type]["cost"])
 	if not _pay(acc, cost):
@@ -668,6 +669,11 @@ func energy_step(delta: float, online: Dictionary) -> void:
 		acc["energy"] = clampf(e, 0.0, FWConst.ENERGY_MAX)
 
 
+## سقف پایهٔ ساخت‌وساز ضرب در مقیاس ظرفیت همین جهان.
+func cap(base: int) -> int:
+	return FWConst.scaled_cap(base, cap_scale)
+
+
 func set_world(actor: String, key: String, value: Variant) -> Dictionary:
 	if not FWConst.is_admin(role_of(actor)):
 		return {"ok": false, "error": "forbidden"}
@@ -683,6 +689,10 @@ func set_world(actor: String, key: String, value: Variant) -> Dictionary:
 			weather = str(value)
 		"forest_growth":
 			forest_growth = bool(value)
+		"cap_scale":
+			if not FWConst.CAP_SCALES.has(int(value)):
+				return {"ok": false, "error": "bad_request"}
+			cap_scale = int(value)
 		"day_time":
 			# پرش مستقیم به روز (ظهر) یا شب (نیمه‌شب)؛ بدون تغییر شمارندهٔ روز.
 			match str(value):
@@ -731,7 +741,7 @@ func disaster_public() -> Dictionary:
 
 
 func world_public() -> Dictionary:
-	return {"time_speed": time_speed, "weather": weather, "creative": creative, "forest_growth": forest_growth}
+	return {"time_speed": time_speed, "weather": weather, "creative": creative, "forest_growth": forest_growth, "cap_scale": cap_scale}
 
 
 func set_role(actor: String, target: String, role: String) -> Dictionary:
@@ -943,9 +953,9 @@ func place_block(player_name: String, req_id: int, x: int, y: int, z: int, type:
 	var err := check_block(acc["role"], x, y, z, type)
 	if err != "":
 		return {"ok": false, "error": err}
-	if blocks.size() >= FWConst.MAX_BLOCKS_TOTAL:
+	if blocks.size() >= cap(FWConst.MAX_BLOCKS_TOTAL):
 		return {"ok": false, "error": "limit"}
-	if not creative and not FWConst.is_admin(acc["role"]) and int(block_owner_count.get(player_name, 0)) >= FWConst.MAX_BLOCKS_PER_PLAYER:
+	if not creative and not FWConst.is_admin(acc["role"]) and int(block_owner_count.get(player_name, 0)) >= cap(FWConst.MAX_BLOCKS_PER_PLAYER):
 		return {"ok": false, "error": "limit"}
 	var cost: Dictionary = {} if creative else FWConst.BLOCK_TYPES[type]["cost"]
 	if not has_items(acc["inv"], cost):
@@ -1705,7 +1715,7 @@ func breed_step(dt: float) -> bool:
 				chance = FWConst.BREED_HYBRID_CHANCE
 			if child == "":
 				continue
-			if total >= FWConst.BREED_CAP or god.size() >= FWConst.GOD_MAX or int(per_kind.get(child, 0)) >= FWConst.BREED_SPECIES_CAP:
+			if total >= cap(FWConst.BREED_CAP) or god.size() >= FWConst.GOD_MAX or int(per_kind.get(child, 0)) >= cap(FWConst.BREED_SPECIES_CAP):
 				continue
 			if _god_rng.randf() >= chance:
 				continue
@@ -2057,7 +2067,7 @@ func arenas_public() -> Array:
 func arena_create(player_name: String, arena_name: String, pos: Vector2, radius: float, coins: int, time: float, reward: int, kind: String = "coins", win_pct: int = 0, obstacles: int = 0, diff: int = 1) -> Dictionary:
 	if not accounts.has(player_name):
 		return {"ok": false, "error": "no_account"}
-	var res: Dictionary = arenas.validate_new(world, seed_value, player_name, arena_name, pos, radius, coins, time, reward, kind, win_pct, obstacles, diff)
+	var res: Dictionary = arenas.validate_new(world, seed_value, player_name, arena_name, pos, radius, coins, time, reward, kind, win_pct, obstacles, diff, cap_scale)
 	if not bool(res["ok"]):
 		return res
 	if not _pay(accounts[player_name], FWConst.ARENA_COST):
@@ -2419,7 +2429,7 @@ func _terraform(player_name: String, x: float, z: float, tool: String, pos: Vect
 		for dz in range(-rad, rad + 1):
 			if world.edit_units(v.x + dx, v.y + dz) == 0:
 				fresh += 1
-	if world.edits.size() + fresh > FWConst.TERRAIN_MAX_EDITS:
+	if world.edits.size() + fresh > cap(FWConst.TERRAIN_MAX_EDITS):
 		return {"ok": false, "error": "terrain_full"}
 	var changed := apply_terraform(v, sign, rad)
 	if changed.is_empty():
@@ -2476,7 +2486,7 @@ func shape_terrain(actor: String, kind: String, x: float, z: float) -> Dictionar
 					fresh += 1
 	if plan.is_empty():
 		return {"ok": false, "error": "terrain_limit"}
-	if world.edits.size() + fresh > FWConst.TERRAIN_MAX_EDITS:
+	if world.edits.size() + fresh > cap(FWConst.TERRAIN_MAX_EDITS):
 		return {"ok": false, "error": "terrain_full"}
 	var changed: Array = []
 	for e in plan:
@@ -2849,6 +2859,7 @@ func to_dict() -> Dictionary:
 		"scenario_applied": scenario_applied,
 		"weather": weather,
 		"forest_growth": forest_growth,
+		"cap_scale": cap_scale,
 		"bread_price": bread_price,
 		"market": market,
 		"prices": prices,
@@ -3058,6 +3069,7 @@ static func from_dict(d: Dictionary):
 	var wt := str(d.get("weather", "clear"))
 	cs.weather = wt if FWConst.WEATHERS.has(wt) else "clear"
 	cs.forest_growth = bool(d.get("forest_growth", false))
+	cs.cap_scale = int(d.get("cap_scale", 1)) if FWConst.CAP_SCALES.has(int(d.get("cap_scale", 1))) else 1
 	cs.next_building_id = int(d["next_building_id"])
 	for name in d["accounts"]:
 		var a: Dictionary = d["accounts"][name]
@@ -3164,7 +3176,7 @@ static func from_dict(d: Dictionary):
 	var tr = d.get("terrain", [])
 	if tr is Array:
 		var ti := 0
-		while ti + 2 < tr.size() and cs.world.edits.size() < FWConst.TERRAIN_MAX_EDITS:
+		while ti + 2 < tr.size() and cs.world.edits.size() < cs.cap(FWConst.TERRAIN_MAX_EDITS):
 			cs.world.set_edit(int(tr[ti]), int(tr[ti + 1]), int(tr[ti + 2]))
 			ti += 3
 	var im = d.get("item_mult", {})

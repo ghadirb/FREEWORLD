@@ -1,7 +1,7 @@
 extends RefCounted
 ## ثابت‌های مشترک بین سرور و کلاینت.
 
-const PROTOCOL_VERSION := 57
+const PROTOCOL_VERSION := 58
 # ترافیک شبکه با DTLS رمز می‌شود (نسخهٔ ۴ به بعد). فقط برای عیب‌یابی خاموش شود.
 const USE_DTLS := true
 const DEFAULT_PORT := 7777
@@ -623,3 +623,11 @@ const GEAR_WEAPON_CD := [0.7, 0.7, 0.7, 0.9, 1.0, 1.1]      # ثانیه بین 
 const GEAR_ARMOR_REDUCE := [0.0, 0.25, 0.5]      # بدون زره، جلیقه، زره آهنی
 const DEATH_MONEY_LOSS_FRAC := 0.1
 const DEATH_MONEY_LOSS_MAX := 50
+
+# مقیاس ظرفیت جهان (پروتکل ۵۸، docs/CAPACITY.md): مدیر برای هر جهان سقف ساخت‌وساز را چند برابر می‌کند.
+# پیش‌فرض ×۱ است تا گوشی‌های ضعیف تغییری نبینند؛ سرور همچنان همه‌چیز را اعتبارسنجی می‌کند.
+const CAP_SCALES := [1, 2, 4, 8]
+
+
+static func scaled_cap(base: int, scale: int) -> int:
+	return base * (scale if CAP_SCALES.has(scale) else 1)
