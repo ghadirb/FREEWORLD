@@ -4,6 +4,7 @@ extends RefCounted
 
 const CharRaid = preload("res://scripts/server/char_raid.gd")
 const FWConst = preload("res://scripts/core/const.gd")
+const Voyage = preload("res://scripts/server/voyage.gd")
 const WorldGen = preload("res://scripts/world/world_generator.gd")
 const Residents = preload("res://scripts/server/residents.gd")
 const Placement = preload("res://scripts/shared/placement.gd")
@@ -3104,6 +3105,7 @@ static func from_dict(d: Dictionary):
 			"species_fed": _load_species_fed(a.get("species_fed", null)),
 			"stats": _load_stats(a.get("stats", null)),
 			"quests": _load_quests(a.get("quests", null)),
+			"voyages": Voyage.load_done(a.get("voyages", null)),
 		}
 	for b in d["buildings"]:
 		if not (b.has("id") and b.has("type") and b.has("owner") and b.has("cx") and b.has("cz")):

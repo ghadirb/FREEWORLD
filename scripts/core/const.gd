@@ -1,7 +1,7 @@
 extends RefCounted
 ## ثابت‌های مشترک بین سرور و کلاینت.
 
-const PROTOCOL_VERSION := 58
+const PROTOCOL_VERSION := 59
 # ترافیک شبکه با DTLS رمز می‌شود (نسخهٔ ۴ به بعد). فقط برای عیب‌یابی خاموش شود.
 const USE_DTLS := true
 const DEFAULT_PORT := 7777
@@ -631,3 +631,10 @@ const CAP_SCALES := [1, 2, 4, 8]
 
 static func scaled_cap(base: int, scale: int) -> int:
 	return base * (scale if CAP_SCALES.has(scale) else 1)
+
+# سفر بین سیاره‌ها (پروتکل ۵۹، docs/VOYAGE.md): مقصد ← جهان آمادهٔ همان سیاره. هزینه در جهان معمولی؛ در Creative رایگان.
+const VOYAGE_DESTS := {"earth": "green_valley", "moon": "space_colony", "fantasy": "fantasy_realm", "war": "war_front"}
+const VOYAGE_ORDER := ["earth", "moon", "fantasy", "war"]
+const VOYAGE_COST := {"iron": 4, "coal": 6}
+const VOYAGE_FEE := 300
+const VOYAGE_DONE_KEEP := 20

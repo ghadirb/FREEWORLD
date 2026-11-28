@@ -98,6 +98,7 @@ func _init() -> void:
 	test_clear_resource()
 	test_world_rules()
 	test_capacity_scale()
+	test_voyage()
 	test_civilization()
 	test_wild()
 	test_weapons()
@@ -2874,6 +2875,76 @@ func test_capacity_scale() -> void:
 	for i in range(60, 100):
 		cs5.place_building("builder", 2000 + i, "road", 40 + (i % 20), 40 + int(i / 20.0))
 	check(cs5.count_owned("builder") > FWConst.MAX_BUILDINGS_PER_PLAYER and cs5.count_owned("builder") <= FWConst.MAX_BUILDINGS_PER_PLAYER * 2, "x2 allows more buildings but still enforces its own limit")
+
+
+func test_voyage() -> void:
+	print("[voyage]")
+	const Voyage = preload("res://scripts/server/voyage.gd")
+	check(FWConst.PROTOCOL_VERSION >= 59, "protocol bumped for planet voyage")
+	var a = CityState.new(5001)
+	_login(a, "mortal")
+	a.provision_admin("pilot", "secret-secret-1", FWConst.ROLE_WORLD_ADMIN)
+	var acc: Dictionary = a.accounts["pilot"]
+	acc["inv"] = {"iron": 10, "coal": 10, "wood": 5}
+	acc["money"] = 1000
+	check(Voyage.depart(a, "mortal", "moon")["error"] == "forbidden", "players cannot launch")
+	check(Voyage.depart(a, "pilot", "pluto")["error"] == "bad_request", "unknown destination refused")
+	a.scenario = "space_colony"
+	check(Voyage.depart(a, "pilot", "moon")["error"] == "voyage_same", "cannot travel to the world you are in")
+	a.scenario = ""
+	acc["inv"] = {"iron": 1, "coal": 10}
+	check(Voyage.depart(a, "pilot", "moon")["error"] == "no_items", "launch needs the materials")
+	acc["inv"] = {"iron": 10, "coal": 10, "wood": 5}
+	acc["money"] = 100
+	check(Voyage.depart(a, "pilot", "moon")["error"] == "no_money", "launch needs the fee")
+	acc["money"] = 1000
+	var dep: Dictionary = Voyage.depart(a, "pilot", "moon")
+	check(dep["ok"] and dep["dest"] == "moon", "pilot departs")
+	var pack: Dictionary = dep["pack"]
+	check(int(pack["money"]) == 1000 - FWConst.VOYAGE_FEE, "pack carries the money left after the fee")
+	check(int(pack["inv"]["iron"]) == 10 - int(FWConst.VOYAGE_COST["iron"]) and int(pack["inv"]["wood"]) == 5, "pack carries the items left after the cost")
+	check(int(acc["money"]) == 0 and acc["inv"].is_empty(), "goods are moved out of the origin world, not copied")
+	var b = CityState.new(5002)
+	b.provision_admin("pilot", "secret-secret-1", FWConst.ROLE_WORLD_ADMIN)
+	_login(b, "guest")
+	var before_money: int = int(b.accounts["pilot"]["money"])
+	var before_iron: int = int(b.accounts["pilot"]["inv"].get("iron", 0))
+	check(Voyage.arrive(b, "guest", pack)["error"] == "forbidden", "players cannot receive cargo")
+	check(Voyage.arrive(b, "pilot", {"inv": {}})["error"] == "bad_request", "a pack without id is refused")
+	check(Voyage.arrive(b, "pilot", "junk")["error"] == "bad_request", "a non-dictionary pack is refused")
+	var arr: Dictionary = Voyage.arrive(b, "pilot", pack)
+	check(arr["ok"], "cargo arrives")
+	check(int(b.accounts["pilot"]["money"]) == before_money + int(pack["money"]), "money is delivered")
+	check(int(b.accounts["pilot"]["inv"].get("iron", 0)) == before_iron + int(pack["inv"]["iron"]), "items are delivered")
+	check(Voyage.arrive(b, "pilot", pack)["error"] == "voyage_duplicate", "the same pack cannot be delivered twice")
+	var again = CityState.from_dict(b.to_dict())
+	check(again != null and Voyage.arrive(again, "pilot", pack)["error"] == "voyage_duplicate", "delivered ids survive save/load")
+	var evil: Dictionary = {"id": "x1", "money": 9000000000000000000, "inv": {"nonsense": 50, "iron": 100000}, "gear": {"weapon": 99, "armor": 99}}
+	var cleaned: Dictionary = Voyage.clean_pack(evil)
+	check(int(cleaned["money"]) == Voyage.MAX_MONEY and not cleaned["inv"].has("nonsense") and int(cleaned["inv"]["iron"]) == FWConst.ITEM_CAP, "hostile packs are clamped and unknown items dropped")
+	check(int(cleaned["gear"]["weapon"]) <= 5 and int(cleaned["gear"]["armor"]) <= 2, "gear tiers are clamped")
+	# Creative: رایگان و بدون انتقال کالا
+	var c = CityState.new(5003)
+	c.provision_admin("pilot", "secret-secret-1", FWConst.ROLE_WORLD_ADMIN)
+	c.creative = true
+	c.accounts["pilot"]["money"] = 5
+	c.accounts["pilot"]["inv"] = {"gem": 3}
+	var cd: Dictionary = Voyage.depart(c, "pilot", "earth")
+	check(cd["ok"] and int(cd["pack"]["money"]) == 0 and cd["pack"]["inv"].is_empty(), "creative worlds launch free and export no goods")
+	# رفت و برگشت نباید کالا بسازد.
+	var total_before: int = 7 + 3
+	var x = CityState.new(5004)
+	x.provision_admin("p", "secret-secret-1", FWConst.ROLE_WORLD_ADMIN)
+	x.accounts["p"]["inv"] = {"iron": FWConst.VOYAGE_COST["iron"] + 7, "coal": FWConst.VOYAGE_COST["coal"] + 3}
+	x.accounts["p"]["money"] = FWConst.VOYAGE_FEE
+	var y = CityState.new(5005)
+	y.provision_admin("p", "secret-secret-1", FWConst.ROLE_WORLD_ADMIN)
+	y.accounts["p"]["inv"] = {}
+	y.accounts["p"]["money"] = 0
+	var go: Dictionary = Voyage.depart(x, "p", "moon")
+	Voyage.arrive(y, "p", go["pack"])
+	var carried: int = int(y.accounts["p"]["inv"].get("iron", 0)) + int(y.accounts["p"]["inv"].get("coal", 0))
+	check(carried == total_before, "everything left over arrives exactly once")
 
 
 func test_civilization() -> void:
