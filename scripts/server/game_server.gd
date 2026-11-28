@@ -11,6 +11,7 @@ const NpcSim = preload("res://scripts/server/npc_sim.gd")
 const Residents = preload("res://scripts/server/residents.gd")
 const Family = preload("res://scripts/server/family.gd")
 const Attractions = preload("res://scripts/server/attractions.gd")
+const CharAI = preload("res://scripts/server/char_ai.gd")
 const Book = preload("res://scripts/server/book.gd")
 const Arenas = preload("res://scripts/server/arenas.gd")
 const ScenarioApply = preload("res://scripts/server/scenario_apply.gd")
@@ -31,7 +32,7 @@ const LOCAL_PID := 1
 const LOCAL_METHODS := [
 	"c2s_login", "c2s_move", "c2s_place", "c2s_remove", "c2s_collect",
 	"c2s_chat", "c2s_set_role", "c2s_get_audit", "c2s_job", "c2s_set_world", "c2s_enter", "c2s_leave",
-	"c2s_place_block", "c2s_remove_block", "c2s_paint_block", "c2s_build_region", "c2s_paste", "c2s_bp_save", "c2s_bp_op", "c2s_arena_create", "c2s_arena_edit", "c2s_arena_import", "c2s_arena_op", "c2s_civ", "c2s_undo", "c2s_gather", "c2s_dig", "c2s_fill", "c2s_craft", "c2s_trade", "c2s_offer", "c2s_offer_answer", "c2s_npc", "c2s_npc_sell", "c2s_npc_family", "c2s_ride_upgrade", "c2s_npc_buy", "c2s_furn_place", "c2s_furn_remove", "c2s_minigame_start", "c2s_race_start", "c2s_grace", "c2s_boat", "c2s_horse", "c2s_car", "c2s_fish", "c2s_disaster", "c2s_god",
+	"c2s_place_block", "c2s_remove_block", "c2s_paint_block", "c2s_build_region", "c2s_paste", "c2s_bp_save", "c2s_bp_op", "c2s_arena_create", "c2s_arena_edit", "c2s_arena_import", "c2s_arena_op", "c2s_civ", "c2s_undo", "c2s_gather", "c2s_dig", "c2s_fill", "c2s_craft", "c2s_trade", "c2s_offer", "c2s_offer_answer", "c2s_npc", "c2s_npc_sell", "c2s_npc_family", "c2s_ride_upgrade", "c2s_ai_spawn", "c2s_npc_buy", "c2s_furn_place", "c2s_furn_remove", "c2s_minigame_start", "c2s_race_start", "c2s_grace", "c2s_boat", "c2s_horse", "c2s_car", "c2s_fish", "c2s_disaster", "c2s_god",
 	"c2s_mine_enter", "c2s_mine_leave", "c2s_mine_gather", "c2s_book", "c2s_quest",
 ]
 
@@ -233,7 +234,17 @@ func _process(delta: float) -> void:
 			_send_to_mine(str(mr[0]), "s2c_mine_node", int(mr[1]), true)
 		cs.mine_respawned.clear()
 		_dirty = true
+	cs.ai_positions.clear()
+	for apid in _auth_peers():
+		var app: Vector3 = peers[apid]["pos"]
+		cs.ai_positions[peers[apid]["name"]] = Vector2(app.x, app.z)
 	NpcSim.step(cs, dt)
+	if not cs.ai_events.is_empty():
+		for aev in cs.ai_events:
+			if aev["kind"] == "built" and cs.buildings.has(int(aev["id"])):
+				_broadcast("s2c_building_added", cs.building_public(cs.buildings[int(aev["id"])]))
+		cs.ai_events.clear()
+		_dirty = true
 	if not cs.family_events.is_empty():
 		for fev in cs.family_events:
 			if by_name.has(str(fev["player"])):
@@ -1182,6 +1193,25 @@ func on_ride_upgrade(pid: int, id: int) -> void:
 		return
 	_send(pid, "s2c_money", int(res["money"]))
 	_notice(pid, "ride_upgraded", {"id": id, "rides": int(res["rides"])})
+	_dirty = true
+
+
+## ساخت شخصیت هوشمند مستقل (مرحلهٔ ۱: یکی از پنج تیپ). فقط مدیر یا جهان خلاقانه.
+func on_ai_spawn(pid: int, arch: String) -> void:
+	var p := _player_of(pid)
+	if p.is_empty():
+		return
+	if not _allow_action(p):
+		_notice(pid, "rate_limited")
+		return
+	if not CharAI.can_spawn(cs, p["name"]):
+		_notice(pid, "forbidden")
+		return
+	var res: Dictionary = CharAI.spawn(cs, arch)
+	if not res["ok"]:
+		_notice(pid, str(res["error"]))
+		return
+	_notice(pid, "ai_spawned", {"name": str(res["npc"]["name"]), "arch": arch})
 	_dirty = true
 
 

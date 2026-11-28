@@ -237,6 +237,12 @@ func c2s_npc_family(npc_id: int, op: String) -> void:
 
 
 @rpc("any_peer", "call_remote", "reliable")
+func c2s_ai_spawn(arch: String) -> void:
+	if server:
+		server.on_ai_spawn(multiplayer.get_remote_sender_id(), arch)
+
+
+@rpc("any_peer", "call_remote", "reliable")
 func c2s_ride_upgrade(building_id: int) -> void:
 	if server:
 		server.on_ride_upgrade(multiplayer.get_remote_sender_id(), building_id)

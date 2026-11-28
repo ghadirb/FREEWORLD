@@ -650,6 +650,11 @@ func npc_family(npc_id: int, op: String) -> void:
 		_tx("c2s_npc_family", [npc_id, op])
 
 
+func ai_spawn(arch: String) -> void:
+	if is_logged_in:
+		_tx("c2s_ai_spawn", [arch])
+
+
 func ride_upgrade(building_id: int) -> void:
 	if is_logged_in:
 		_tx("c2s_ride_upgrade", [building_id])

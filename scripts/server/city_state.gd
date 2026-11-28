@@ -20,6 +20,7 @@ const Scenarios = preload("res://scripts/shared/scenarios.gd")
 const Story = preload("res://scripts/shared/story.gd")
 const Family = preload("res://scripts/server/family.gd")
 const Attractions = preload("res://scripts/server/attractions.gd")
+const CharAI = preload("res://scripts/server/char_ai.gd")
 const Book = preload("res://scripts/server/book.gd")
 
 const SAVE_VERSION := 1
@@ -70,6 +71,9 @@ var market: Dictionary = {"wheat": 0.0, "flour": 0.0, "bread": 0.0, "egg": 0.0, 
 ## قیمت کالاهای دامی (تخم‌مرغ و شیر).
 var prices: Dictionary = {"egg": 6.0, "milk": 14.0, "flour": 16.0, "bread": 20.0, "cheese": 34.0}
 var npcs: Array = []
+var ai_settings: Dictionary = {"on": true, "max": FWConst.AI_MAX_DEFAULT, "level": "balanced", "build": true}
+var ai_events: Array = []       # {kind: built, id}؛ سرور بعد از هر گام به همه اعلام می‌کند
+var ai_positions: Dictionary = {}   # {نام بازیکن آنلاین: Vector2} برای کم‌دقت‌کردن شخصیت‌های دور
 var family_events: Array = []   # {kind, player, npc}؛ سرور بعد از هر گام اعلام می‌کند
 var family_day: int = -1
 var minigame = Minigame.new()
@@ -2820,6 +2824,7 @@ func to_dict() -> Dictionary:
 		"buildings": bl,
 		"audit": audit,
 		"npcs": npcs,
+		"ai_settings": ai_settings,
 		"blocks": _blocks_to_list(),
 		"depleted": depleted,
 		"mine_depleted": mine_depleted,
@@ -3068,6 +3073,16 @@ static func from_dict(d: Dictionary):
 				"kid": bool(n.get("kid", false)), "parent": str(n.get("parent", "")), "born_day": int(n.get("born_day", 0)),
 				"last_birth": int(n.get("last_birth", 0)),
 			})
+			var ai_loaded: Variant = CharAI.load_ai(n.get("ai", null), int(n["id"]))
+			if ai_loaded != null and str(n.get("acct", "")) != "":
+				cs.npcs[cs.npcs.size() - 1]["ai"] = ai_loaded
+				cs.npcs[cs.npcs.size() - 1]["acct"] = str(n["acct"])
+	var ais: Variant = d.get("ai_settings", null)
+	if ais is Dictionary:
+		cs.ai_settings["on"] = bool(ais.get("on", true))
+		cs.ai_settings["max"] = clampi(int(ais.get("max", FWConst.AI_MAX_DEFAULT)), 0, FWConst.NPC_MAX)
+		cs.ai_settings["build"] = bool(ais.get("build", true))
+		cs.ai_settings["level"] = str(ais.get("level", "balanced")) if FWConst.AI_LEVELS.has(str(ais.get("level", ""))) else "balanced"
 	var bl = d.get("blocks", [])
 	cs.track_nav = false
 	if bl is Array:

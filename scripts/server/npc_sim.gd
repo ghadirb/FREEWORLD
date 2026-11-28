@@ -6,6 +6,7 @@ const FWConst = preload("res://scripts/core/const.gd")
 const NpcNav = preload("res://scripts/server/npc_nav.gd")
 const Residents = preload("res://scripts/server/residents.gd")
 const Family = preload("res://scripts/server/family.gd")
+const CharAI = preload("res://scripts/server/char_ai.gd")
 
 
 static func hour_of(cs) -> float:
@@ -157,6 +158,9 @@ static func step(cs, dt: float) -> void:
 	var day := int(floor(cs.world_time / 86400.0))
 	var activity := activity_for_hour(h)
 	for npc in cs.npcs:
+		if CharAI.is_ai(npc):
+			CharAI.step(cs, npc, dt, _advance)   # شخصیت هوشمند: برنامهٔ روزانه ندارد، خودش تصمیم می‌گیرد
+			continue
 		if Residents.is_villager(npc):
 			_step_villager(cs, npc, activity, day, dt)
 			continue
@@ -224,12 +228,16 @@ static func public_list_near(cs, x: float, z: float, radius: float = FWConst.NPC
 		var dx: float = float(n["x"]) - x
 		var dz: float = float(n["z"]) - z
 		if dx * dx + dz * dz <= r2:
-			out.append([n["id"], snappedf(n["x"], 0.1), snappedf(n["z"], 0.1), n["state"], n["name"], Residents.is_inside(n), Family.tag(n)])
+			out.append([n["id"], snappedf(n["x"], 0.1), snappedf(n["z"], 0.1), n["state"], n["name"], Residents.is_inside(n), _tag(n)])
 	return out
+
+
+static func _tag(n: Dictionary) -> String:
+	return CharAI.tag(n) if CharAI.is_ai(n) else Family.tag(n)
 
 
 static func public_list(cs) -> Array:
 	var out: Array = []
 	for n in cs.npcs:
-		out.append([n["id"], snappedf(n["x"], 0.1), snappedf(n["z"], 0.1), n["state"], n["name"], Residents.is_inside(n), Family.tag(n)])
+		out.append([n["id"], snappedf(n["x"], 0.1), snappedf(n["z"], 0.1), n["state"], n["name"], Residents.is_inside(n), _tag(n)])
 	return out

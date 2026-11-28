@@ -1,7 +1,7 @@
 extends RefCounted
 ## ثابت‌های مشترک بین سرور و کلاینت.
 
-const PROTOCOL_VERSION := 53
+const PROTOCOL_VERSION := 54
 # ترافیک شبکه با DTLS رمز می‌شود (نسخهٔ ۴ به بعد). فقط برای عیب‌یابی خاموش شود.
 const USE_DTLS := true
 const DEFAULT_PORT := 7777
@@ -56,6 +56,13 @@ const PROCESSORS := {
 }
 # ساختمان‌هایی که محصولشان را می‌توان برداشت و در بازار فروخت.
 const PRODUCERS := ["farm", "bakery", "coop", "barn", "mill", "dairy", "zoo", "park"]
+# شخصیت‌های هوشمند مستقل (پروتکل ۵۴، docs/AUTONOMOUS_CHARACTERS.md)
+const AI_MAX_DEFAULT := 5          # سقف شخصیت‌های هوشمند (زیرمجموعهٔ NPC_MAX)
+const AI_START_MONEY := 120
+const AI_FAR_RADIUS := 90.0        # دورتر از همهٔ بازیکن‌ها = تصمیم‌گیری کم‌دقت‌تر
+const AI_FAR_MULT := 5.0
+const AI_SCAN_CELLS := 24         # شعاع جستجوی منبع (سلول ۴ متری؛ منابع فقط بیرون شهر هستند)
+const AI_LEVELS := ["economy", "balanced", "advanced"]
 # مدیریت مجموعه (پروتکل ۵۳، docs/COLLECTIONS.md): باغ‌وحش و شهربازی «بلیط» می‌فروشند (سکه مستقیم در موجودی ساختمان؛ بدون بازار).
 const ATTRACTIONS := ["zoo", "park"]
 const ATTR_SECONDS := 20.0        # فاصلهٔ دو دورهٔ فروش بلیط

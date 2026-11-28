@@ -71,6 +71,8 @@ static func _check_near(cs, player: String, npc_id: int, pos: Vector2) -> Dictio
 	var npc: Dictionary = find_npc(cs, npc_id)
 	if npc.is_empty():
 		return {"ok": false, "error": "no_npc"}
+	if npc.get("ai", null) is Dictionary:
+		return {"ok": false, "error": "ai_npc"}   # شخصیت مستقل استخدام یا ازدواج نمی‌شود؛ خودش تصمیم می‌گیرد
 	if pos.distance_to(Vector2(float(npc["x"]), float(npc["z"]))) > FWConst.NPC_TALK_RANGE:
 		return {"ok": false, "error": "too_far"}
 	return {"ok": true, "npc": npc}

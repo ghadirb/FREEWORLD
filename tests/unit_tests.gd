@@ -104,6 +104,7 @@ func _init() -> void:
 	test_god_human()
 	test_residents()
 	test_attractions()
+	test_autonomous_characters()
 	test_cave()
 	test_batch_build()
 	test_blueprints()
@@ -5255,6 +5256,149 @@ func test_attractions() -> void:
 				texts_ok = false
 	Loc.lang = "fa"
 	check(texts_ok, "collection texts exist in Persian and English")
+
+
+func _ai_run(cs, steps: int, dt: float = 0.5) -> int:
+	var NpcSim = load("res://scripts/server/npc_sim.gd")
+	var longest := 0
+	for i in steps:
+		cs.tick(dt)
+		NpcSim.step(cs, dt)
+		for n in cs.npcs:
+			if n.get("ai", null) is Dictionary:
+				longest = maxi(longest, (n["ai"]["plan"] as Array).size())
+	return longest
+
+
+func _ai_owned(cs, acct: String) -> Array:
+	var out: Array = []
+	for id in cs.buildings:
+		if str(cs.buildings[id]["owner"]) == acct:
+			out.append(str(cs.buildings[id]["type"]))
+	return out
+
+
+func test_autonomous_characters() -> void:
+	print("-- autonomous characters: stage 1 brain")
+	var NpcSim = load("res://scripts/server/npc_sim.gd")
+	var CharAI = load("res://scripts/server/char_ai.gd")
+	var Pers = load("res://scripts/server/char_personality.gd")
+	var cs = CityState.new(4242)
+	NpcSim.ensure_npcs(cs)
+	_login(cs, "plain")
+	cs.provision_admin("boss", "secret")
+	var base_npcs: int = cs.npcs.size()
+	check(not CharAI.can_spawn(cs, "plain") and CharAI.can_spawn(cs, "boss"), "only admins may spawn characters in a normal world")
+	check(str(CharAI.spawn(cs, "nonsense")["error"]) == "bad_request", "unknown archetype is rejected")
+	var r: Dictionary = CharAI.spawn(cs, "rival")
+	check(bool(r["ok"]) and cs.npcs.size() == base_npcs + 1, "a rival character is created as an NPC")
+	var npc: Dictionary = r["npc"]
+	var acct: String = str(npc["acct"])
+	check(cs.accounts.has(acct) and str(cs.authenticate(acct, "")["error"]) == "bad_token", "its shadow account can never be logged into")
+	check(CharAI.tag(npc) == "c:rival" and NpcSim.public_list(cs)[cs.npcs.size() - 1][6] == "c:rival", "public NPC list carries the character tag")
+	check(str(Family_check(cs, npc)) == "ai_npc", "autonomous characters cannot be hired or married")
+	# سقف و خاموش
+	cs.ai_settings["max"] = 1
+	check(str(CharAI.spawn(cs, "trader")["error"]) == "ai_full", "the character limit is enforced")
+	cs.ai_settings["max"] = 5
+	cs.ai_settings["on"] = false
+	check(str(CharAI.spawn(cs, "trader")["error"]) == "ai_off", "spawning is refused when autonomy is switched off")
+	var th0: int = int(npc["ai"]["stats"]["thoughts"])
+	_ai_run(cs, 40)
+	check(int(npc["ai"]["stats"]["thoughts"]) == th0, "a switched-off brain makes no decisions")
+	cs.ai_settings["on"] = true
+	# تیپ‌ها واقعاً فرق دارند
+	var fresh := {}
+	var firsts := {}
+	for a in Pers.ORDER:
+		var cs_t = CityState.new(5000)
+		var rr: Dictionary = CharAI.spawn(cs_t, a)
+		fresh[a] = rr["npc"]
+		for g in CharAI.rank_goals(cs_t, rr["npc"]):
+			if g["kind"] == "build" and g["type"] != "house":
+				firsts[a] = g["type"]
+				break
+	check(float(fresh["warlord"]["ai"]["traits"]["aggression"]) > float(fresh["trader"]["ai"]["traits"]["aggression"]) + 0.5, "warlord is far more aggressive than the trader")
+	check(float(fresh["schemer"]["ai"]["traits"]["trust"]) < float(fresh["rival"]["ai"]["traits"]["trust"]), "the schemer trusts less than the rival")
+	var distinct := {}
+	for a in firsts:
+		distinct[firsts[a]] = true
+	check(distinct.size() >= 3, "the five types prefer different first projects (%d distinct)" % distinct.size())
+	check(str(CharAI.rank_goals(cs, npc)[0]["type"]) == "house", "shelter comes first for everyone")
+	# استقلال واقعی: بدون هیچ دستوری جمع می‌کند، می‌فروشد و می‌سازد
+	var longest: int = _ai_run(cs, 5000)
+	var ai: Dictionary = npc["ai"]
+	check(int(ai["stats"]["gathered"]) > 0 and int(ai["stats"]["sold"]) > 0, "it gathered real resources and sold them on the market")
+	var owned: Array = _ai_owned(cs, acct)
+	check(owned.has("house"), "it built a real house with money it earned (owned: %s)" % str(owned))
+	check(owned.size() >= 2, "it kept pursuing further goals and built more")
+	check(longest >= 3, "it ran a multi-step plan (longest plan %d)" % longest)
+	var kinds := {}
+	for g in ai["goals"]:
+		kinds[str(g["kind"]) + str(g["type"])] = true
+	check(kinds.size() >= 3, "it holds several goals at once")
+	check(int(cs.accounts[acct]["money"]) >= 0, "its money never goes negative")
+	check(cs.ai_events.size() >= 1, "buildings it makes are queued for broadcast to clients")
+	# شکست و برنامهٔ جدید
+	var f0: int = int(ai["stats"]["failed"])
+	ai["plan"] = [{"t": "build", "type": "house", "cx": FWConst.PLAZA_MIN, "cz": FWConst.PLAZA_MIN, "x": float(npc["x"]), "z": float(npc["z"])}]
+	ai["w"] = 99.0
+	CharAI.step(cs, npc, 0.1, func(c, n, p, t, d): return {"p": p, "arrived": true})
+	check(int(ai["stats"]["failed"]) == f0 + 1 and (ai["plan"] as Array).is_empty(), "an impossible build fails, is remembered and the plan is dropped")
+	check(str((ai["log"] as Array)[(ai["log"] as Array).size() - 1]).contains("fail:build"), "the failure is written in its log")
+	# زمان‌بندی: دور از بازیکن کندتر فکر می‌کند
+	cs.ai_positions.clear()
+	var far_iv: float = CharAI._interval(cs, npc)
+	cs.ai_positions["plain"] = Vector2(float(npc["x"]) + 5.0, float(npc["z"]))
+	var near_iv: float = CharAI._interval(cs, npc)
+	check(far_iv >= near_iv * 4.0, "distant characters think much less often")
+	# ذخیره و بارگذاری
+	var back = CityState.from_dict(cs.to_dict())
+	var bnpc: Dictionary = {}
+	for n in back.npcs:
+		if int(n["id"]) == int(npc["id"]):
+			bnpc = n
+	check(not bnpc.is_empty() and bnpc.get("ai", null) is Dictionary, "the character survives save and load")
+	check(str(bnpc["ai"]["arch"]) == "rival" and int(bnpc["ai"]["stats"]["built"]) == int(ai["stats"]["built"]), "identity and experience survive save and load")
+	check((bnpc["ai"]["goals"] as Array).size() == (ai["goals"] as Array).size(), "its goals survive save and load")
+	check(back.accounts.has(acct) and _ai_owned(back, acct).size() == owned.size(), "its assets survive save and load")
+	var b_before: int = _ai_owned(back, acct).size()
+	_ai_run(back, 3000)
+	check(int(bnpc["ai"]["stats"]["thoughts"]) > int(ai["stats"]["thoughts"]) - 1, "it keeps thinking after loading")
+	check(_ai_owned(back, acct).size() >= b_before, "it still owns everything after continuing")
+	# ساخت قدیمی بدون فیلد ai مشکلی ندارد
+	var old: Dictionary = cs.to_dict()
+	for n in old["npcs"]:
+		n.erase("ai")
+		n.erase("acct")
+	var legacy = CityState.from_dict(old)
+	check(legacy != null and CharAI.count(legacy) == 0, "saves without characters still load")
+	# حالت خلاقانه
+	var cc = CityState.new(4243)
+	cc.creative = true
+	var cr: Dictionary = CharAI.spawn(cc, "trader")
+	_ai_run(cc, 400)
+	check(_ai_owned(cc, str(cr["npc"]["acct"])).size() >= 1 and int(cr["npc"]["ai"]["stats"]["gathered"]) == 0, "in creative worlds it builds at once without gathering")
+	check(int(cr["npc"]["ai"]["stats"]["thoughts"]) > 0, "intelligence stays active in creative worlds")
+	# NPCهای عادی دست نخورده‌اند
+	var normal_moved := false
+	for n in cs.npcs:
+		if not (n.get("ai", null) is Dictionary) and str(n["state"]) != "idle":
+			normal_moved = true
+	check(normal_moved, "regular NPCs still follow their daily schedule")
+	var texts_ok := true
+	for lang in ["fa", "en"]:
+		Loc.lang = lang
+		for k in ["ai_spawn_title", "ai_arch_schemer", "ai_arch_rival", "ai_arch_mystery", "ai_arch_trader", "ai_arch_warlord", "msg_ai_spawned", "fam_c_mine", "fam_c_other", "err_ai_off", "err_ai_full", "err_ai_npc"]:
+			if Loc.t(k) == k:
+				texts_ok = false
+	Loc.lang = "fa"
+	check(texts_ok, "character texts exist in Persian and English")
+
+
+func Family_check(cs, npc: Dictionary) -> String:
+	var Fam = load("res://scripts/server/family.gd")
+	return str(Fam._check_near(cs, "plain", int(npc["id"]), Vector2(float(npc["x"]), float(npc["z"])))["error"])
 
 
 func test_residents() -> void:

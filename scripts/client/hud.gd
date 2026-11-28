@@ -958,6 +958,18 @@ func _build_god_panel() -> void:
 	var civ_open := UiTheme.button(Loc.t("civ_open"), Vector2(0, 60))
 	civ_open.pressed.connect(_toggle_civ)
 	v.add_child(civ_open)
+	# شخصیت‌های هوشمند مستقل (پروتکل ۵۴): پنج تیپ؛ سرور فقط به مدیر یا جهان خلاقانه اجازه می‌دهد.
+	v.add_child(_label(Loc.t("ai_spawn_title"), 20, Color("d6e4ff")))
+	var arow := GridContainer.new()
+	arow.columns = 3
+	arow.add_theme_constant_override("h_separation", 8)
+	arow.add_theme_constant_override("v_separation", 8)
+	v.add_child(arow)
+	for arch in ["schemer", "rival", "mystery", "trader", "warlord"]:
+		var ab := UiTheme.button(Loc.t("ai_arch_" + arch), Vector2(120, 60))
+		ab.add_theme_font_size_override("font_size", 20)
+		ab.pressed.connect(func(): client.ai_spawn(arch))
+		arow.add_child(ab)
 
 
 # ---------------- تمدن‌ها و دیپلماسی (پروتکل ۴۵) ----------------
@@ -1471,13 +1483,15 @@ func _fill_family() -> void:
 	var who := tag.substr(2)
 	var mine: bool = who == client.my_name
 	var key := ""
+	if kind == "c":
+		who = Loc.t("ai_arch_" + who)
 	if kind != "":
 		key = "fam_%s_%s" % [kind, "mine" if mine else "other"]
 	_fam_label.text = Loc.fmt(key, [who]) if key != "" else ""
 	_fam_label.visible = key != ""
-	(_fam_btns["hire"] as Button).disabled = kind in ["k", "h"]
+	(_fam_btns["hire"] as Button).disabled = kind in ["k", "h", "c"]
 	(_fam_btns["fire"] as Button).disabled = not (kind == "h" and mine)
-	(_fam_btns["marry"] as Button).disabled = kind in ["k", "s", "h"]
+	(_fam_btns["marry"] as Button).disabled = kind in ["k", "s", "h", "c"]
 	(_fam_btns["divorce"] as Button).disabled = not (kind == "s" and mine)
 
 
@@ -2302,6 +2316,9 @@ func _on_notice(code: String, args: Dictionary) -> void:
 			var good_name := str(args.get("good", "wheat"))
 			var msg_key := "msg_collected" if good_name == "wheat" else "msg_collected_" + good_name
 			toast(Loc.fmt(msg_key, [Loc.digits(str(args["count"])), Loc.digits(str(args["earned"]))]), Color("c8f08a"))
+		"ai_spawned":
+			Sfx.play(self, "notify")
+			toast(Loc.fmt("msg_ai_spawned", [args.get("name", ""), Loc.t("ai_arch_" + str(args.get("arch", "")))]), Color("c8f08a"))
 		"ride_upgraded":
 			Sfx.play(self, "coin")
 			var rb: int = int(args.get("id", 0))
