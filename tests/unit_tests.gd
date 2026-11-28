@@ -112,6 +112,7 @@ func _init() -> void:
 	test_character_performance()
 	test_character_watch()
 	test_threat_pact()
+	test_player_raid()
 	test_character_fortify()
 	test_character_discovery()
 	test_cave()
@@ -6479,6 +6480,60 @@ func test_character_performance() -> void:
 	for lv in ["economy", "balanced", "advanced"]:
 		c2.ai_settings["level"] = lv
 		check(CharAI.think_budget(c2) >= 2, "think budget exists for level " + lv)
+
+
+func test_player_raid() -> void:
+	print("-- autonomous characters: war against the player")
+	var CharAI = load("res://scripts/server/char_ai.gd")
+	var Raid = load("res://scripts/server/char_raid.gd")
+	var Mem = load("res://scripts/server/char_memory.gd")
+	var NpcSim = load("res://scripts/server/npc_sim.gd")
+	var cs = CityState.new(5151)
+	NpcSim.ensure_npcs(cs)
+	cs.ai_settings["max"] = 12
+	cs.creative = false
+	var w: Dictionary = CharAI.spawn(cs, "warlord")["npc"]
+	var t: Dictionary = CharAI.spawn(cs, "trader")["npc"]
+	var sp: Vector3 = cs.spawn_position()
+	var far := Vector2(sp.x + 80.0, sp.z)
+	w["x"] = far.x - 1.0
+	w["z"] = far.y
+	t["x"] = far.x + 1.0
+	t["z"] = far.y
+	var pl := [{"name": "hero", "pos": far, "armor": 0.0}]
+	check(not Raid.is_hostile(cs, w, "hero"), "a stranger is not attacked")
+	check(Raid.step(cs, 0.5, pl).is_empty(), "no raid without hostility")
+	for i in 8:
+		Mem.record(w["ai"], "betray", "hero", 1.0, cs.day_count)
+		Mem.record(t["ai"], "betray", "hero", 1.0, cs.day_count)
+	check(Mem.stance(w["ai"], "hero", cs.day_count) == "enemy", "betrayal makes the warlord an enemy of the player")
+	check(Raid.is_hostile(cs, w, "hero"), "an aggressive brave enemy is hostile")
+	check(not Raid.is_hostile(cs, t, "hero"), "a gentle trader never raids")
+	var ev0: int = cs.ai_events.size()
+	var hits: Array = Raid.step(cs, 0.5, pl)
+	check(hits.size() == 1 and str(hits[0]["name"]) == "hero" and float(hits[0]["amount"]) > 0.0, "the raider hits a player in reach")
+	check(cs.ai_events.size() == ev0 + 1 and str(cs.ai_events[cs.ai_events.size() - 1]["kind"]) == "raid", "the raid is announced to players")
+	check(Raid.step(cs, 0.5, pl).is_empty(), "the raider waits for its cooldown")
+	pl[0]["armor"] = 0.5
+	w["rcd"] = 0.0
+	var hit2: Array = Raid.step(cs, 0.5, pl)
+	check(hit2.size() == 1 and absf(float(hit2[0]["amount"]) - Raid.HIT_DAMAGE * 0.5) < 0.001, "armor reduces the raid damage")
+	# تعقیب: دور از بازیکن به او نزدیک می‌شود
+	w["x"] = far.x - 30.0
+	w["rcd"] = 0.0
+	var d0: float = absf(float(w["x"]) - far.x)
+	Raid.step(cs, 1.0, pl)
+	check(absf(float(w["x"]) - far.x) < d0 or not cs.is_walkable(float(w["x"]) + 3.0, float(w["z"])), "the raider chases the player")
+	# منطقهٔ امن و جهان خلاقانه
+	var safe := [{"name": "hero", "pos": Vector2(sp.x + 5.0, sp.z), "armor": 0.0}]
+	w["x"] = sp.x + 4.0
+	w["z"] = sp.z
+	w["rcd"] = 0.0
+	check(Raid.step(cs, 0.5, safe).is_empty(), "nobody is attacked inside the safe field")
+	cs.creative = true
+	w["x"] = far.x - 1.0
+	w["z"] = far.y
+	check(Raid.step(cs, 0.5, pl).is_empty(), "no raids in the creative world")
 
 
 func test_threat_pact() -> void:

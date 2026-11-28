@@ -2,6 +2,7 @@ extends RefCounted
 ## وضعیت دائمی و مرجع یک شهر: حساب‌ها، ساختمان‌ها، اقتصاد، مجوزها و گزارش اقدامات.
 ## هیچ وابستگی‌ای به شبکه ندارد تا کاملاً قابل تست باشد.
 
+const CharRaid = preload("res://scripts/server/char_raid.gd")
 const FWConst = preload("res://scripts/core/const.gd")
 const WorldGen = preload("res://scripts/world/world_generator.gd")
 const Residents = preload("res://scripts/server/residents.gd")
@@ -1171,6 +1172,7 @@ func wild_step(dt: float, exposed: Dictionary, in_mine: Dictionary = {}) -> Dict
 		players.append({"name": name, "pos": exposed[name], "dmg": int(FWConst.GEAR_WEAPON_DAMAGE[int(g["weapon"])]), "range": float(FWConst.GEAR_WEAPON_RANGE[int(g["weapon"])]), "cd": float(FWConst.GEAR_WEAPON_CD[int(g["weapon"])]), "armor": float(FWConst.GEAR_ARMOR_REDUCE[int(g["armor"])])})
 	var sp := spawn_position()
 	var res: Dictionary = wild.step(dt, players, Wild.is_night(world_time), Callable(self, "_wild_land"), Vector2(sp.x, sp.z), not creative)
+	res["hurt"].append_array(CharRaid.step(self, dt, players))   # شخصیت‌های دشمنِ بازیکن (جنگ علیه بازیکن)
 	var out := {"send": bool(res["send"]), "vitals": [], "died": [], "kills": res["kills"], "inv": [], "money": [], "cave_send": []}
 	# سیاه‌چال معدن‌ها: in_mine = {نام: {"mine": شناسه، "pos": Vector2 محلی}}؛ در جهان خلاقانه دشمنی نیست.
 	var groups := {}
