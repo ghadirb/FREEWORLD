@@ -261,6 +261,24 @@ func c2s_ride_upgrade(building_id: int) -> void:
 
 
 @rpc("any_peer", "call_remote", "reliable")
+func c2s_feed_animal() -> void:
+	if server:
+		server.on_feed_animal(multiplayer.get_remote_sender_id())
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func c2s_species_book() -> void:
+	if server:
+		server.on_species_book(multiplayer.get_remote_sender_id())
+
+
+@rpc("authority", "call_remote", "reliable")
+func s2c_species_book(state: Dictionary) -> void:
+	if client:
+		client.on_species_book(state)
+
+
+@rpc("any_peer", "call_remote", "reliable")
 func c2s_npc_buy(npc_id: int, item: String, n: int) -> void:
 	if server:
 		server.on_npc_buy(multiplayer.get_remote_sender_id(), npc_id, item, n)

@@ -21,6 +21,7 @@ const Scenarios = preload("res://scripts/shared/scenarios.gd")
 const Story = preload("res://scripts/shared/story.gd")
 const Family = preload("res://scripts/server/family.gd")
 const Attractions = preload("res://scripts/server/attractions.gd")
+const SpeciesBook = preload("res://scripts/server/species_book.gd")
 const CharAI = preload("res://scripts/server/char_ai.gd")
 const CharCreator = preload("res://scripts/server/char_creator.gd")
 const Book = preload("res://scripts/server/book.gd")
@@ -174,6 +175,8 @@ func authenticate(player_name: String, token: String) -> Dictionary:
 		"gear": {"weapon": 0, "armor": 0},
 		"inv": Scenarios.start_items(scenario),
 		"book": {},
+		"species": {},
+		"species_fed": {},
 		"stats": {},
 		"quests": {},
 	}
@@ -203,6 +206,8 @@ func provision_admin(player_name: String, secret: String, role: String = FWConst
 		"gear": {"weapon": 0, "armor": 0},
 		"inv": Scenarios.start_items(scenario),
 		"book": {},
+		"species": {},
+		"species_fed": {},
 		"stats": {},
 		"quests": {},
 	}
@@ -1662,6 +1667,7 @@ func breed_step(dt: float) -> bool:
 	if _breed_acc < FWConst.BREED_INTERVAL:
 		return false
 	_breed_acc = 0.0
+	SpeciesBook.hunger_step(self, FWConst.BREED_INTERVAL)
 	var ids: Array = []
 	var total := 0
 	var per_kind := {}
@@ -2799,6 +2805,10 @@ func _price_for(good: String) -> float:
 	return wheat_price if good == "wheat" else float(prices.get(good, 0.0))
 
 
+func zoo_stats_of(b: Dictionary) -> Dictionary:
+	return Attractions.zoo_stats(self, b)
+
+
 func building_public(b: Dictionary) -> Dictionary:
 	var out := {
 		"id": b["id"], "type": b["type"], "owner": b["owner"],
@@ -2872,6 +2882,25 @@ static func _load_friends(v) -> Dictionary:
 
 
 ## دستاوردهای بازشده: شناسهٔ معتبر ← روز بازشدن. شناسهٔ ناشناخته دور ریخته می‌شود.
+## کتابچهٔ گونه‌ها: فقط گونه‌های شناخته‌شده، روز دیدن ≥ ۱.
+static func _load_species(v) -> Dictionary:
+	var out: Dictionary = {}
+	if v is Dictionary:
+		for k in v:
+			if FWConst.SPECIES_ORDER.has(str(k)):
+				out[str(k)] = maxi(1, int(v[k]))
+	return out
+
+
+static func _load_species_fed(v) -> Dictionary:
+	var out: Dictionary = {}
+	if v is Dictionary:
+		for k in v:
+			if FWConst.SPECIES_ORDER.has(str(k)):
+				out[str(k)] = clampi(int(v[k]), 0, 1000000)
+	return out
+
+
 static func _load_book(v) -> Dictionary:
 	var out: Dictionary = {}
 	if v is Dictionary:
@@ -3003,6 +3032,8 @@ static func from_dict(d: Dictionary):
 					if FWConst.is_animal(gk):
 						cs.god[gid]["young"] = clampf(float(g.get("young", 0.0)), 0.0, FWConst.BREED_MATURE)
 						cs.god[gid]["bcd"] = clampf(float(g.get("bcd", 0.0)), 0.0, FWConst.BREED_COOLDOWN)
+						if g.has("fed"):
+							cs.god[gid]["fed"] = clampf(float(g["fed"]), 0.0, FWConst.FEED_MAX)
 					cs.next_god_id = maxi(cs.next_god_id, gid + 1)
 	cs.minigame.load_dict(d.get("minigame", {}))
 	cs.race.load_dict(d.get("race", {}))
@@ -3057,6 +3088,8 @@ static func from_dict(d: Dictionary):
 			"spouse": maxi(0, int(a.get("spouse", 0))),
 			"npc_day": _load_npc_day(a.get("npc_day", null)),
 			"book": _load_book(a.get("book", null)),
+			"species": _load_species(a.get("species", null)),
+			"species_fed": _load_species_fed(a.get("species_fed", null)),
 			"stats": _load_stats(a.get("stats", null)),
 			"quests": _load_quests(a.get("quests", null)),
 		}

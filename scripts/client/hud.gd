@@ -136,6 +136,10 @@ var _pack_rows: VBoxContainer
 var _book_panel: PanelContainer
 var _book_progress: Label
 var _book_rows: VBoxContainer
+var _sp_panel: PanelContainer      # کتابچهٔ گونه‌ها (پروتکل ۵۷)
+var _sp_progress: Label
+var _sp_zoo: Label
+var _sp_rows: VBoxContainer
 var _fly_btn: Button
 var _jump_btn: Button
 var _boat_btn: Button
@@ -219,6 +223,7 @@ func setup(game_client, game_view) -> void:
 	_build_furn_panel()
 	_build_bp_panel()
 	_build_book_panel()
+	_build_species_panel()
 	_build_arena_panel()
 	_build_god_panel()
 	_build_civ_panel()
@@ -231,7 +236,7 @@ func setup(game_client, game_view) -> void:
 	_build_chat()
 	_build_admin_panel()
 	_build_menu_panel()
-	for dp in [_palette, _tools_panel, _inv_panel, _offer_panel, _npc_panel, _furn_panel, _bp_panel, _book_panel, _arena_panel, _god_panel, _civ_panel, _ai_panel, _aw_panel, _mg_panel, _race_panel, _admin_panel, _menu_panel]:
+	for dp in [_palette, _tools_panel, _inv_panel, _offer_panel, _npc_panel, _furn_panel, _bp_panel, _book_panel, _sp_panel, _arena_panel, _god_panel, _civ_panel, _ai_panel, _aw_panel, _mg_panel, _race_panel, _admin_panel, _menu_panel]:
 		_dock(dp)
 	view.is_over_ui = Callable(self, "is_over_ui")
 	view.building_tapped.connect(_on_building_tapped)
@@ -250,6 +255,7 @@ func setup(game_client, game_view) -> void:
 	client.notice.connect(_on_notice)
 	client.blueprints_changed.connect(_fill_bp_list)
 	client.book_changed.connect(_fill_book)
+	client.species_changed.connect(_fill_species)
 	client.book_changed.connect(_fill_npc)
 	client.arenas_changed.connect(_fill_arena_list)
 	client.arenas_changed.connect(func():
@@ -1819,6 +1825,12 @@ func _build_book_panel() -> void:
 	v.add_child(hint)
 	_book_progress = _label("", 22, Color("c8f08a"))
 	v.add_child(_book_progress)
+	var sp_open := UiTheme.button(Loc.t("sp_open"), Vector2(0, 56))
+	sp_open.pressed.connect(func():
+		_book_panel.visible = false
+		_sp_panel.visible = true
+		client.request_species_book())
+	v.add_child(sp_open)
 	var close := UiTheme.button("✕", Vector2(64, 56))
 	close.pressed.connect(func(): _book_panel.visible = false)
 	v.add_child(close)
@@ -1830,6 +1842,83 @@ func _build_book_panel() -> void:
 	_book_rows.add_theme_constant_override("separation", 8)
 	_book_rows.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	sc.add_child(_book_rows)
+
+
+func _build_species_panel() -> void:
+	_sp_panel = _panel(0.5, 1.0)
+	_sp_panel.visible = false
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 8)
+	v.custom_minimum_size = Vector2(560, 0)
+	_sp_panel.add_child(v)
+	v.add_child(_label(Loc.t("sp_title"), 28, Color("ffd24a")))
+	var hint := _label(Loc.t("sp_hint"), 17, Color("d6e4ff"))
+	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	hint.custom_minimum_size = Vector2(540, 0)
+	v.add_child(hint)
+	_sp_progress = _label("", 22, Color("c8f08a"))
+	v.add_child(_sp_progress)
+	_sp_zoo = _label("", 18, Color("8ae0ff"))
+	_sp_zoo.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_sp_zoo.custom_minimum_size = Vector2(540, 0)
+	v.add_child(_sp_zoo)
+	var feed := UiTheme.button(Loc.t("sp_feed"), Vector2(0, 60))
+	feed.pressed.connect(func(): Sfx.play(self, "click"); client.feed_animal())
+	v.add_child(feed)
+	var close := UiTheme.button("✕", Vector2(64, 56))
+	close.pressed.connect(func(): _sp_panel.visible = false)
+	v.add_child(close)
+	var sc := ScrollContainer.new()
+	sc.custom_minimum_size = Vector2(0, 260)
+	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	v.add_child(sc)
+	_sp_rows = VBoxContainer.new()
+	_sp_rows.add_theme_constant_override("separation", 8)
+	_sp_rows.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	sc.add_child(_sp_rows)
+
+
+static func _species_name(kind: String) -> String:
+	return Loc.t(("species_" if FWConst.GOD_HYBRIDS.has(kind) else "god_") + kind)
+
+
+func _fill_species() -> void:
+	if _sp_rows == null:
+		return
+	for c in _sp_rows.get_children():
+		c.queue_free()
+	var sb: Dictionary = client.species_book
+	_sp_progress.text = Loc.fmt("sp_progress", [Loc.digits(str(int(sb.get("done", 0)))), Loc.digits(str(int(sb.get("total", 0))))])
+	var zoo: Array = sb.get("zoo", [0, 0])
+	_sp_zoo.text = Loc.fmt("sp_zoo", [Loc.digits(str(int(zoo[1]))), Loc.digits(str(int(zoo[0])))]) if int(zoo[0]) > 0 else Loc.t("sp_zoo_none")
+	for row in sb.get("rows", []):
+		var kind := str(row[0])
+		var seen: bool = int(row[1]) > 0
+		var box := VBoxContainer.new()
+		_sp_rows.add_child(box)
+		var title := "%s  %s" % ["✅" if seen else "❔", _species_name(kind) if seen else Loc.t("sp_unknown")]
+		if bool(int(row[3])):
+			title += "  🧬"
+		box.add_child(_label(title, 21, Color("8fd6a0") if seen else Color("ffd24a")))
+		var d: Label
+		if seen:
+			d = _label(Loc.fmt("sp_seen_day", [Loc.digits(str(int(row[1]))), Loc.digits(str(int(row[2])))]), 16, Color("aab6c8"))
+		elif bool(int(row[3])):
+			d = _label(Loc.t("sp_hint_hybrid"), 16, Color("aab6c8"))
+		else:
+			d = _label(Loc.t("sp_hint_base"), 16, Color("aab6c8"))
+		d.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		d.custom_minimum_size = Vector2(520, 0)
+		box.add_child(d)
+		if seen and bool(int(row[3])):
+			var parents := ""
+			for pk in FWConst.HYBRID_PARENTS:
+				if str(FWConst.HYBRID_PARENTS[pk]) == kind:
+					var ps: PackedStringArray = str(pk).split("+")
+					parents = "%s + %s" % [_species_name(ps[0]), _species_name(ps[1])]
+			if parents != "":
+				var pl := _label("🧬 " + parents, 16, Color("d9c9a0"))
+				box.add_child(pl)
 
 
 func _fill_book() -> void:
@@ -2947,6 +3036,17 @@ func _on_notice(code: String, args: Dictionary) -> void:
 		"arena_rated":
 			Sfx.play(self, "notify")
 			toast(Loc.t("msg_arena_rated"), Color("c8f08a"))
+		"species_seen":
+			Sfx.play(self, "notify")
+			var sm := Loc.fmt("msg_species_seen", [_species_name(str(args.get("kind", "")))])
+			if int(args.get("reward", 0)) > 0:
+				sm += "  " + Loc.fmt("msg_book_reward", [Loc.digits(str(int(args["reward"])))])
+			toast(sm, Color("ffd84a"))
+			if int(args.get("complete", 0)) != 0:
+				toast(Loc.fmt("msg_species_complete", [Loc.digits(str(maxi(0, int(args["complete"]))))]), Color("ffd84a"))
+		"animal_fed":
+			Sfx.play(self, "coin")
+			toast(Loc.fmt("msg_animal_fed", [_species_name(str(args.get("kind", ""))), Loc.digits(str(int(args.get("fed", 0))))]), Color("c8f08a"))
 		"species_new":
 			Sfx.play(self, "notify")
 			toast(Loc.fmt("msg_species_new", [Loc.t("species_" + str(args.get("kind", "")))]), Color("ffd84a"))

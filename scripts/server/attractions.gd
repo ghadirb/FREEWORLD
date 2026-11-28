@@ -5,6 +5,7 @@ extends RefCounted
 ## شهربازی: هرچه وسیله بیشتر (ارتقا با سکه) و NPC بزرگسال نزدیک بیشتر، بلیط بیشتر.
 
 const FWConst = preload("res://scripts/core/const.gd")
+const SpeciesBook = preload("res://scripts/server/species_book.gd")
 
 
 static func is_attraction(type: String) -> bool:
@@ -15,11 +16,12 @@ static func stock_max(type: String) -> float:
 	return FWConst.ZOO_MAX if type == "zoo" else FWConst.PARK_MAX
 
 
-## آمار مجموعهٔ باغ‌وحش: {species, hybrids, animals}. توله‌ها شمرده نمی‌شوند.
+## آمار مجموعهٔ باغ‌وحش: {species, hybrids, animals, fed}. توله‌ها شمرده نمی‌شوند. fed = شمار حیوانات سیر (پروتکل ۵۷).
 static func zoo_stats(cs, b: Dictionary) -> Dictionary:
 	var door: Vector2 = cs.door_point(b)
 	var kinds := {}
 	var animals := 0
+	var fed := 0
 	var r2: float = FWConst.ZOO_RADIUS * FWConst.ZOO_RADIUS
 	for id in cs.god:
 		var g: Dictionary = cs.god[id]
@@ -31,11 +33,13 @@ static func zoo_stats(cs, b: Dictionary) -> Dictionary:
 			continue
 		kinds[str(g["kind"])] = true
 		animals += 1
+		if SpeciesBook.is_fed(g):
+			fed += 1
 	var hybrids := 0
 	for k in kinds:
 		if FWConst.GOD_HYBRIDS.has(k):
 			hybrids += 1
-	return {"species": kinds.size(), "hybrids": hybrids, "animals": animals}
+	return {"species": kinds.size(), "hybrids": hybrids, "animals": animals, "fed": fed}
 
 
 static func park_visitors(cs, b: Dictionary) -> int:
@@ -58,8 +62,11 @@ static func income_per_period(cs, b: Dictionary) -> int:
 		var st: Dictionary = zoo_stats(cs, b)
 		if int(st["animals"]) == 0:
 			return 0
-		return FWConst.ZOO_BASE + int(st["species"]) * FWConst.ZOO_PER_SPECIES \
+		var raw: int = FWConst.ZOO_BASE + int(st["species"]) * FWConst.ZOO_PER_SPECIES \
 			+ int(st["hybrids"]) * FWConst.ZOO_HYBRID_BONUS + mini(int(st["animals"]), FWConst.ZOO_ANIMAL_CAP)
+		# حیوان گرسنه بازدیدکننده را کم می‌کند: همه گرسنه ← ZOO_HUNGRY_MULT، همه سیر ← بدون کاهش.
+		var ratio: float = float(st["fed"]) / float(st["animals"])
+		return maxi(1, int(round(float(raw) * (FWConst.ZOO_HUNGRY_MULT + (1.0 - FWConst.ZOO_HUNGRY_MULT) * ratio))))
 	return FWConst.PARK_BASE + rides_of(b) * FWConst.PARK_PER_RIDE + park_visitors(cs, b) * FWConst.PARK_PER_VISITOR
 
 

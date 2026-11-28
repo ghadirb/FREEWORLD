@@ -104,6 +104,7 @@ func _init() -> void:
 	test_god_human()
 	test_residents()
 	test_attractions()
+	test_species_book()
 	test_autonomous_characters()
 	test_character_memory()
 	test_character_social()
@@ -5286,6 +5287,168 @@ func _ai_owned(cs, acct: String) -> Array:
 		if str(cs.buildings[id]["owner"]) == acct:
 			out.append(str(cs.buildings[id]["type"]))
 	return out
+
+
+func _animal(cs, id: int, kind: String, x: float, z: float, young: float = 0.0) -> void:
+	cs.god[id] = {"id": id, "kind": kind, "x": x, "z": z, "tx": x, "tz": z, "wait": 99.0}
+	if young > 0.0:
+		cs.god[id]["young"] = young
+
+
+func test_species_book() -> void:
+	print("-- species book and animal feeding (protocol 57)")
+	var SB = load("res://scripts/server/species_book.gd")
+	var Att = load("res://scripts/server/attractions.gd")
+	var cs = CityState.new(6401)
+	_login(cs, "owner")
+	_login(cs, "other")
+	cs.accounts["owner"]["money"] = 5000
+	var far := Vector2(300.0, 300.0)
+	# دیدن: فقط نزدیک، فقط یک بار
+	_animal(cs, 8001, "sheep", far.x + 3.0, far.y)
+	_animal(cs, 8002, "deer", far.x + FWConst.SPECIES_SEE_RANGE + 6.0, far.y)
+	var m0: int = int(cs.accounts["owner"]["money"])
+	var seen: Array = SB.observe(cs, "owner", far)
+	check(seen.size() == 1 and str(seen[0]["kind"]) == "sheep", "a nearby animal is recorded and a far one is not")
+	check(int(cs.accounts["owner"]["money"]) == m0 + FWConst.SPECIES_REWARD, "first sighting pays the small reward")
+	check(SB.observe(cs, "owner", far).is_empty() and int(cs.accounts["owner"]["money"]) == m0 + FWConst.SPECIES_REWARD, "a species is recorded and paid only once")
+	check(SB.observe(cs, "other", far).size() == 1 and not cs.accounts["owner"].has("x"), "every player has their own book")
+	check(SB.observe(cs, "nobody", far).is_empty(), "an unknown player records nothing")
+	var st0: Dictionary = SB.public_state(cs, "owner")
+	check(int(st0["done"]) == 1 and int(st0["total"]) == FWConst.SPECIES_ORDER.size() and (st0["rows"] as Array).size() == FWConst.SPECIES_ORDER.size(), "public state lists every species with progress")
+	# گونهٔ ترکیبی و کامل‌شدن کتابچه
+	_animal(cs, 8003, "deer", far.x, far.y + 2.0)
+	_animal(cs, 8004, "rabbit", far.x, far.y - 2.0)
+	_animal(cs, 8005, "horned_sheep", far.x - 2.0, far.y)
+	_animal(cs, 8006, "jackalope", far.x - 3.0, far.y)
+	_animal(cs, 8007, "wool_rabbit", far.x - 4.0, far.y, 30.0)
+	var m1: int = int(cs.accounts["owner"]["money"])
+	var rest: Array = SB.observe(cs, "owner", far)
+	var gained := 0
+	var completes := 0
+	for e in rest:
+		gained += int(e["reward"]) + maxi(0, int(e["complete"]))
+		if int(e["complete"]) != 0:
+			completes += 1
+	check(rest.size() == 5 and completes == 1, "the remaining species (young included) are recorded and completion is announced once")
+	check(int(cs.accounts["owner"]["money"]) == m1 + gained and gained == 2 * FWConst.SPECIES_REWARD + 3 * FWConst.SPECIES_HYBRID_REWARD + FWConst.SPECIES_COMPLETE_BONUS, "hybrids pay more and completion pays the bonus")
+	check(int(SB.public_state(cs, "owner")["done"]) == FWConst.SPECIES_ORDER.size(), "the book shows complete")
+	# جهان خلاقانه: ثبت می‌شود ولی سکه‌ای نیست
+	var cc = CityState.new(6402)
+	cc.creative = true
+	_login(cc, "maker")
+	_animal(cc, 8101, "sheep", far.x, far.y)
+	var cm: int = int(cc.accounts["maker"]["money"])
+	var cr: Array = SB.observe(cc, "maker", far)
+	check(cr.size() == 1 and int(cr[0]["reward"]) == 0 and int(cc.accounts["maker"]["money"]) == cm, "creative worlds record species without coins")
+	# غذا دادن
+	var f0: Dictionary = SB.feed(cs, "owner", Vector2(10.0, 10.0))
+	check(not bool(f0["ok"]) and str(f0["error"]) == "no_animal", "feeding with no animal in range fails")
+	var pos := Vector2(600.0, 600.0)
+	_animal(cs, 8201, "sheep", pos.x + 2.0, pos.y)
+	_animal(cs, 8202, "rabbit", pos.x + 1.0, pos.y)
+	_animal(cs, 8203, "deer", pos.x + FWConst.FEED_RANGE + 3.0, pos.y)
+	cs.market["wheat"] = 0.0
+	check(str(SB.feed(cs, "owner", pos)["error"]) == "no_stock", "feeding needs wheat in the shared market")
+	cs.market["wheat"] = 5.0
+	cs.accounts["owner"]["money"] = 0
+	check(str(SB.feed(cs, "owner", pos)["error"]) == "no_money", "feeding needs coins")
+	cs.accounts["owner"]["money"] = 500
+	cs.god[8202]["fed"] = 100.0
+	var price: int = int(ceil(cs._price_for("wheat")))
+	var fr: Dictionary = SB.feed(cs, "owner", pos)
+	check(bool(fr["ok"]) and int(fr["id"]) == 8202 and str(fr["kind"]) == "rabbit", "the nearest animal in range gets the food")
+	check(int(cs.accounts["owner"]["money"]) == 500 - price and float(cs.market["wheat"]) == 4.0 and int(fr["paid"]) == price, "feeding costs one market wheat at the day price")
+	check(is_equal_approx(float(cs.god[8202]["fed"]), 100.0 + FWConst.FEED_ADD), "feeding raises the animal's fullness")
+	check(not cs.god[8201].has("fed") and not cs.god[8203].has("fed"), "other animals are untouched")
+	check(int(cs.accounts["owner"]["species_fed"]["rabbit"]) == 1, "the book counts feedings per species")
+	for i in 3:
+		SB.feed(cs, "owner", pos)
+	check(float(cs.god[8202]["fed"]) <= FWConst.FEED_MAX and str(SB.feed(cs, "owner", pos)["error"]) == "animal_full", "a full animal refuses more food and fullness is capped")
+	# غذا دادن گونه را هم ثبت می‌کند
+	var fresh = CityState.new(6403)
+	_login(fresh, "p")
+	fresh.market["wheat"] = 3.0
+	_animal(fresh, 1, "deer", pos.x, pos.y)
+	var fd: Dictionary = SB.feed(fresh, "p", pos)
+	check(bool(fd["ok"]) and (fd["seen"] as Array).size() == 1 and int(fresh.accounts["p"]["species"].get("deer", 0)) > 0, "feeding a new animal also records its species")
+	# جهان خلاقانه: غذا رایگان و بدون برداشت از بازار
+	_animal(cc, 8102, "rabbit", pos.x, pos.y)
+	cc.market["wheat"] = 0.0
+	check(bool(SB.feed(cc, "maker", pos)["ok"]) and float(cc.market["wheat"]) == 0.0, "creative feeding is free")
+	# گرسنگی فقط داخل باغ‌وحش
+	var hz = CityState.new(6404)
+	_login(hz, "z")
+	hz.accounts["z"]["money"] = 5000
+	var zid := -1
+	for cx in range(8, 90, 4):
+		for cz in range(8, 90, 4):
+			if zid < 0:
+				var r: Dictionary = hz.place_building("z", 0, "zoo", cx, cz)
+				if bool(r["ok"]):
+					zid = int(r["building"]["id"])
+	check(zid > 0, "a zoo can be built for the hunger test")
+	if zid < 0:
+		return
+	var zoo: Dictionary = hz.buildings[zid]
+	var door: Vector2 = hz.door_point(zoo)
+	_animal(hz, 7001, "sheep", door.x + 2.0, door.y)
+	_animal(hz, 7002, "deer", door.x - 2.0, door.y)
+	_animal(hz, 7003, "sheep", door.x + 200.0, door.y)
+	check(int(Att.zoo_stats(hz, zoo)["fed"]) == 2, "new animals in a zoo count as fed (old saves keep their income)")
+	var full_inc: int = Att.income_per_period(hz, zoo)
+	check(SB.hunger_step(hz, 100.0) and is_equal_approx(float(hz.god[7001]["fed"]), FWConst.FEED_START - 100.0), "zoo animals get hungrier with time")
+	check(not hz.god[7003].has("fed"), "animals outside the zoo forage for themselves")
+	SB.hunger_step(hz, 100000.0)
+	check(float(hz.god[7001]["fed"]) == 0.0 and int(Att.zoo_stats(hz, zoo)["fed"]) == 0, "fullness never goes below zero and hungry animals stop counting as fed")
+	var hungry_inc: int = Att.income_per_period(hz, zoo)
+	check(hungry_inc < full_inc and hungry_inc >= int(floor(float(full_inc) * FWConst.ZOO_HUNGRY_MULT)) and hungry_inc >= 1, "a hungry zoo sells fewer tickets but never none")
+	hz.market["wheat"] = 5.0
+	var zpos := Vector2(door.x + 2.0, door.y)
+	check(bool(SB.feed(hz, "z", zpos)["ok"]), "the zoo keeper can feed an animal")
+	var half_inc: int = Att.income_per_period(hz, zoo)
+	check(half_inc > hungry_inc and half_inc < full_inc, "feeding one of two animals raises income part of the way")
+	check(int(SB.public_state(hz, "z")["zoo"][0]) == 2 and int(SB.public_state(hz, "z")["zoo"][1]) == 1, "the book reports zoo animals and fed animals")
+	# breed_step یک گام گرسنگی را هم اجرا می‌کند
+	var before: float = float(hz.god[7001]["fed"])
+	hz.breed_step(FWConst.BREED_INTERVAL)
+	check(float(hz.god[7001]["fed"]) <= before, "the breeding tick also advances zoo hunger")
+	# ذخیره و بارگذاری
+	var data = JSON.parse_string(JSON.stringify(cs.to_dict()))
+	var back = CityState.from_dict(data)
+	check(back != null and int(back.accounts["owner"]["species"].size()) == FWConst.SPECIES_ORDER.size() and int(back.accounts["owner"]["species_fed"]["rabbit"]) == int(cs.accounts["owner"]["species_fed"]["rabbit"]) and int(cs.accounts["owner"]["species_fed"]["rabbit"]) >= 2, "the book and feeding counts survive save and load")
+	check(is_equal_approx(float(back.god[8202]["fed"]), float(cs.god[8202]["fed"])), "animal fullness survives save and load")
+	var bad = JSON.parse_string(JSON.stringify(cs.to_dict()))
+	bad["accounts"]["owner"]["species"] = {"dragon": 3, "sheep": -5, "deer": "x"}
+	bad["accounts"]["owner"]["species_fed"] = {"dragon": 9, "sheep": -2}
+	bad["god"][0]["fed"] = 99999.0
+	var cleaned = CityState.from_dict(bad)
+	var sp: Dictionary = cleaned.accounts["owner"]["species"]
+	check(not sp.has("dragon") and int(sp["sheep"]) >= 1 and not cleaned.accounts["owner"]["species_fed"].has("dragon") and int(cleaned.accounts["owner"]["species_fed"]["sheep"]) == 0, "invalid book entries are cleaned on load")
+	for gid in cleaned.god:
+		check(float(cleaned.god[gid].get("fed", 0.0)) <= FWConst.FEED_MAX, "loaded fullness is capped")
+		break
+	var old = JSON.parse_string(JSON.stringify(cs.to_dict()))
+	old["accounts"]["owner"].erase("species")
+	old["accounts"]["owner"].erase("species_fed")
+	var oldcs = CityState.from_dict(old)
+	check(oldcs != null and int(SB.public_state(oldcs, "owner")["done"]) == 0 and bool(SB.feed(oldcs, "owner", pos).has("ok")), "saves without a book still load")
+	# متن‌ها
+	var ok2 := true
+	for lang in ["fa", "en"]:
+		Loc.lang = lang
+		for k in ["sp_open", "sp_title", "sp_hint", "sp_progress", "sp_zoo", "sp_zoo_none", "sp_feed", "sp_unknown", "sp_hint_base", "sp_hint_hybrid", "sp_seen_day", "msg_species_seen", "msg_species_complete", "msg_animal_fed", "err_no_animal", "err_animal_full"]:
+			if Loc.t(k) == k:
+				ok2 = false
+				print("   missing text: ", lang, " ", k)
+		for sk in FWConst.SPECIES_ORDER:
+			var nk: String = ("species_" if FWConst.GOD_HYBRIDS.has(sk) else "god_") + sk
+			if Loc.t(nk) == nk:
+				ok2 = false
+				print("   missing name: ", lang, " ", nk)
+	Loc.lang = "fa"
+	check(ok2, "species book texts exist in Persian and English")
+	check(FWConst.PROTOCOL_VERSION >= 57, "protocol version covers the species book")
 
 
 func test_autonomous_characters() -> void:

@@ -1,7 +1,7 @@
 extends RefCounted
 ## ثابت‌های مشترک بین سرور و کلاینت.
 
-const PROTOCOL_VERSION := 56
+const PROTOCOL_VERSION := 57
 # ترافیک شبکه با DTLS رمز می‌شود (نسخهٔ ۴ به بعد). فقط برای عیب‌یابی خاموش شود.
 const USE_DTLS := true
 const DEFAULT_PORT := 7777
@@ -440,6 +440,18 @@ const BREED_CHANCE := {"sheep": 0.3, "deer": 0.2, "rabbit": 0.45, "horned_sheep"
 const BREED_HYBRID_CHANCE := 0.1      # شانس گونهٔ ترکیبی برای جفت‌گیری دو گونهٔ متفاوت
 const BREED_CAP := 60                 # سقف کل حیوانات جهان برای زاد و ولد
 const BREED_SPECIES_CAP := 30         # سقف هر گونه
+
+# کتابچهٔ گونه‌ها و غذا دادن به حیوانات (پروتکل ۵۷، docs/SPECIES_BOOK.md)
+const SPECIES_ORDER := ["sheep", "deer", "rabbit", "horned_sheep", "jackalope", "wool_rabbit"]
+const SPECIES_SEE_RANGE := 14.0       # دیدن یک حیوان از این فاصله، گونه را در کتابچه ثبت می‌کند
+const SPECIES_REWARD := 15            # جایزهٔ اولین دیدن یک گونهٔ معمولی
+const SPECIES_HYBRID_REWARD := 60     # جایزهٔ اولین دیدن یک گونهٔ ترکیبی (کمیاب)
+const SPECIES_COMPLETE_BONUS := 200   # جایزهٔ کامل شدن کتابچه (فقط یک بار)
+const FEED_RANGE := 5.0               # بازیکن باید تا این فاصله از حیوان باشد
+const FEED_ADD := 300.0               # ثانیهٔ سیری که هر وعده می‌دهد
+const FEED_MAX := 600.0               # سقف سیری
+const FEED_START := 300.0             # سیری اولیهٔ حیوانی که تازه وارد باغ‌وحش می‌شود
+const ZOO_HUNGRY_MULT := 0.5          # بلیط باغ‌وحش با همهٔ حیوانات گرسنه (با سیرشدن تا ۱ می‌رسد)
 const GOD_REMOVE_RANGE := 3.0
 ## حذف دائمی منبع طبیعی (درخت/سنگ/معدن) با نگه‌داشتن: زمان رویش بی‌نهایت در لایهٔ depleted.
 const CLEARED_FOREVER := 1.0e12

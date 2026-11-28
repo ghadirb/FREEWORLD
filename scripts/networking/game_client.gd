@@ -46,6 +46,7 @@ signal car_changed
 signal inventory_changed
 signal blueprints_changed
 signal book_changed
+signal species_changed
 signal arenas_changed
 signal blueprint_loaded(id: int, data: PackedInt32Array)
 signal offer_received(data: Dictionary)
@@ -419,6 +420,25 @@ func bp_op(op: String, id: int = 0) -> void:
 func request_book() -> void:
 	if is_logged_in:
 		_tx("c2s_book", [])
+
+
+## کتابچهٔ گونه‌ها (پروتکل ۵۷): rows = [[گونه، روز دیدن، تعداد وعده، ترکیبی]]، done، total، zoo = [حیوان، سیر]
+var species_book: Dictionary = {"rows": [], "done": 0, "total": 0, "zoo": [0, 0]}
+
+
+func request_species_book() -> void:
+	if is_logged_in:
+		_tx("c2s_species_book", [])
+
+
+func feed_animal() -> void:
+	if is_logged_in:
+		_tx("c2s_feed_animal", [])
+
+
+func on_species_book(state: Dictionary) -> void:
+	species_book = state
+	species_changed.emit()
 
 
 func on_book(state: Dictionary) -> void:
