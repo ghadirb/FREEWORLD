@@ -69,3 +69,70 @@ static func build_weight(arch: String, type: String) -> float:
 static func pick_name(arch: String, npc_id: int) -> String:
 	var names: Array = ARCHETYPES[arch]["names"]
 	return str(names[npc_id % names.size()])
+
+
+# ---------------- سازندهٔ شخصیت (مرحلهٔ ۶) ----------------
+
+const LIFE_GOALS := ["expand", "best_city", "secrecy", "wealth", "dominion"]
+const STYLES := ["balanced", "economic", "military"]
+const RELATIONS := ["ally", "friend", "neutral", "rival", "enemy"]
+const NAME_MAX := 16
+
+## سبک: وزن علاقه به ساختمان‌ها را نسبت به تیپ پایه عوض می‌کند (اقتصادی: مغازه و مزرعه؛ نظامی: خانه و چاه).
+const STYLE_BUILD := {
+	"economic": {"shop": 1.0, "farm": 0.95, "coop": 0.8, "house": 0.8, "well": 0.4},
+	"military": {"house": 0.95, "well": 0.7, "farm": 0.6, "coop": 0.4, "shop": 0.2},
+}
+
+
+## مشخصات ورودی (از کلاینت یا ذخیره) را به شکل مجاز و کامل درمی‌آورد. هر مقدار نامعتبر به پیش‌فرض برمی‌گردد.
+static func clean_spec(raw: Variant) -> Dictionary:
+	var d: Dictionary = raw if raw is Dictionary else {}
+	var arch := str(d.get("arch", "rival"))
+	if not valid(arch):
+		arch = "rival"
+	var nm := ""
+	for ch in str(d.get("name", "")).substr(0, NAME_MAX):
+		if ch.unicode_at(0) >= 32:
+			nm += ch
+	nm = nm.strip_edges()
+	var base: Dictionary = ARCHETYPES[arch]["traits"]
+	var traits := {}
+	var rt: Variant = d.get("traits", null)
+	for k in TRAIT_KEYS:
+		var v: float = float(base[k])
+		if rt is Dictionary and rt.has(k) and (rt[k] is float or rt[k] is int):
+			v = clampf(float(rt[k]), 0.0, 1.0)
+		traits[k] = snappedf(v, 0.01)
+	var life := str(d.get("life", ARCHETYPES[arch]["life"]))
+	if not LIFE_GOALS.has(life):
+		life = str(ARCHETYPES[arch]["life"])
+	var style := str(d.get("style", "balanced"))
+	if not STYLES.has(style):
+		style = "balanced"
+	var rel := str(d.get("rel", "neutral"))
+	if not RELATIONS.has(rel):
+		rel = "neutral"
+	return {"name": nm, "arch": arch, "traits": traits, "life": life, "style": style, "rel": rel}
+
+
+## ویژگی‌های پایهٔ واقعی (برای حد یادگیری): شخصیت سفارشی همان مقدارهای انتخاب‌شدهٔ سازنده را دارد.
+static func base_of(ai: Dictionary, npc_id: int) -> Dictionary:
+	var b: Variant = ai.get("base", null)
+	if b is Dictionary and not (b as Dictionary).is_empty():
+		return b
+	return traits_for(str(ai["arch"]), npc_id)
+
+
+## وزن ساخت با درنظرگرفتن سبک سفارشی.
+static func weight_of(ai: Dictionary, type: String) -> float:
+	var bw: Variant = ai.get("bw", null)
+	if bw is Dictionary and (bw as Dictionary).has(type):
+		return float(bw[type])
+	return build_weight(str(ai["arch"]), type)
+
+
+static func style_weights(arch: String, style: String) -> Dictionary:
+	if STYLE_BUILD.has(style):
+		return (STYLE_BUILD[style] as Dictionary).duplicate()
+	return {}

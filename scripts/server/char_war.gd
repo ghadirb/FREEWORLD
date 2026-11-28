@@ -360,7 +360,7 @@ static func make_peace(cs, a: Dictionary, b: Dictionary) -> void:
 
 static func _base(npc: Dictionary) -> Dictionary:
 	var Personality = load("res://scripts/server/char_personality.gd")
-	return Personality.traits_for(str(_ai(npc)["arch"]), int(npc["id"]))
+	return Personality.base_of(_ai(npc), int(npc["id"]))
 
 
 static func _clear_war_plan(npc: Dictionary) -> void:

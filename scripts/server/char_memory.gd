@@ -100,6 +100,27 @@ static func price_factor(ai: Dictionary, who: String, day: int) -> float:
 	return clampf(1.0 + s * weight, 0.7, 1.3)
 
 
+## رابطهٔ اولیهٔ تعیین‌شده توسط سازندهٔ شخصیت (مرحلهٔ ۶). فقط روی طرفی که هنوز در حافظه نیست اثر می‌گذارد.
+static func set_initial(ai: Dictionary, who: String, stance_name: String, day: int) -> void:
+	if who == "" or stance_name == "neutral" or (ai["mem"]["rel"] as Dictionary).has(who):
+		return
+	var r: Dictionary = _rel(ai, who, day)
+	match stance_name:
+		"ally":
+			r["friend"] = 0.7
+			r["trust"] = 0.6
+			r["respect"] = 0.3
+		"friend":
+			r["friend"] = 0.45
+			r["trust"] = 0.3
+		"rival":
+			r["enemy"] = 0.4
+			r["respect"] = 0.2
+		"enemy":
+			r["enemy"] = 0.8
+			r["fear"] = 0.1
+
+
 ## ثبت یک رویداد. strength بین ۰ و ۱. بازگشت: ساختار خلاصهٔ اثر برای تست و گزارش.
 static func record(ai: Dictionary, kind: String, who: String, strength: float, day: int) -> Dictionary:
 	if not (ai.get("mem", null) is Dictionary) or who == "" or not (kind in KINDS):

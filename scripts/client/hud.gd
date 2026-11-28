@@ -72,6 +72,18 @@ var _color_btns: Array = []
 var _inv_panel: PanelContainer
 var _inv_rows: Dictionary = {}
 var _god_panel: PanelContainer
+# سازندهٔ شخصیت (پروتکل ۵۵)
+const CharPersonality = preload("res://scripts/server/char_personality.gd")
+var _ai_panel: PanelContainer
+var _ai_name: LineEdit
+var _ai_sliders: Dictionary = {}
+var _ai_pick: Dictionary = {"arch": "rival", "life": "best_city", "style": "balanced", "rel": "neutral"}
+var _ai_pick_btns: Dictionary = {}
+var _ai_tpl_box: VBoxContainer
+var _ai_templates: Array = []
+var _ai_edit_id: int = -1
+var _ai_go: Button
+var _ai_edit_btn: Button
 var _civ_panel: PanelContainer
 var _civ_list: VBoxContainer
 var _god_btn: Button
@@ -190,6 +202,7 @@ func setup(game_client, game_view) -> void:
 	_build_arena_panel()
 	_build_god_panel()
 	_build_civ_panel()
+	_build_ai_creator_panel()
 	_build_minigame()
 	_build_race()
 	_build_leave_button()
@@ -197,7 +210,7 @@ func setup(game_client, game_view) -> void:
 	_build_chat()
 	_build_admin_panel()
 	_build_menu_panel()
-	for dp in [_palette, _tools_panel, _inv_panel, _offer_panel, _npc_panel, _furn_panel, _bp_panel, _book_panel, _arena_panel, _god_panel, _civ_panel, _mg_panel, _race_panel, _admin_panel, _menu_panel]:
+	for dp in [_palette, _tools_panel, _inv_panel, _offer_panel, _npc_panel, _furn_panel, _bp_panel, _book_panel, _arena_panel, _god_panel, _civ_panel, _ai_panel, _mg_panel, _race_panel, _admin_panel, _menu_panel]:
 		_dock(dp)
 	view.is_over_ui = Callable(self, "is_over_ui")
 	view.building_tapped.connect(_on_building_tapped)
@@ -970,6 +983,149 @@ func _build_god_panel() -> void:
 		ab.add_theme_font_size_override("font_size", 20)
 		ab.pressed.connect(func(): client.ai_spawn(arch))
 		arow.add_child(ab)
+	var ai_open := UiTheme.button(Loc.t("ai_creator_open"), Vector2(0, 60))
+	ai_open.pressed.connect(func(): _open_ai_creator(-1))
+	v.add_child(ai_open)
+
+
+# ---------------- سازندهٔ شخصیت (پروتکل ۵۵) ----------------
+func _build_ai_creator_panel() -> void:
+	_ai_panel = _panel(0.5, 1.0)
+	_ai_panel.visible = false
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 8)
+	_ai_panel.add_child(v)
+	v.add_child(_label(Loc.t("ai_creator_title"), 26, Color("ffd36a")))
+	var hint := _label(Loc.t("ai_creator_hint"), 17, Color("d6e4ff"))
+	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	hint.custom_minimum_size = Vector2(540, 0)
+	v.add_child(hint)
+	_ai_name = LineEdit.new()
+	_ai_name.placeholder_text = Loc.t("ai_name_hint")
+	_ai_name.max_length = CharPersonality.NAME_MAX
+	_ai_name.custom_minimum_size = Vector2(0, 56)
+	v.add_child(_ai_name)
+	# انتخاب‌های گزینه‌ای: با هر لمس گزینهٔ بعدی
+	for kind in ["arch", "life", "style", "rel"]:
+		var b := UiTheme.button("", Vector2(0, 52))
+		b.add_theme_font_size_override("font_size", 19)
+		b.pressed.connect(func(): _ai_cycle(kind))
+		v.add_child(b)
+		_ai_pick_btns[kind] = b
+	for k in CharPersonality.TRAIT_KEYS:
+		var lab := _label("", 18, Color("e6eefc"))
+		v.add_child(lab)
+		var sl := HSlider.new()
+		sl.min_value = 0.0
+		sl.max_value = 100.0
+		sl.step = 5.0
+		sl.custom_minimum_size = Vector2(0, 40)
+		sl.value_changed.connect(func(_x): _ai_refresh_labels())
+		v.add_child(sl)
+		_ai_sliders[k] = {"slider": sl, "label": lab}
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	v.add_child(row)
+	_ai_go = UiTheme.button(Loc.t("ai_create_go"), Vector2(0, 60))
+	_ai_go.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_ai_go.pressed.connect(_ai_submit)
+	row.add_child(_ai_go)
+	var save := UiTheme.button(Loc.t("ai_tpl_save"), Vector2(0, 60))
+	save.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	save.pressed.connect(func(): client.ai_creator("save", _ai_spec()))
+	row.add_child(save)
+	v.add_child(_label(Loc.t("ai_tpl_title"), 20, Color("d6e4ff")))
+	_ai_tpl_box = VBoxContainer.new()
+	_ai_tpl_box.add_theme_constant_override("separation", 6)
+	v.add_child(_ai_tpl_box)
+	var close := UiTheme.button(Loc.t("civ_close"), Vector2(0, 56))
+	close.pressed.connect(func(): _ai_panel.visible = false)
+	v.add_child(close)
+	_ai_set_arch("rival")
+
+
+func _open_ai_creator(edit_id: int) -> void:
+	Sfx.play(self, "click")
+	_ai_edit_id = edit_id
+	_npc_panel.visible = false
+	_god_panel.visible = false
+	if edit_id >= 0:
+		var tag := ""
+		for n in client.npcs:
+			if int(n[0]) == edit_id and n.size() > 6:
+				tag = str(n[6])
+		if tag.begins_with("c:") and CharPersonality.valid(tag.substr(2)):
+			_ai_set_arch(tag.substr(2))
+	_ai_go.text = Loc.t("ai_edit_go") if edit_id >= 0 else Loc.t("ai_create_go")
+	_ai_panel.visible = true
+	client.ai_creator("list")
+
+
+func _ai_set_arch(arch: String) -> void:
+	_ai_pick["arch"] = arch
+	_ai_pick["life"] = str(CharPersonality.ARCHETYPES[arch]["life"])
+	var tr: Dictionary = CharPersonality.ARCHETYPES[arch]["traits"]
+	for k in CharPersonality.TRAIT_KEYS:
+		(_ai_sliders[k]["slider"] as HSlider).set_value_no_signal(round(float(tr[k]) * 20.0) * 5.0)
+	_ai_refresh_labels()
+
+
+func _ai_cycle(kind: String) -> void:
+	Sfx.play(self, "click")
+	var opts: Array = {"arch": CharPersonality.ORDER, "life": CharPersonality.LIFE_GOALS, "style": CharPersonality.STYLES, "rel": CharPersonality.RELATIONS}[kind]
+	var i: int = opts.find(str(_ai_pick[kind]))
+	var nxt: String = str(opts[(i + 1) % opts.size()])
+	if kind == "arch":
+		if _ai_edit_id >= 0:
+			return   # نقش شخصیت موجود عوض نمی‌شود
+		_ai_set_arch(nxt)
+	else:
+		_ai_pick[kind] = nxt
+		_ai_refresh_labels()
+
+
+func _ai_refresh_labels() -> void:
+	for kind in _ai_pick_btns:
+		(_ai_pick_btns[kind] as Button).text = "%s: %s" % [Loc.t("ai_pick_" + kind), Loc.t("ai_%s_%s" % [kind, str(_ai_pick[kind])])]
+	for k in _ai_sliders:
+		var sl: HSlider = _ai_sliders[k]["slider"]
+		(_ai_sliders[k]["label"] as Label).text = "%s: %s%%" % [Loc.t("ai_t_" + str(k)), Loc.digits(str(int(sl.value)))]
+
+
+func _ai_spec() -> Dictionary:
+	var traits := {}
+	for k in CharPersonality.TRAIT_KEYS:
+		traits[k] = float((_ai_sliders[k]["slider"] as HSlider).value) / 100.0
+	return {"name": _ai_name.text, "arch": _ai_pick["arch"], "life": _ai_pick["life"], "style": _ai_pick["style"],
+		"rel": _ai_pick["rel"], "traits": traits}
+
+
+func _ai_submit() -> void:
+	var spec := _ai_spec()
+	if _ai_edit_id >= 0:
+		spec["npc_id"] = _ai_edit_id
+		client.ai_creator("edit", spec)
+	else:
+		client.ai_creator("create", spec)
+
+
+func _ai_refresh_templates() -> void:
+	if _ai_tpl_box == null:
+		return
+	for c in _ai_tpl_box.get_children():
+		c.queue_free()
+	for i in _ai_templates.size():
+		var t: Dictionary = _ai_templates[i]
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 6)
+		var use := UiTheme.button("%s (%s)" % [str(t.get("name", "")), Loc.t("ai_arch_" + str(t.get("arch", "rival")))], Vector2(0, 52))
+		use.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		use.pressed.connect(func(): client.ai_creator("spawn", {"idx": i}))
+		var del := UiTheme.button("✕", Vector2(64, 52))
+		del.pressed.connect(func(): client.ai_creator("delete", {"idx": i}))
+		row.add_child(use)
+		row.add_child(del)
+		_ai_tpl_box.add_child(row)
 
 
 # ---------------- تمدن‌ها و دیپلماسی (پروتکل ۴۵) ----------------
@@ -1347,6 +1503,10 @@ func _build_npc_panel() -> void:
 		fb.pressed.connect(func(): client.npc_family(_npc_id, op))
 		frow.add_child(fb)
 		_fam_btns[op] = fb
+	_ai_edit_btn = UiTheme.button(Loc.t("ai_edit_open"), Vector2(0, 56))
+	_ai_edit_btn.visible = false
+	_ai_edit_btn.pressed.connect(func(): _open_ai_creator(_npc_id))
+	v.add_child(_ai_edit_btn)
 	var brow := HBoxContainer.new()
 	brow.add_theme_constant_override("separation", 8)
 	v.add_child(brow)
@@ -1493,6 +1653,8 @@ func _fill_family() -> void:
 	(_fam_btns["fire"] as Button).disabled = not (kind == "h" and mine)
 	(_fam_btns["marry"] as Button).disabled = kind in ["k", "s", "h", "c"]
 	(_fam_btns["divorce"] as Button).disabled = not (kind == "s" and mine)
+	if _ai_edit_btn != null:
+		_ai_edit_btn.visible = kind == "c" and FWConst.is_admin(client.role)
 
 
 ## مأموریت جاری این NPC: متن مرحله، پاداش و شرط دوستی؛ دکمه فقط وقتی فعال است که کالا و سطح دوستی کافی باشد.
@@ -2319,6 +2481,16 @@ func _on_notice(code: String, args: Dictionary) -> void:
 		"ai_spawned":
 			Sfx.play(self, "notify")
 			toast(Loc.fmt("msg_ai_spawned", [args.get("name", ""), Loc.t("ai_arch_" + str(args.get("arch", "")))]), Color("c8f08a"))
+		"ai_templates":
+			var tl: Variant = args.get("list", [])
+			_ai_templates = tl if tl is Array else []
+			_ai_refresh_templates()
+		"ai_tpl_saved":
+			Sfx.play(self, "notify")
+			toast(Loc.fmt("msg_ai_tpl_saved", [str(args.get("name", ""))]), Color("c8f08a"))
+		"ai_edited":
+			Sfx.play(self, "notify")
+			toast(Loc.fmt("msg_ai_edited", [str(args.get("name", ""))]), Color("c8f08a"))
 		"ai_social":
 			Sfx.play(self, "notify")
 			toast(Loc.fmt("msg_ai_" + str(args.get("kind", "alliance")), [str(args.get("a", "")), str(args.get("b", ""))]), Color("e8c87a"))
@@ -2561,6 +2733,8 @@ func _refresh_role() -> void:
 	_god_btn.visible = FWConst.is_admin(client.role) and view.mode == "world"
 	if not _god_btn.visible and _civ_panel.visible:
 		_civ_panel.visible = false
+	if not _god_btn.visible and _ai_panel.visible:
+		_ai_panel.visible = false
 	if not _god_btn.visible and _god_panel.visible:
 		_toggle_god()
 

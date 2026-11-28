@@ -108,6 +108,7 @@ func _init() -> void:
 	test_character_memory()
 	test_character_social()
 	test_character_war()
+	test_character_creator()
 	test_character_fortify()
 	test_character_discovery()
 	test_cave()
@@ -6264,3 +6265,146 @@ func Personality_valid(arch: String) -> bool:
 func Mem_has_peace(n: Dictionary) -> bool:
 	return int(n["ai"]["mem"]["tally"].get("peace", 0)) > 0
 
+
+
+func test_character_creator() -> void:
+	print("-- autonomous characters: stage 6 character creator")
+	var CharAI = load("res://scripts/server/char_ai.gd")
+	var Creator = load("res://scripts/server/char_creator.gd")
+	var Pers = load("res://scripts/server/char_personality.gd")
+	var Mem = load("res://scripts/server/char_memory.gd")
+	var NpcSim = load("res://scripts/server/npc_sim.gd")
+	# --- پاک‌سازی مشخصات ---
+	var junk: Dictionary = Pers.clean_spec({"name": "  \u0001Ali\u0002 the very long named hero  ", "arch": "bogus", "life": "x", "style": "y", "rel": "z",
+		"traits": {"bravery": 7.5, "caution": -3, "trust": "abc", "unknown": 1}})
+	check(str(junk["arch"]) == "rival" and str(junk["style"]) == "balanced" and str(junk["rel"]) == "neutral", "invalid role, style and relation fall back to safe defaults")
+	check(str(junk["name"]).length() <= Pers.NAME_MAX and not str(junk["name"]).contains("\u0001"), "the name is trimmed and stripped of control characters")
+	check(float(junk["traits"]["bravery"]) == 1.0 and float(junk["traits"]["caution"]) == 0.0, "trait values are clamped between 0 and 1")
+	check(float(junk["traits"]["trust"]) == float(Pers.ARCHETYPES["rival"]["traits"]["trust"]), "a non-numeric trait keeps the role default")
+	check(Pers.clean_spec(null)["traits"].size() == Pers.TRAIT_KEYS.size(), "a missing spec still yields a complete character")
+	# --- ساخت ---
+	var cs = CityState.new(9191)
+	NpcSim.ensure_npcs(cs)
+	cs.provision_admin("boss", "secret")
+	cs.ai_settings["max"] = 12
+	_login(cs, "plain")
+	var spec := {"name": "Dara", "arch": "trader", "life": "dominion", "style": "military", "rel": "enemy",
+		"traits": {"bravery": 0.9, "caution": 0.1, "ambition": 0.9, "trust": 0.2, "aggression": 0.9, "cooperation": 0.2, "selfishness": 0.8, "risk": 0.9}}
+	var r: Dictionary = Creator.create(cs, spec, "boss")
+	check(bool(r["ok"]) and str(r["npc"]["name"]) == "Dara", "a custom character is created with the chosen name")
+	var n: Dictionary = r["npc"]
+	check(bool(n["ai"]["custom"]) and str(n["ai"]["life"]) == "dominion" and float(n["ai"]["traits"]["aggression"]) == 0.9, "chosen traits and life goal are applied")
+	check(Pers.weight_of(n["ai"], "house") > Pers.weight_of(n["ai"], "shop"), "the military style changes building interest (house over shop for a trader)")
+	check(Mem.stance(n["ai"], "boss", cs.day_count) == "enemy", "the chosen initial relation to the creator is an enemy")
+	var plain: Dictionary = CharAI.spawn(cs, "trader")["npc"]
+	check(Pers.weight_of(plain["ai"], "shop") == Pers.build_weight("trader", "shop"), "an ordinary character is unaffected by the creator")
+	check(Mem.stance(n["ai"], "someone_else", cs.day_count) == "neutral", "the relation applies only to the creator")
+	for rel in ["ally", "friend", "neutral", "rival", "enemy"]:
+		var tmp: Dictionary = Creator.create(cs, {"arch": "mystery", "rel": rel}, "boss")["npc"]
+		var st: String = Mem.stance(tmp["ai"], "boss", cs.day_count)
+		var want: String = {"ally": "ally", "friend": "friend", "neutral": "neutral", "rival": "wary", "enemy": "enemy"}[rel]
+		check(st == want, "initial relation %s gives stance %s (got %s)" % [rel, want, st])
+	# --- رفتار واقعاً از ویژگی‌ها می‌آید ---
+	var pair: Array = []
+	for aggr in [0.05, 0.95]:
+		var c2 = CityState.new(4040)
+		NpcSim.ensure_npcs(c2)
+		c2.ai_settings["max"] = 12
+		var sp := {"arch": "rival", "traits": {"aggression": aggr, "bravery": aggr, "caution": 1.0 - aggr, "ambition": 0.8}}
+		var nn: Dictionary = Creator.create(c2, sp, "boss")["npc"]
+		_ai_run(c2, 120)
+		pair.append({"owned": _ai_owned(c2, str(nn["acct"])).size(), "thoughts": int(nn["ai"]["stats"]["thoughts"]), "tr": nn["ai"]["traits"]})
+	check(int(pair[0]["thoughts"]) > 0 and int(pair[1]["thoughts"]) > 0, "custom characters make independent decisions")
+	check(float(pair[0]["tr"]["aggression"]) < 0.5 and float(pair[1]["tr"]["aggression"]) > 0.5, "the two custom characters keep very different personalities")
+	# --- حد یادگیری از ویژگی‌های انتخابی ---
+	var learner: Dictionary = Creator.create(cs, {"arch": "rival", "traits": {"caution": 0.5, "risk": 0.5, "bravery": 0.5}}, "boss")["npc"]
+	for i in 100:
+		Mem.learn(learner["ai"], false, Pers.base_of(learner["ai"], int(learner["id"])))
+	check(float(learner["ai"]["traits"]["caution"]) <= 0.75 + 0.001 and float(learner["ai"]["traits"]["risk"]) >= 0.25 - 0.001, "learning stays within 0.25 of the CHOSEN traits")
+	# --- ویرایش ---
+	Mem.record(n["ai"], "gift", "boss", 1.0, cs.day_count)
+	var mem_before: int = (n["ai"]["mem"]["rel"] as Dictionary).size()
+	var money_before: int = int(cs.accounts[str(n["acct"])]["money"])
+	var e: Dictionary = Creator.edit(cs, int(n["id"]), {"name": "Dara2", "arch": "warlord", "traits": {"aggression": 0.1}, "life": "wealth", "style": "economic"})
+	check(bool(e["ok"]) and str(n["name"]) == "Dara2" and float(n["ai"]["traits"]["aggression"]) == 0.1, "an existing character can be edited")
+	check(str(n["ai"]["arch"]) == "trader", "editing never changes the base role")
+	check((n["ai"]["mem"]["rel"] as Dictionary).size() == mem_before and int(cs.accounts[str(n["acct"])]["money"]) == money_before, "editing keeps memory and assets")
+	check(Pers.weight_of(n["ai"], "shop") > Pers.weight_of(n["ai"], "house"), "the edited economic style changes building interest")
+	check(not bool(Creator.edit(cs, 99999, {})["ok"]), "editing an unknown character is rejected")
+	var human_id := -1
+	for hn in cs.npcs:
+		if not CharAI.is_ai(hn):
+			human_id = int(hn["id"])
+			break
+	check(not bool(Creator.edit(cs, human_id, {"name": "Hacked"})["ok"]), "an ordinary NPC cannot be edited as a character")
+	# --- قالب‌ها ---
+	var t1: Dictionary = Creator.save_template(cs, spec)
+	check(bool(t1["ok"]) and cs.ai_templates.size() == 1, "a template is saved")
+	for i in 20:
+		Creator.save_template(cs, {"arch": "mystery"})
+	check(cs.ai_templates.size() == Creator.TEMPLATES_MAX, "the template list is capped")
+	check(str(Creator.save_template(cs, spec)["error"]) == "ai_tpl_full", "a full template list is refused")
+	var cnt: int = CharAI.count(cs)
+	var sp2: Dictionary = Creator.spawn_template(cs, 0, "boss")
+	check(bool(sp2["ok"]) and CharAI.count(cs) == cnt + 1 and str(sp2["npc"]["name"]) == "Dara", "a saved template spawns a character")
+	check(not bool(Creator.spawn_template(cs, 99, "boss")["ok"]) and not bool(Creator.delete_template(cs, -1)["ok"]), "bad template index is rejected")
+	check(bool(Creator.delete_template(cs, 1)["ok"]) and cs.ai_templates.size() == Creator.TEMPLATES_MAX - 1, "a template can be deleted")
+	# --- سقف‌ها همچنان برقرارند ---
+	cs.ai_settings["max"] = CharAI.count(cs)
+	check(str(Creator.create(cs, spec, "boss")["error"]) == "ai_full", "the character limit applies to custom characters too")
+	cs.ai_settings["on"] = false
+	check(str(Creator.create(cs, spec, "boss")["error"]) == "ai_off", "custom characters are refused when autonomy is off")
+	cs.ai_settings["on"] = true
+	cs.ai_settings["max"] = 12
+	# --- ذخیره و بارگذاری ---
+	cs.day_count += 1
+	var back = CityState.from_dict(cs.to_dict())
+	var bn: Dictionary = CharAI.find(back, int(n["id"]))
+	check(not bn.is_empty() and bool(bn["ai"]["custom"]) and str(bn["ai"]["life"]) == "wealth", "a custom character survives save and load")
+	check(float(bn["ai"]["traits"]["aggression"]) == 0.1 and float(bn["ai"]["base"]["aggression"]) == 0.1, "its chosen traits and base survive save and load")
+	check(Pers.weight_of(bn["ai"], "shop") == Pers.weight_of(n["ai"], "shop"), "its style survives save and load")
+	check(Mem.remembers(bn["ai"], "boss", "gift"), "its memory survives save and load")
+	check(back.ai_templates.size() == cs.ai_templates.size() and str(back.ai_templates[0]["name"]) == "Dara", "templates survive save and load")
+	var dirty: Dictionary = cs.to_dict()
+	dirty["ai_templates"] = [{"arch": "zzz", "traits": {"bravery": 99}}, "junk", 5, {"name": "X", "arch": "warlord"}]
+	for npc_raw in dirty["npcs"]:
+		if npc_raw.get("ai", null) is Dictionary and bool(npc_raw["ai"].get("custom", false)):
+			npc_raw["ai"]["bw"] = {"shop": 99.0, "bogus": 1.0}
+			npc_raw["ai"]["life"] = "evil"
+			npc_raw["ai"]["base"] = "garbage"
+			break
+	var clean = CityState.from_dict(dirty)
+	check(clean.ai_templates.size() == 2 and float(clean.ai_templates[0]["traits"]["bravery"]) <= 1.0, "corrupted templates are sanitized on load")
+	var worst := 0.0
+	for cn in clean.npcs:
+		if cn.get("ai", null) is Dictionary and bool(cn["ai"]["custom"]):
+			worst = maxf(worst, float((cn["ai"]["bw"] as Dictionary).get("shop", 0.0)))
+			check(Pers.LIFE_GOALS.has(str(cn["ai"]["life"])) and not (cn["ai"]["bogus"] if cn["ai"].has("bogus") else false), "a corrupted life goal falls back to a valid one")
+	check(worst <= 1.2, "corrupted style weights are clamped on load")
+	var old: Dictionary = cs.to_dict()
+	old.erase("ai_templates")
+	check(CityState.from_dict(old).ai_templates.is_empty(), "older saves without templates still load")
+	# --- متن‌ها ---
+	var texts_ok := true
+	for lang in ["fa", "en"]:
+		Loc.lang = lang
+		var keys: Array = ["ai_creator_open", "ai_creator_title", "ai_creator_hint", "ai_name_hint", "ai_create_go", "ai_edit_go", "ai_edit_open", "ai_tpl_save",
+			"ai_tpl_title", "msg_ai_tpl_saved", "msg_ai_edited", "err_ai_tpl_full"]
+		for k in Pers.TRAIT_KEYS:
+			keys.append("ai_t_" + k)
+		for k in Pers.LIFE_GOALS:
+			keys.append("ai_life_" + k)
+		for k in Pers.STYLES:
+			keys.append("ai_style_" + k)
+		for k in Pers.RELATIONS:
+			keys.append("ai_rel_" + k)
+		for k in ["arch", "life", "style", "rel"]:
+			keys.append("ai_pick_" + k)
+		for k in keys:
+			if Loc.t(k) == k:
+				texts_ok = false
+				print("   missing text: ", lang, " ", k)
+	Loc.lang = "fa"
+	check(texts_ok, "creator texts exist in Persian and English")
+	check(FWConst.PROTOCOL_VERSION >= 55, "protocol bumped for the character creator message")
+	check(load("res://scripts/server/game_server.gd").LOCAL_METHODS.has("c2s_ai_creator"), "the creator message is allowed in the offline local server")

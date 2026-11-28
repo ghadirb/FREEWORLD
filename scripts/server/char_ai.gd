@@ -86,6 +86,7 @@ static func _fresh_ai(arch: String, nid: int) -> Dictionary:
 	return {
 		"arch": arch, "traits": Personality.traits_for(arch, nid),
 		"life": str(Personality.ARCHETYPES[arch]["life"]),
+		"custom": false, "base": {}, "bw": {},
 		"goals": [], "plan": [], "active": {}, "t": 0.0, "w": 0.0,
 		"fails": {}, "bad": {}, "log": [], "seen": {}, "disc": "",
 		"mem": Memory.fresh(), "war": War.fresh(), "learned": 0, "allies": {}, "meet": {}, "bought": {},
@@ -109,6 +110,17 @@ static func load_ai(raw: Variant, nid: int) -> Variant:
 	var arch := str(raw["arch"])
 	var ai := _fresh_ai(arch, nid)
 	ai["traits"] = Personality.clean_traits(raw.get("traits", null), arch, nid)
+	if bool(raw.get("custom", false)):
+		# شخصیت سفارشی: ویژگی‌های پایه، هدف زندگی و وزن ساخت انتخاب‌شده با ذخیره می‌آید و پاک‌سازی می‌شود.
+		ai["custom"] = true
+		ai["base"] = Personality.clean_traits(raw.get("base", null), arch, nid)
+		if Personality.LIFE_GOALS.has(str(raw.get("life", ""))):
+			ai["life"] = str(raw["life"])
+		var rbw: Variant = raw.get("bw", {})
+		if rbw is Dictionary:
+			for bt in BUILD_TYPES:
+				if rbw.has(bt):
+					ai["bw"][bt] = clampf(float(rbw[bt]), 0.0, 1.2)
 	var goals: Array = []
 	var rg: Variant = raw.get("goals", [])
 	if rg is Array:
@@ -271,7 +283,7 @@ static func rank_goals(cs, npc: Dictionary) -> Array:
 	var goals: Array = []
 	for type in BUILD_TYPES:
 		var c: int = int(owned.get(type, 0))
-		var w: float = Personality.build_weight(arch, type)
+		var w: float = Personality.weight_of(ai, type)
 		if w <= 0.0 or c >= (MAX_PER_TYPE if MULTI_OK.has(type) else 1):
 			continue
 		var prio: float = w * pow(0.55, float(c)) * (0.7 + 0.3 * float(t["ambition"]))
@@ -484,7 +496,7 @@ static func _fail_step(cs, npc: Dictionary, st: Dictionary, err: String) -> void
 		var k := _fail_key(g)
 		ai["fails"][k] = int(ai["fails"].get(k, 0)) + 1
 	_log(ai, "fail:%s:%s" % [st["t"], err], cs)
-	Memory.learn(ai, false, Personality.traits_for(str(ai["arch"]), int(npc["id"])))
+	Memory.learn(ai, false, Personality.base_of(ai, int(npc["id"])))
 	ai["plan"] = []
 	ai["w"] = 0.0
 
@@ -586,7 +598,7 @@ static func _exec(cs, npc: Dictionary, dt: float, advance: Callable) -> void:
 				ai["fails"].erase("build:" + str(st["type"]))
 				cs.ai_events.append({"kind": "built", "id": int(res2["building"]["id"])})
 				_log(ai, "built:" + str(st["type"]), cs)
-				Memory.learn(ai, true, Personality.traits_for(str(ai["arch"]), int(npc["id"])))
+				Memory.learn(ai, true, Personality.base_of(ai, int(npc["id"])))
 				plan.pop_front()
 			else:
 				_fail_step(cs, npc, st, str(res2["error"]))

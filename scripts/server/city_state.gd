@@ -21,6 +21,7 @@ const Story = preload("res://scripts/shared/story.gd")
 const Family = preload("res://scripts/server/family.gd")
 const Attractions = preload("res://scripts/server/attractions.gd")
 const CharAI = preload("res://scripts/server/char_ai.gd")
+const CharCreator = preload("res://scripts/server/char_creator.gd")
 const Book = preload("res://scripts/server/book.gd")
 
 const SAVE_VERSION := 1
@@ -71,6 +72,7 @@ var market: Dictionary = {"wheat": 0.0, "flour": 0.0, "bread": 0.0, "egg": 0.0, 
 ## قیمت کالاهای دامی (تخم‌مرغ و شیر).
 var prices: Dictionary = {"egg": 6.0, "milk": 14.0, "flour": 16.0, "bread": 20.0, "cheese": 34.0}
 var npcs: Array = []
+var ai_templates: Array = []   # قالب‌های سازندهٔ شخصیت (پروتکل ۵۵)
 var ai_settings: Dictionary = {"on": true, "max": FWConst.AI_MAX_DEFAULT, "level": "balanced", "build": true, "war": true}
 var ai_events: Array = []       # {kind: built, id}؛ سرور بعد از هر گام به همه اعلام می‌کند
 var social_t: float = 0.0
@@ -2841,6 +2843,7 @@ func to_dict() -> Dictionary:
 		"audit": audit,
 		"npcs": npcs,
 		"ai_settings": ai_settings,
+		"ai_templates": ai_templates,
 		"blocks": _blocks_to_list(),
 		"depleted": depleted,
 		"mine_depleted": mine_depleted,
@@ -3093,6 +3096,7 @@ static func from_dict(d: Dictionary):
 			if ai_loaded != null and str(n.get("acct", "")) != "":
 				cs.npcs[cs.npcs.size() - 1]["ai"] = ai_loaded
 				cs.npcs[cs.npcs.size() - 1]["acct"] = str(n["acct"])
+	cs.ai_templates = CharCreator.load_templates(d.get("ai_templates", null))
 	var ais: Variant = d.get("ai_settings", null)
 	if ais is Dictionary:
 		cs.ai_settings["on"] = bool(ais.get("on", true))

@@ -655,6 +655,11 @@ func ai_spawn(arch: String) -> void:
 		_tx("c2s_ai_spawn", [arch])
 
 
+func ai_creator(op: String, spec: Dictionary = {}) -> void:
+	if is_logged_in:
+		_tx("c2s_ai_creator", [op, spec])
+
+
 func ride_upgrade(building_id: int) -> void:
 	if is_logged_in:
 		_tx("c2s_ride_upgrade", [building_id])

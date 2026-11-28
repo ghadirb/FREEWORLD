@@ -243,6 +243,12 @@ func c2s_ai_spawn(arch: String) -> void:
 
 
 @rpc("any_peer", "call_remote", "reliable")
+func c2s_ai_creator(op: String, spec: Dictionary) -> void:
+	if server:
+		server.on_ai_creator(multiplayer.get_remote_sender_id(), op, spec)
+
+
+@rpc("any_peer", "call_remote", "reliable")
 func c2s_ride_upgrade(building_id: int) -> void:
 	if server:
 		server.on_ride_upgrade(multiplayer.get_remote_sender_id(), building_id)
