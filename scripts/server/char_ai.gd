@@ -11,6 +11,7 @@ const FWConst = preload("res://scripts/core/const.gd")
 const NpcNav = preload("res://scripts/server/npc_nav.gd")
 const Personality = preload("res://scripts/server/char_personality.gd")
 const Memory = preload("res://scripts/server/char_memory.gd")
+const Social = preload("res://scripts/server/char_social.gd")
 const Placement = preload("res://scripts/shared/placement.gd")
 
 const BUILD_TYPES := ["house", "farm", "coop", "shop", "well"]
@@ -81,8 +82,8 @@ static func _fresh_ai(arch: String, nid: int) -> Dictionary:
 		"life": str(Personality.ARCHETYPES[arch]["life"]),
 		"goals": [], "plan": [], "active": {}, "t": 0.0, "w": 0.0,
 		"fails": {}, "bad": {}, "log": [],
-		"mem": Memory.fresh(), "learned": 0,
-		"stats": {"gathered": 0, "sold": 0, "built": 0, "failed": 0, "thoughts": 0},
+		"mem": Memory.fresh(), "learned": 0, "allies": {}, "meet": {}, "bought": {},
+		"stats": {"gathered": 0, "sold": 0, "built": 0, "failed": 0, "thoughts": 0, "met": 0, "traded": 0, "allied": 0, "betrayed": 0},
 	}
 
 
@@ -111,6 +112,11 @@ static func load_ai(raw: Variant, nid: int) -> Variant:
 	ai["goals"] = goals.slice(0, 6)
 	ai["mem"] = Memory.load_mem(raw.get("mem", null), ai)
 	ai["learned"] = clampi(int(raw.get("learned", 0)), 0, 1000000)
+	var ra: Variant = raw.get("allies", {})
+	if ra is Dictionary:
+		for k in ra:
+			if str(k).begins_with("ai:") and ai["allies"].size() < Social.ALLY_MAX:
+				ai["allies"][str(k)] = maxi(0, int(ra[k]))
 	var rf: Variant = raw.get("fails", {})
 	if rf is Dictionary:
 		for k in rf:
@@ -421,10 +427,19 @@ static func _exec(cs, npc: Dictionary, dt: float, advance: Callable) -> void:
 			var inv: Dictionary = cs.accounts[acct]["inv"]
 			for item in inv.keys():
 				var n: int = int(inv[item])
+				# اول به همتایی که می‌خرد (تجارت بین شخصیت‌ها)؛ کالای خریداری‌شده از همتا به بازار می‌رود
+				var own: int = n - int(ai["bought"].get(item, 0))
+				if own > 0 and FWConst.ITEMS.has(item):
+					var buyer: Dictionary = Social.find_buyer(cs, npc, str(item), own)
+					if not buyer.is_empty():
+						var sr: Dictionary = Social.sell_to(cs, npc, buyer, str(item), own)
+						ai["stats"]["sold"] = int(ai["stats"]["sold"]) + int(sr["total"])
+						n = int(inv.get(item, 0))
 				if n > 0 and FWConst.ITEMS.has(item):
 					var r: Dictionary = cs.trade(acct, str(item), n, false)
 					if bool(r["ok"]):
 						ai["stats"]["sold"] = int(ai["stats"]["sold"]) + int(r["total"])
+			ai["bought"] = {}
 			_log(ai, "sold", cs)
 			plan.pop_front()
 		"collect":

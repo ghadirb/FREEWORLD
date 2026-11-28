@@ -73,6 +73,7 @@ var prices: Dictionary = {"egg": 6.0, "milk": 14.0, "flour": 16.0, "bread": 20.0
 var npcs: Array = []
 var ai_settings: Dictionary = {"on": true, "max": FWConst.AI_MAX_DEFAULT, "level": "balanced", "build": true}
 var ai_events: Array = []       # {kind: built, id}؛ سرور بعد از هر گام به همه اعلام می‌کند
+var social_t: float = 0.0          # زمان‌سنج تعامل شخصیت‌ها با هم
 var ai_positions: Dictionary = {}   # {نام بازیکن آنلاین: Vector2} برای کم‌دقت‌کردن شخصیت‌های دور
 var family_events: Array = []   # {kind, player, npc}؛ سرور بعد از هر گام اعلام می‌کند
 var family_day: int = -1

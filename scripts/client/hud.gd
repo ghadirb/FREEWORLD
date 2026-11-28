@@ -2319,6 +2319,9 @@ func _on_notice(code: String, args: Dictionary) -> void:
 		"ai_spawned":
 			Sfx.play(self, "notify")
 			toast(Loc.fmt("msg_ai_spawned", [args.get("name", ""), Loc.t("ai_arch_" + str(args.get("arch", "")))]), Color("c8f08a"))
+		"ai_social":
+			Sfx.play(self, "notify")
+			toast(Loc.fmt("msg_ai_" + str(args.get("kind", "alliance")), [str(args.get("a", "")), str(args.get("b", ""))]), Color("e8c87a"))
 		"ride_upgraded":
 			Sfx.play(self, "coin")
 			var rb: int = int(args.get("id", 0))

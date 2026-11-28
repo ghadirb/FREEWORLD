@@ -106,6 +106,7 @@ func _init() -> void:
 	test_attractions()
 	test_autonomous_characters()
 	test_character_memory()
+	test_character_social()
 	test_cave()
 	test_batch_build()
 	test_blueprints()
@@ -5527,6 +5528,154 @@ func test_character_memory() -> void:
 				texts_ok = false
 	Loc.lang = "fa"
 	check(texts_ok, "memory reaction texts exist in Persian and English")
+
+
+func _soc_pair(cs, a_arch: String, b_arch: String) -> Array:
+	var CharAI = load("res://scripts/server/char_ai.gd")
+	var a: Dictionary = CharAI.spawn(cs, a_arch)["npc"]
+	var b: Dictionary = CharAI.spawn(cs, b_arch)["npc"]
+	b["x"] = float(a["x"]) + 2.0
+	b["z"] = float(a["z"])
+	return [a, b]
+
+
+func test_character_social() -> void:
+	print("-- autonomous characters: stage 5 relations between characters")
+	var CharAI = load("res://scripts/server/char_ai.gd")
+	var Soc = load("res://scripts/server/char_social.gd")
+	var Mem = load("res://scripts/server/char_memory.gd")
+	var NpcSim = load("res://scripts/server/npc_sim.gd")
+	var cs = CityState.new(6161)
+	NpcSim.ensure_npcs(cs)
+	cs.provision_admin("boss", "secret")
+	cs.ai_settings["max"] = 12
+	# دوستی و اتحاد بین دو شخصیت سازگار، بدون بازیکن
+	var p1: Array = _soc_pair(cs, "trader", "rival")
+	var tr: Dictionary = p1[0]
+	var rv: Dictionary = p1[1]
+	check(Soc.compat(cs, tr, rv) > 0.0, "a trader and a rival are compatible")
+	var formed := false
+	for i in 12:
+		cs.world_time += Soc.MEET_COOLDOWN + 1.0
+		Soc.meet(cs, tr, rv)
+		if Soc.is_allied(tr, rv):
+			formed = true
+			break
+	check(formed and Soc.is_allied(rv, tr), "two compatible characters become allies on their own after repeated meetings")
+	check(Mem.stance(tr["ai"], str(rv["acct"]), cs.day_count) in ["friend", "ally"] and Mem.remembers(tr["ai"], str(rv["acct"]), "alliance"), "they remember each other as friends")
+	check(int(tr["ai"]["stats"]["allied"]) == 1 and int(rv["ai"]["stats"]["met"]) >= 2, "the meeting is recorded in their experience")
+	check(cs.ai_events.size() >= 1 and str(cs.ai_events[cs.ai_events.size() - 1]["kind"]) == "alliance", "the alliance is announced to players")
+	# هم‌ارزی: کولداون
+	var met_before: int = int(tr["ai"]["stats"]["met"])
+	check(not Soc.meet(cs, tr, rv) and int(tr["ai"]["stats"]["met"]) == met_before, "a pair cannot meet again before the cooldown ends")
+	# تیپ‌های ناسازگار مشاجره می‌کنند و دشمن می‌شوند
+	var p2: Array = _soc_pair(cs, "warlord", "schemer")
+	check(Soc.compat(cs, p2[0], p2[1]) < -0.1, "a warlord and a schemer are not compatible")
+	for i in 8:
+		cs.world_time += Soc.MEET_COOLDOWN + 1.0
+		Soc.meet(cs, p2[0], p2[1])
+	check(not Soc.is_allied(p2[0], p2[1]) and Mem.stance(p2[0]["ai"], str(p2[1]["acct"]), cs.day_count) in ["wary", "enemy"], "incompatible characters quarrel and turn against each other (%s)" % Mem.stance(p2[0]["ai"], str(p2[1]["acct"]), cs.day_count))
+	check(Mem.stance(tr["ai"], str(rv["acct"]), cs.day_count) != Mem.stance(p2[0]["ai"], str(p2[1]["acct"]), cs.day_count), "different pairs end up in different relationships")
+	# تجارت واقعی بین شخصیت‌ها
+	var sellr: Dictionary = rv
+	var buyr: Dictionary = tr
+	cs.accounts[str(sellr["acct"])]["inv"]["wood"] = 10
+	cs.accounts[str(buyr["acct"])]["money"] = 200
+	var tot0: int = int(cs.accounts[str(sellr["acct"])]["money"]) + int(cs.accounts[str(buyr["acct"])]["money"])
+	var found: Dictionary = Soc.find_buyer(cs, sellr, "wood", 10)
+	check(not found.is_empty() and str(found["acct"]) == str(buyr["acct"]), "a nearby trader is found as a buyer")
+	var res: Dictionary = Soc.sell_to(cs, sellr, buyr, "wood", 10)
+	check(int(res["count"]) >= 1 and int(cs.accounts[str(buyr["acct"])]["inv"]["wood"]) == int(res["count"]), "goods really move to the buyer's bag")
+	var tot1: int = int(cs.accounts[str(sellr["acct"])]["money"]) + int(cs.accounts[str(buyr["acct"])]["money"])
+	check(tot0 == tot1, "trade between characters never creates or destroys money")
+	check(int(buyr["ai"]["bought"].get("wood", 0)) == int(res["count"]) and int(sellr["ai"]["stats"]["traded"]) == 1, "the trade is remembered and bought goods are not re-sold to peers")
+	# خریدار مناسب نیست: جنگجو (غیرمعامله‌گر)، فقیر، دشمن، دور
+	var w: Dictionary = p2[0]
+	w["x"] = float(sellr["x"]) + 1.0
+	w["z"] = float(sellr["z"])
+	cs.accounts[str(w["acct"])]["money"] = 500
+	cs.accounts[str(buyr["acct"])]["money"] = 10
+	check(Soc.find_buyer(cs, sellr, "wood", 5).is_empty(), "uncooperative non-traders and broke traders do not buy")
+	cs.accounts[str(buyr["acct"])]["money"] = 500
+	for i in 3:
+		Mem.record(sellr["ai"], "betray", str(buyr["acct"]), 1.0, cs.day_count)
+	check(Soc.find_buyer(cs, sellr, "wood", 5).is_empty(), "an enemy is never sold to")
+	buyr["x"] = float(sellr["x"]) + 80.0
+	check(Soc.find_buyer(cs, sellr, "wood", 5).is_empty(), "a distant character is not a buyer")
+	# خیانت متحد فرصت‌طلب
+	var p3: Array = _soc_pair(cs, "schemer", "trader")
+	var sch: Dictionary = p3[0]
+	var vic: Dictionary = p3[1]
+	sch["ai"]["allies"][str(vic["acct"])] = cs.day_count
+	vic["ai"]["allies"][str(sch["acct"])] = cs.day_count
+	check(Soc.betray_score(sch) >= Soc.BETRAY_SCORE and Soc.betray_score(vic) < Soc.BETRAY_SCORE, "only the opportunistic schemer is capable of betrayal")
+	cs.world_time += Soc.MEET_COOLDOWN + 1.0
+	Soc.meet(cs, sch, vic)
+	check(Soc.is_allied(sch, vic) and Soc.is_allied(vic, sch), "a fresh alliance is not betrayed on the same day")
+	cs.day_count += 2
+	cs.world_time += Soc.MEET_COOLDOWN + 1.0
+	Soc.meet(cs, sch, vic)
+	check(not Soc.is_allied(sch, vic) and not Soc.is_allied(vic, sch), "the schemer later breaks the alliance")
+	check(Mem.remembers(vic["ai"], str(sch["acct"]), "betray") and int(sch["ai"]["stats"]["betrayed"]) == 1, "the victim remembers the betrayal")
+	check(Mem.stance(vic["ai"], str(sch["acct"]), cs.day_count) in ["wary", "enemy"], "the betrayed trader turns against the schemer")
+	check(cs.ai_events[cs.ai_events.size() - 1]["kind"] == "betrayal", "the betrayal is announced to players")
+	# تفاوت تیپ‌ها: خیانت‌پذیری
+	var capable: Array = []
+	for a in Pers_order():
+		var tmp: Dictionary = CharAI.spawn(cs, a)["npc"]
+		if Soc.betray_score(tmp) >= Soc.BETRAY_SCORE:
+			capable.append(a)
+	check(capable == ["schemer"], "among the five archetypes only the schemer is capable of betraying allies (%s)" % str(capable))
+	# ذخیره و بارگذاری اتحاد
+	cs.day_count += 1
+	var back = CityState.from_dict(cs.to_dict())
+	var btr: Dictionary = CharAI.find(back, int(tr["id"]))
+	var brv: Dictionary = CharAI.find(back, int(rv["id"]))
+	check(Soc.is_allied(btr, brv) and int(btr["ai"]["stats"]["allied"]) == 1, "alliances and social experience survive save and load")
+	var junk: Dictionary = (tr["ai"] as Dictionary).duplicate(true)
+	junk["allies"] = {"ai:1": 3, "player": 4, "ai:2": -7, "ai:3": 1, "ai:4": 1}
+	var cleaned: Variant = CharAI.load_ai(junk, int(tr["id"]))
+	check((cleaned["allies"] as Dictionary).size() <= Soc.ALLY_MAX and not (cleaned["allies"] as Dictionary).has("player"), "corrupted alliances are sanitized when loading")
+	var old_ai: Dictionary = (tr["ai"] as Dictionary).duplicate(true)
+	old_ai.erase("allies")
+	check(CharAI.load_ai(old_ai, int(tr["id"])) != null, "older saves without alliances still load")
+	# جهان بدون بازیکن: چند شخصیت خودشان با هم برخورد دارند
+	var w2 = CityState.new(6162)
+	NpcSim.ensure_npcs(w2)
+	w2.ai_settings["max"] = 8
+	for a in Pers_order():
+		CharAI.spawn(w2, a)
+	_ai_run(w2, 6000)
+	var met := 0
+	var rels := 0
+	var trades := 0
+	var built := 0
+	for n in w2.npcs:
+		if n.get("ai", null) is Dictionary:
+			met += int(n["ai"]["stats"]["met"])
+			rels += (n["ai"]["mem"]["rel"] as Dictionary).size()
+			trades += int(n["ai"]["stats"]["traded"])
+			built += int(n["ai"]["stats"]["built"])
+	print("   unattended world: met=%d relations=%d trades=%d built=%d" % [met, rels, trades, built])
+	check(met > 0 and rels > 0, "with no player present the characters meet and form relationships on their own")
+	check(built > 0, "they keep building while socializing")
+	var money_ok := true
+	for n in w2.npcs:
+		if n.get("ai", null) is Dictionary and int(w2.accounts[str(n["acct"])]["money"]) < 0:
+			money_ok = false
+	check(money_ok, "no character ever ends up with negative money")
+	var texts_ok := true
+	for lang in ["fa", "en"]:
+		Loc.lang = lang
+		for k in ["msg_ai_alliance", "msg_ai_betrayal"]:
+			if Loc.t(k) == k:
+				texts_ok = false
+	Loc.lang = "fa"
+	check(texts_ok, "alliance and betrayal texts exist in Persian and English")
+
+
+func Pers_order() -> Array:
+	return load("res://scripts/server/char_personality.gd").ORDER
 
 
 func Family_check(cs, npc: Dictionary) -> String:

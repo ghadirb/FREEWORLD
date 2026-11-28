@@ -13,7 +13,7 @@ const REL_KEYS := ["trust", "friend", "enemy", "respect", "fear"]
 const EVENTS_MAX := 16
 const REL_MAX := 12             # حداکثر تعداد طرف‌های ثبت‌شده در حافظهٔ هر شخصیت
 const IMPORTANT := 0.35         # رویداد با اهمیت بیشتر از این در فهرست رویدادها می‌ماند
-const KINDS := ["talk", "gift", "trade", "demolish", "betray", "help"]
+const KINDS := ["talk", "gift", "trade", "demolish", "betray", "help", "chat", "quarrel", "alliance"]
 
 const STANCES := ["ally", "friend", "neutral", "wary", "enemy"]
 
@@ -133,6 +133,20 @@ static func record(ai: Dictionary, kind: String, who: String, strength: float, d
 			_bump(r, "respect", 0.05)
 			r["coop"] = int(r["coop"]) + 1
 			importance = 0.5
+		"chat":
+			_bump(r, "friend", 0.07 * trust_gain)
+			_bump(r, "trust", 0.05 * trust_gain)
+			importance = 0.08
+		"quarrel":
+			_bump(r, "enemy", (0.12 + 0.2 * s) * grudge)
+			_bump(r, "trust", -0.08)
+			_bump(r, "friend", -0.1)
+			importance = 0.25 + 0.2 * s
+		"alliance":
+			_bump(r, "friend", 0.15)
+			_bump(r, "trust", 0.15)
+			_bump(r, "respect", 0.1)
+			importance = 0.7
 		"demolish":
 			_bump(r, "enemy", (0.35 + 0.4 * s) * grudge)
 			_bump(r, "trust", -(0.3 + 0.3 * s))
