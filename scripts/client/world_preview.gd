@@ -16,7 +16,7 @@ const BLOCK_COLORS := {
 	"glass": Color("a8dcf0"), "window": Color("7fb6d4"), "door": Color("5e3c1e"), "roof": Color("7a3b2a"),
 	"fence": Color("c79a5a"), "road": Color("5c5d62"), "stairs": Color("b88450"), "lamp": Color("ffe27a"), "rail": Color("3a3a3e"),
 }
-const SKY := {"temperate": Color("6fb7e8"), "winter": Color("b9d3e8"), "desert": Color("f0c77a"), "moon": Color("1a1d2e")}
+const SKY := {"temperate": Color("6fb7e8"), "winter": Color("b9d3e8"), "desert": Color("f0c77a"), "moon": Color("1a1d2e"), "fantasy": Color("b79cf0"), "war": Color("6b5f58")}
 
 static var _cache: Dictionary = {}
 

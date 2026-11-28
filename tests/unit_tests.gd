@@ -3429,7 +3429,7 @@ func test_villages() -> void:
 
 func test_scenarios() -> void:
 	print("[scenarios]")
-	check(Scenarios.ids().size() == 9, "nine ready-made worlds")
+	check(Scenarios.ids().size() == 11, "eleven ready-made worlds")
 	var free := 0
 	var premium := 0
 	for id in Scenarios.ids():
@@ -3645,6 +3645,71 @@ func test_climates() -> void:
 				m_ok = false
 	Loc.lang = "fa"
 	check(m_ok, "every moon entry has Persian and English text")
+	# فانتزی و جنگ: زیست‌بوم، منابع، همان ارتفاع زمین پایه، جهان آماده، متن‌ها
+	for fz_cl_case in [["fantasy", "fantasy_realm", 598, ["enchanted_meadow", "glow_forest"], "magic_step", "spire_builder"], ["war", "war_front", 654, ["wasteland", "dead_forest"], "ash_walker", "wall_builder"]]:
+		var fz_cl: String = fz_cl_case[0]
+		var fz_sid: String = fz_cl_case[1]
+		var fz_cwg = WG.new(int(fz_cl_case[2]))
+		fz_cwg.climate = fz_cl
+		var fz_cbase = WG.new(int(fz_cl_case[2]))
+		var fz_seen_c := {}
+		var fz_same_h := true
+		var fz_kinds_c := {}
+		for iz in range(0, 640, 16):
+			for ix in range(0, 640, 16):
+				fz_seen_c[fz_cwg.biome_at(float(ix), float(iz))] = true
+				if absf(fz_cwg.height_at(float(ix), float(iz)) - fz_cbase.height_at(float(ix), float(iz))) > 0.0001:
+					fz_same_h = false
+		for rz in range(0, 160):
+			for rx in range(0, 160):
+				var fz_cm: Dictionary = fz_cwg.resource_in_cell(rx, rz)
+				if not fz_cm.is_empty():
+					fz_kinds_c[fz_cm["kind"]] = true
+		var fz_allowed: Array = ["water", "beach", "mountain"] + (fz_cl_case[3] as Array)
+		var fz_ok_c := true
+		for b in fz_seen_c:
+			if not fz_allowed.has(b):
+				fz_ok_c = false
+		check(fz_ok_c and fz_seen_c.has(fz_cl_case[3][0]) and fz_seen_c.has(fz_cl_case[3][1]), "%s has its own biomes only (%s)" % [fz_cl, str(fz_seen_c.keys())])
+		check(fz_same_h, "%s never changes terrain height" % fz_cl)
+		check(WG.is_wooded(fz_cl_case[3][1]) and not WG.is_wooded(fz_cl_case[3][0]), "%s forest gives wood, open ground does not" % fz_cl)
+		check(WG.biome_color(fz_cl_case[3][0]) != WG.biome_color("plain") and WG.biome_color(fz_cl_case[3][1]) != WG.biome_color("forest"), "%s biomes have their own colours" % fz_cl)
+		check(fz_kinds_c.has("tree") and fz_kinds_c.has("rock"), "%s has trees and rocks (%s)" % [fz_cl, str(fz_kinds_c.keys())])
+		check(FWConst.CLIMATES.has(fz_cl) and Scenarios.climate(fz_sid) == fz_cl and Scenarios.is_premium(fz_sid), "%s world uses the %s climate" % [fz_sid, fz_cl])
+		check(Story.cast_for(fz_sid).size() == 5 and Story.legend_entries(fz_sid).size() == 4, "%s has a cast and a four-step legend" % fz_sid)
+		var fz_cnames := []
+		for e in Story.entries_for(fz_cl, false):
+			fz_cnames.append(e["id"])
+		check(fz_cnames.has(fz_cl_case[4]) and fz_cnames.has(fz_cl_case[5]) and not fz_cnames.has("dust_walker"), "%s entries appear only in %s" % [fz_cl, fz_cl])
+		var fz_c_ok := true
+		for lang in ["fa", "en"]:
+			Loc.lang = lang
+			for e in Story.entries_for(fz_cl, false, fz_sid):
+				if Loc.t("book_" + str(e["id"])) == "book_" + str(e["id"]) or Loc.t("book_" + str(e["id"]) + "_d") == "book_" + str(e["id"]) + "_d":
+					fz_c_ok = false
+		Loc.lang = "fa"
+		check(fz_c_ok, "every %s entry has Persian and English text" % fz_cl)
+		# سازه‌ها: ساخته می‌شوند و بخش میدان مرکزی را اشغال نمی‌کنند
+		var fz_ccs = CityState.new(int(fz_cl_case[2]))
+		var fz_built: int = ScenarioApply.apply(fz_ccs, fz_sid)
+		check(fz_built > 400, "%s builds a rich set of structures (%d blocks)" % [fz_sid, fz_built])
+		var fz_near_centre := 0
+		for v in fz_ccs.blocks:
+			if absi(v.x - Scenarios.CENTER) < 12 and absi(v.z - Scenarios.CENTER) < 12:
+				fz_near_centre += 1
+		check(fz_near_centre == 0, "%s leaves the central square free" % fz_sid)
+	var fz_wt_ground: int = 0
+	var fz_wcs = CityState.new(598)
+	ScenarioApply.apply(fz_wcs, "fantasy_realm")
+	var fz_wtx: int = Scenarios.CENTER - 30
+	var fz_wtz: int = Scenarios.CENTER - 26
+	fz_wt_ground = ScenarioApply._ground_level(fz_wcs, fz_wtx, fz_wtz)
+	check(fz_wcs.blocks.has(Vector3i(fz_wtx + 2, fz_wt_ground + 11, fz_wtz)) and not fz_wcs.blocks.has(Vector3i(fz_wtx, fz_wt_ground + 5, fz_wtz)), "the wizard tower is tall and hollow")
+	check(not fz_wcs.blocks.has(Vector3i(fz_wtx, fz_wt_ground + 1, fz_wtz + 2)) and fz_wcs.blocks.has(Vector3i(fz_wtx, fz_wt_ground + 5, fz_wtz + 2)), "the wizard tower has a doorway under a lintel")
+	var fz_siege_cs = CityState.new(654)
+	ScenarioApply.apply(fz_siege_cs, "war_front")
+	var fz_sg: int = ScenarioApply._ground_level(fz_siege_cs, Scenarios.CENTER + 8, Scenarios.CENTER - 38)
+	check(fz_siege_cs.blocks.has(Vector3i(Scenarios.CENTER + 8, fz_sg + 7, Scenarios.CENTER - 38)), "the siege wall has tall end towers")
 	var mcs = CityState.new(411)
 	ScenarioApply.apply(mcs, "space_colony")
 	var rocket_x: int = Scenarios.CENTER + 28
@@ -3693,7 +3758,7 @@ func test_story_book() -> void:
 		ids[e["id"]] = true
 		if not Story.ROLES.has(str(e["giver"])):
 			bad_role = true
-		if not kinds.has(str(e["kind"])) or not ["", "winter", "desert", "moon"].has(str(e["climate"])) or int(e["reward"]) < 0 or int(e["reward"]) > 100:
+		if not kinds.has(str(e["kind"])) or not ["", "winter", "desert", "moon", "fantasy", "war"].has(str(e["climate"])) or int(e["reward"]) < 0 or int(e["reward"]) > 100:
 			bad_kind = true
 	check(not dup and not bad_role and not bad_kind, "book entries have unique ids, known roles and kinds, small rewards (%d entries)" % Story.ENTRIES.size())
 	var texts_ok := true

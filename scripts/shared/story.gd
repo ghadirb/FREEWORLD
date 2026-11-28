@@ -16,6 +16,8 @@ const CASTS := {
 	"frozen_north": [["بهمن", "hunter"], ["شیرین", "innkeeper"], ["داراب", "elder"]],
 	"desert_caravan": [["کاوه", "nomad"], ["گلنار", "innkeeper"], ["مهرداد", "smith"]],
 	"space_colony": [["سارا", "guide"], ["نیما", "smith"], ["آیدا", "elder"], ["کامران", "farmer"]],
+	"fantasy_realm": [["لیلا", "elder"], ["آرین", "guide"], ["دارا", "smith"], ["مینو", "farmer"], ["پریسا", "innkeeper"]],
+	"war_front": [["رستم", "guide"], ["تهمینه", "smith"], ["سهراب", "hunter"], ["فرخ", "elder"], ["زرین", "farmer"]],
 }
 
 ## مأموریت‌های چندمرحلهٔ هر نقش (زنجیره‌ای، به ترتیب): تحویل کالا به همان NPC.
@@ -107,6 +109,16 @@ const ENTRIES := [
 	{"id": "crystal_find", "kind": "biome", "a": ["crystal_field"], "b": 0, "reward": 20, "giver": "guide", "climate": "moon"},
 	{"id": "crater_rim", "kind": "biome", "a": ["mountain"], "b": 18, "reward": 35, "giver": "smith", "climate": "moon"},
 	{"id": "dome_builder", "kind": "blocks_of", "a": "glass", "b": 30, "reward": 40, "giver": "elder", "climate": "moon"},
+	# فانتزی
+	{"id": "magic_step", "kind": "biome", "a": ["enchanted_meadow", "glow_forest"], "b": 0, "reward": 15, "giver": "guide", "climate": "fantasy"},
+	{"id": "glow_find", "kind": "biome", "a": ["glow_forest"], "b": 0, "reward": 20, "giver": "guide", "climate": "fantasy"},
+	{"id": "dream_peak", "kind": "biome", "a": ["mountain"], "b": 16, "reward": 35, "giver": "smith", "climate": "fantasy"},
+	{"id": "spire_builder", "kind": "blocks_of", "a": "glass", "b": 25, "reward": 40, "giver": "elder", "climate": "fantasy"},
+	# جنگ
+	{"id": "ash_walker", "kind": "biome", "a": ["wasteland", "dead_forest"], "b": 0, "reward": 15, "giver": "hunter", "climate": "war"},
+	{"id": "dead_wood", "kind": "biome", "a": ["dead_forest"], "b": 0, "reward": 20, "giver": "hunter", "climate": "war"},
+	{"id": "warlord_hill", "kind": "biome", "a": ["mountain"], "b": 16, "reward": 35, "giver": "smith", "climate": "war"},
+	{"id": "wall_builder", "kind": "blocks_of", "a": "stone", "b": 60, "reward": 40, "giver": "smith", "climate": "war"},
 ]
 
 ## «افسانه»: زنجیرهٔ اختیاری مقصدهای واقعی روی نقشهٔ هر جهان آماده (پروتکل ۳۶). هر مرحله باید به ترتیب انجام شود؛
@@ -137,6 +149,18 @@ const LEGENDS := {
 		{"dx": -70, "dz": -60, "reward": 40, "giver": "smith"},
 		{"dx": -50, "dz": 90, "reward": 55, "giver": "farmer"},
 		{"dx": 90, "dz": 70, "reward": 90, "giver": "elder", "bonus": ["gem", 1]},
+	],
+	"fantasy_realm": [
+		{"dx": 55, "dz": -60, "reward": 25, "giver": "guide"},
+		{"dx": -75, "dz": -40, "reward": 40, "giver": "smith"},
+		{"dx": -45, "dz": 95, "reward": 55, "giver": "innkeeper"},
+		{"dx": 95, "dz": 75, "reward": 90, "giver": "elder", "bonus": ["gem", 1]},
+	],
+	"war_front": [
+		{"dx": -65, "dz": -55, "reward": 25, "giver": "guide"},
+		{"dx": 70, "dz": -80, "reward": 40, "giver": "hunter"},
+		{"dx": 90, "dz": 60, "reward": 55, "giver": "smith"},
+		{"dx": -80, "dz": 85, "reward": 90, "giver": "elder", "bonus": ["gold", 1]},
 	],
 	"green_valley": [
 		{"dx": 45, "dz": -40, "reward": 25, "giver": "farmer"},

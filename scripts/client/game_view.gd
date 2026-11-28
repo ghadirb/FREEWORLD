@@ -2239,6 +2239,14 @@ func _update_sky(h: float) -> void:
 		# ماه: بدون جو، آسمان همیشه تقریباً سیاه با افق خاکستری تیره (نور خورشید همان است)
 		top = Color(0.005, 0.006, 0.02).lerp(Color(0.02, 0.03, 0.08), light)
 		horizon = Color(0.03, 0.035, 0.06).lerp(Color(0.2, 0.22, 0.3), light)
+	if str(client.mirror.world.climate) == "fantasy":
+		# فانتزی: آسمان بنفش-صورتی (نور خورشید همان است)
+		top = Color(0.1, 0.06, 0.2).lerp(Color(0.5, 0.42, 0.9), light)
+		horizon = Color(0.18, 0.1, 0.28).lerp(Color(0.95, 0.72, 0.9), light)
+	elif str(client.mirror.world.climate) == "war":
+		# جنگ: آسمان دودآلود خاکستری-قهوه‌ای
+		top = Color(0.04, 0.04, 0.05).lerp(Color(0.42, 0.4, 0.4), light)
+		horizon = Color(0.08, 0.07, 0.07).lerp(Color(0.62, 0.52, 0.45), light)
 	sky_mat.sky_top_color = top
 	sky_mat.sky_horizon_color = horizon
 	sky_mat.ground_horizon_color = horizon

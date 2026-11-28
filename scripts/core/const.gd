@@ -133,7 +133,7 @@ const TIME_SCALE := 60.0
 const TIME_SPEEDS := [0.0, 1.0, 4.0, 10.0]
 const WEATHERS := ["clear", "rain", "fog"]
 # اقلیم جهان (فقط ظاهر زمین، نوع درخت و منابع؛ ارتفاع و آب همان Seed است). پیش‌فرض «temperate» دقیقاً مثل قبل است.
-const CLIMATES := ["temperate", "winter", "desert", "moon"]
+const CLIMATES := ["temperate", "winter", "desert", "moon", "fantasy", "war"]
 # حوادث طبیعی (فقط مدیران آغاز می‌کنند؛ موقت، ذخیره نمی‌شوند، در گزارش مدیریتی ثبت می‌شوند).
 # طوفان: بیرون از ساختمان انرژی دو برابر سریع‌تر تمام می‌شود و مزارع ۵۰٪ سریع‌تر محصول می‌دهند. زلزله: فقط لرزش (بدون خسارت به دارایی).
 const DISASTERS := {"storm": 60.0, "quake": 10.0}

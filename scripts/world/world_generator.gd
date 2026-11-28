@@ -5,7 +5,7 @@ extends RefCounted
 const FWConst = preload("res://scripts/core/const.gd")
 
 var seed_value: int
-## اقلیم: temperate (پیش‌فرض، بدون تغییر نسبت به نسخه‌های قبل)، winter (برف و کاج)، desert (شن و نخل)، moon (خاک ماه و ستون‌های بلور).
+## اقلیم: temperate (پیش‌فرض، بدون تغییر نسبت به نسخه‌های قبل)، winter (برف و کاج)، desert (شن و نخل)، moon (خاک ماه و ستون‌های بلور)، fantasy (چمن جادویی و جنگل درخشان)، war (زمین سوخته و جنگل مرده).
 ## فقط برچسب زیست‌بوم و منابع را عوض می‌کند؛ ارتفاع، آب، روستا و معدن همان Seed است.
 var climate: String = "temperate"
 var _base := FastNoiseLite.new()
@@ -126,6 +126,10 @@ func biome_from(h: float, moisture: float) -> String:
 				return "oasis"
 			"moon":
 				return "crystal_field"
+			"fantasy":
+				return "glow_forest"
+			"war":
+				return "dead_forest"
 		return "forest"
 	match climate:
 		"winter":
@@ -134,12 +138,16 @@ func biome_from(h: float, moisture: float) -> String:
 			return "desert"
 		"moon":
 			return "regolith"
+		"fantasy":
+			return "enchanted_meadow"
+		"war":
+			return "wasteland"
 	return "plain"
 
 
 ## آیا این زیست‌بوم درخت‌زار است؟ (جنگل معمولی، جنگل برفی، واحه، بلورزار ماه)
 static func is_wooded(biome: String) -> bool:
-	return biome == "forest" or biome == "snow_forest" or biome == "oasis" or biome == "crystal_field"
+	return biome == "forest" or biome == "snow_forest" or biome == "oasis" or biome == "crystal_field" or biome == "glow_forest" or biome == "dead_forest"
 
 
 ## آیا این زیست‌بوم کوهستانی است؟ (کوه معمولی و صخره‌های صحرا)
@@ -201,7 +209,7 @@ func _resource_in_cell_raw(rx: int, rz: int) -> Dictionary:
 	var roll := _h01(rx, rz, 3)
 	var kind := ""
 	match biome:
-		"forest", "snow_forest", "crystal_field":
+		"forest", "snow_forest", "crystal_field", "glow_forest", "dead_forest":
 			if roll < 0.30:
 				kind = "tree"
 			elif roll < 0.33:
@@ -211,7 +219,7 @@ func _resource_in_cell_raw(rx: int, rz: int) -> Dictionary:
 				kind = "tree"
 			elif roll < 0.29:
 				kind = "clay"
-		"plain", "snow":
+		"plain", "snow", "enchanted_meadow":
 			if roll < 0.05:
 				kind = "tree"
 			elif roll < 0.08:
@@ -221,6 +229,12 @@ func _resource_in_cell_raw(rx: int, rz: int) -> Dictionary:
 			if roll < 0.02:
 				kind = "tree"
 			elif roll < 0.10:
+				kind = "rock"
+		"wasteland":
+			# زمین جنگ‌زده: درخت سوخته کم، سنگ و آوار فراوان
+			if roll < 0.015:
+				kind = "tree"
+			elif roll < 0.09:
 				kind = "rock"
 		"desert":
 			if roll < 0.012:
@@ -517,5 +531,13 @@ static func biome_color(biome: String) -> Color:
 			return Color("9a9ca3")
 		"crystal_field":
 			return Color("7d86a8")
+		"enchanted_meadow":
+			return Color("8a6fd0")
+		"glow_forest":
+			return Color("3fb5a0")
+		"wasteland":
+			return Color("7a6a55")
+		"dead_forest":
+			return Color("55483a")
 		_:
 			return Color("7fbf5a")

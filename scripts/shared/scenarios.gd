@@ -8,7 +8,7 @@ const FWConst = preload("res://scripts/core/const.gd")
 ## مرکز شهر (سلول‌های میدان مرکزی دور آن‌اند؛ سازه‌ها بیرون از میدان ساخته می‌شوند).
 const CENTER := 64
 
-const ORDER := ["green_valley", "builder_playground", "god_sandbox", "island_castaway", "medieval_fort", "merchant_city", "frozen_north", "desert_caravan", "space_colony"]
+const ORDER := ["green_valley", "builder_playground", "god_sandbox", "island_castaway", "medieval_fort", "merchant_city", "frozen_north", "desert_caravan", "space_colony", "fantasy_realm", "war_front"]
 
 const DEFS := {
 	"green_valley": {
@@ -75,6 +75,22 @@ const DEFS := {
 		"hour": 12.0, "weather": "clear", "time_speed": 1.0, "forest_growth": false, "npcs": 4,
 		"structures": ["landing_pad", "rocket", "habitat_dome", "moon_lab", "solar_field", "well", "obelisk"],
 		"trees": 8, "animals": {},
+	},
+	# جهان فانتزی (اقلیم fantasy): چمن بنفش، جنگل درخشان، آسمان صورتی؛ برج جادوگر، دروازهٔ بلور، کلبه‌های الف و آشیانهٔ اژدها.
+	"fantasy_realm": {
+		"seed": 598, "premium": true, "creative": false, "climate": "fantasy",
+		"money": 600, "items": {"wood": 40, "stone": 30, "glass": 20, "brick": 6, "iron": 4},
+		"hour": 10.0, "weather": "clear", "time_speed": 1.0, "forest_growth": true, "npcs": 5,
+		"structures": ["wizard_tower", "crystal_arch", "elf_cottages", "dragon_roost", "fairy_circle", "well", "obelisk", "stable", "inn"],
+		"trees": 20, "animals": {"deer": 8, "rabbit": 8, "sheep": 4},
+	},
+	# جهان جنگی (اقلیم war): زمین سوخته، جنگل مرده، آسمان دودآلود؛ قلعهٔ شکسته، دیوار محاصره، سنگر، اردوگاه و سربازخانه.
+	"war_front": {
+		"seed": 654, "premium": true, "creative": false, "climate": "war",
+		"money": 500, "items": {"stone": 120, "wood": 50, "iron": 20, "brick": 10, "glass": 2},
+		"hour": 16.0, "weather": "fog", "time_speed": 1.0, "forest_growth": false, "npcs": 5,
+		"structures": ["ruined_fort", "siege_wall", "trench_line", "war_camp", "barracks", "watch_tower", "well", "obelisk", "stable"],
+		"trees": 4, "animals": {},
 	},
 }
 
@@ -649,6 +665,111 @@ static func structure(kind: String, rng: RandomNumberGenerator) -> Array:
 					var sz := CENTER - 26 + row * 4
 					_col(out, sx, sz, 0, 1, "fence")
 					_col(out, sx, sz, 1, 1, "glass")
+		"wizard_tower":
+			# برج جادوگر: استوانهٔ سنگی بلند با پنجره‌های مارپیچ، درگاه رو به +z و اتاق شیشه‌ای و چراغ بالا (جهان فانتزی)
+			var tx := CENTER - 30
+			var tz := CENTER - 26
+			for dx in range(-2, 3):
+				for dz in range(-2, 3):
+					if maxi(absi(dx), absi(dz)) != 2 or (absi(dx) == 2 and absi(dz) == 2):
+						continue
+					if dx == 0 and dz == 2:
+						_col(out, tx + dx, tz + dz, 3, 9, "stone")   # بالای درگاه
+						continue
+					_col(out, tx + dx, tz + dz, 0, 12, "stone")
+			for dx in range(-2, 3):
+				for dz in range(-2, 3):
+					if maxi(absi(dx), absi(dz)) == 2 and not (absi(dx) == 2 and absi(dz) == 2):
+						_col(out, tx + dx, tz + dz, 12, 2, "glass")
+						_col(out, tx + dx, tz + dz, 14, 1, "roof")
+			for dx in range(-1, 2):
+				for dz in range(-1, 2):
+					_col(out, tx + dx, tz + dz, 14, 1, "roof")
+			_col(out, tx, tz, 15, 1, "lamp")
+			_col(out, tx - 1, tz + 3, 0, 1, "lamp")
+			_col(out, tx + 1, tz + 3, 0, 1, "lamp")
+		"crystal_arch":
+			# دروازهٔ بلور: دو ستون شیشه‌ای بلند با تیر سنگی و چراغ، پایه‌های سنگی (جهان فانتزی؛ هم‌تراز)
+			var ax := CENTER + 34
+			var az := CENTER + 2
+			for side in [-3, 3]:
+				_col(out, ax + side, az, 0, 2, "stone")
+				_col(out, ax + side, az, 2, 7, "glass")
+				_col(out, ax + side, az + 1, 0, 1, "lamp")
+			for dx in range(-3, 4):
+				_col(out, ax + dx, az, 9, 1, "stone")
+			_col(out, ax, az, 10, 1, "lamp")
+			_level_group(out, 0, ax, az, 4, 2)
+		"elf_cottages":
+			# سه کلبهٔ چوبی کوچک الف‌ها با اتاق (آشپزخانه، کتابخانه، خواب)؛ هرکدام قابل ورود (جهان فانتزی)
+			var kinds_e: Array = ["kitchen", "library", "bedroom"]
+			for k in range(3):
+				_room_house(out, CENTER - 40 + k * 12, CENTER + 16, 3, 3, 3, "wood", [], [kinds_e[k]])
+				_col(out, CENTER - 40 + k * 12, CENTER + 20, 0, 1, "lamp")
+		"dragon_roost":
+			# آشیانهٔ اژدها: برج پلکانی سنگی با لانهٔ چوبی و چراغ‌های آتشین بالا (جهان فانتزی)
+			var dx0 := CENTER + 44
+			var dz0 := CENTER - 30
+			_ring(out, dx0, dz0, 4, 0, 3, "stone")
+			_ring(out, dx0, dz0, 3, 3, 3, "stone")
+			_ring(out, dx0, dz0, 2, 6, 3, "stone")
+			_ring(out, dx0, dz0, 1, 9, 1, "wood")
+			_col(out, dx0, dz0, 9, 1, "lamp")
+			_col(out, dx0 - 4, dz0 + 4, 3, 1, "lamp")
+			_col(out, dx0 + 4, dz0 + 4, 3, 1, "lamp")
+			_level_group(out, 0, dx0, dz0, 5, 5)
+		"fairy_circle":
+			# دایرهٔ پریان: حلقهٔ سنگ‌های کوتاه با چراغ و ستون شیشه‌ای وسط (جهان فانتزی)
+			var fx := CENTER + 14
+			var fz := CENTER - 44
+			_ring(out, fx, fz, 4, 0, 1, "stone", 2)
+			for c in [Vector2i(-4, 0), Vector2i(4, 0), Vector2i(0, -4), Vector2i(0, 4)]:
+				_col(out, fx + c.x, fz + c.y, 1, 1, "lamp")
+			_col(out, fx, fz, 0, 3, "glass")
+			_level_group(out, 0, fx, fz, 4, 4)
+		"siege_wall":
+			# دیوار محاصره: دیوار سنگی بلند با شکستگی‌های قطعی و دو برج انتها؛ پشتش محوطهٔ نبرد (جهان جنگی)
+			var wz0 := CENTER - 38
+			for x in range(CENTER + 8, CENTER + 45):
+				var wh := 5 - (1 if rng.randf() < 0.3 else 0) - (2 if rng.randf() < 0.12 else 0)
+				_col(out, x, wz0, 0, wh, "stone")
+			for tx in [CENTER + 8, CENTER + 44]:
+				for dx in range(-1, 2):
+					for dz in range(-1, 2):
+						_col(out, tx + dx, wz0 + dz, 0, 8, "stone")
+				_col(out, tx, wz0, 8, 1, "lamp")
+		"trench_line":
+			# خط سنگر: دو ردیف کیسه‌خاک (خاک) با فاصلهٔ عبور و تیرهای چراغ (جهان جنگی)
+			var zr := CENTER + 14
+			for x in range(CENTER + 10, CENTER + 40):
+				if (x - CENTER) % 7 != 0:
+					_col(out, x, zr, 0, 2, "dirt")
+				if (x - CENTER + 3) % 7 != 0:
+					_col(out, x, zr + 4, 0, 2, "dirt")
+			for x in range(CENTER + 12, CENTER + 40, 9):
+				_col(out, x, zr + 2, 0, 3, "fence")
+				_col(out, x, zr + 2, 3, 1, "lamp")
+		"war_camp":
+			# اردوگاه جنگی: حصار چوبی با دروازه، سه چادر و آتش وسط (جهان جنگی)
+			var cx0 := CENTER - 34
+			var cz0 := CENTER + 12
+			for dx in range(-7, 8):
+				for dz in range(-7, 8):
+					if maxi(absi(dx), absi(dz)) != 7:
+						continue
+					if dz == 7 and absi(dx) <= 1:
+						continue   # دروازه
+					_col(out, cx0 + dx, cz0 + dz, 0, 3, "wood")
+			for c in [Vector2i(-4, -4), Vector2i(4, -4), Vector2i(-4, 2)]:
+				_ring(out, cx0 + c.x, cz0 + c.y, 1, 0, 1, "roof")
+				_col(out, cx0 + c.x, cz0 + c.y, 0, 2, "roof")
+			_col(out, cx0, cz0, 0, 1, "stone")
+			_col(out, cx0, cz0, 1, 1, "lamp")
+			_level_group(out, 0, cx0, cz0, 8, 8)
+		"barracks":
+			# سربازخانهٔ سنگی با سالن، انبار سلاح و اتاق خواب (جهان جنگی)
+			_room_house(out, CENTER + 32, CENTER + 8, 5, 4, 4, "stone", [-2, 2], ["hall", "store", "bedroom"])
+			_col(out, CENTER + 32, CENTER + 13, 0, 1, "lamp")
 		"build_pads":
 			# سه زمین ساخت با حاشیهٔ سنگی ۷×۷ برای تمرین ساخت
 			for k in range(3):

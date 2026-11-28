@@ -51,6 +51,16 @@ func setup(world_gen, view_radius: int) -> void:
 			mb.add_cylinder(Vector3(0, 0.3, 0), 0.34, 0.0, 2.6, 6, Color("8fb8ff"))
 			mb.add_cylinder(Vector3(0.55, 0.2, 0.2), 0.2, 0.0, 1.5, 5, Color("a98bff"))
 			mb.add_cylinder(Vector3(-0.45, 0.2, -0.25), 0.18, 0.0, 1.2, 5, Color("7fe0ff"))
+		"fantasy":
+			# درخت جادویی: تنهٔ سفید و دو کلاهک بزرگ صورتی-فیروزه‌ای شبیه قارچ
+			mb.add_cylinder(Vector3.ZERO, 0.22, 0.16, 1.9, 6, Color("e9e2f5"))
+			mb.add_cylinder(Vector3(0, 1.5, 0), 1.5, 0.2, 0.9, 8, Color("c06ad8"))
+			mb.add_cylinder(Vector3(0, 2.2, 0), 0.9, 0.0, 0.8, 8, Color("5fd9c9"))
+		"war":
+			# درخت سوخته: تنهٔ سیاه شکسته با دو شاخهٔ لخت
+			mb.add_cylinder(Vector3.ZERO, 0.22, 0.12, 2.4, 5, Color("2c2622"))
+			mb.add_cylinder(Vector3(0.35, 1.4, 0), 0.1, 0.0, 1.2, 4, Color("3a312b"))
+			mb.add_cylinder(Vector3(-0.3, 1.8, 0.1), 0.09, 0.0, 1.0, 4, Color("3a312b"))
 		_:
 			mb.add_cylinder(Vector3.ZERO, 0.2, 0.14, 1.3, 5, Color("6b4a2d"))
 			mb.add_cylinder(Vector3(0, 0.9, 0), 1.25, 0.0, 2.2, 7, Color("2f7a3f"))
@@ -195,6 +205,20 @@ func _climate_tint(col: Color, biome: String, h: float) -> Color:
 				return Color("33415c")
 			if biome == "mountain":
 				return col.lerp(Color("d9dbe3"), smoothstep(14.0, 22.0, h))
+		"fantasy":
+			if biome == "beach":
+				return col.lerp(Color("f2c6e8"), 0.6)
+			if biome == "water":
+				return Color("5aa0e0")
+			if biome == "mountain":
+				return col.lerp(Color("c9b5ff"), smoothstep(10.0, 20.0, h))
+		"war":
+			if biome == "beach":
+				return col.lerp(Color("5f574c"), 0.6)
+			if biome == "water":
+				return Color("4a5557")
+			if biome == "mountain":
+				return col.lerp(Color("4a4642"), smoothstep(12.0, 20.0, h))
 	return col
 
 
