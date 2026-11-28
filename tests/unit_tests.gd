@@ -109,6 +109,7 @@ func _init() -> void:
 	test_character_social()
 	test_character_war()
 	test_character_creator()
+	test_character_performance()
 	test_character_fortify()
 	test_character_discovery()
 	test_cave()
@@ -6408,3 +6409,71 @@ func test_character_creator() -> void:
 	check(texts_ok, "creator texts exist in Persian and English")
 	check(FWConst.PROTOCOL_VERSION >= 55, "protocol bumped for the character creator message")
 	check(load("res://scripts/server/game_server.gd").LOCAL_METHODS.has("c2s_ai_creator"), "the creator message is allowed in the offline local server")
+
+
+func test_character_performance() -> void:
+	print("-- autonomous characters: stage 8 performance")
+	var CharAI = load("res://scripts/server/char_ai.gd")
+	var NpcSim = load("res://scripts/server/npc_sim.gd")
+	var Pers = load("res://scripts/server/char_personality.gd")
+	# کش منبع باید با نتیجهٔ خام یکی باشد و با تغییر زمین باطل شود.
+	var cs = CityState.new(5151)
+	var w = cs.world
+	var same := true
+	var cells := 0
+	for rx in range(-30, 30):
+		for rz in range(-30, 30):
+			var a: Dictionary = w.resource_in_cell(rx, rz)
+			var b: Dictionary = w._resource_in_cell_raw(rx, rz)
+			var c: Dictionary = w.resource_in_cell(rx, rz)   # از کش
+			if a != b or c != b:
+				same = false
+			if not b.is_empty():
+				cells += 1
+	check(same and cells > 0, "the resource cache returns exactly what the generator computes")
+	var found := Vector2i(0, 0)
+	for rx in range(-60, 60):
+		for rz in range(-60, 60):
+			var n: Dictionary = w.resource_in_cell(rx, rz)
+			if not n.is_empty() and found == Vector2i(0, 0):
+				found = Vector2i(rx, rz)
+	var nd: Dictionary = w.resource_in_cell(found.x, found.y)
+	var ix := int(floor(float(nd["x"]) / FWConst.TERRAIN_EDIT_STEP))
+	var iz := int(floor(float(nd["z"]) / FWConst.TERRAIN_EDIT_STEP))
+	for dx in range(-1, 3):
+		for dz in range(-1, 3):
+			w.set_edit(ix + dx, iz + dz, -FWConst.TERRAIN_ADMIN_MAX_UNITS)   # گود بزرگ: منبع باید از آن سلول ناپدید شود
+	check(w.resource_in_cell(found.x, found.y) == w._resource_in_cell_raw(found.x, found.y), "the resource cache is invalidated by terrain edits")
+	# بودجهٔ تصمیم: در هر گام بیش از سقف شخصیت فکر نمی‌کند، ولی همه به نوبت فکر می‌کنند.
+	var c2 = CityState.new(6262)
+	NpcSim.ensure_npcs(c2)
+	c2.ai_settings["max"] = 12
+	for i in 12:
+		CharAI.spawn(c2, Pers.ORDER[i % 5])
+	var budget: int = CharAI.think_budget(c2)
+	var worst_step := 0
+	var before := {}
+	for n in c2.npcs:
+		if CharAI.is_ai(n):
+			before[int(n["id"])] = 0
+	for i in 160:
+		var prev := {}
+		for n in c2.npcs:
+			if CharAI.is_ai(n):
+				prev[int(n["id"])] = int(n["ai"]["stats"]["thoughts"])
+		c2.tick(0.5)
+		NpcSim.step(c2, 0.5)
+		var now := 0
+		for n in c2.npcs:
+			if CharAI.is_ai(n):
+				now += int(n["ai"]["stats"]["thoughts"]) - int(prev[int(n["id"])])
+		worst_step = maxi(worst_step, now)
+	check(worst_step <= budget, "no step exceeds the think budget (%d <= %d)" % [worst_step, budget])
+	var starved := 0
+	for n in c2.npcs:
+		if CharAI.is_ai(n) and (n["ai"]["plan"] as Array).is_empty() and float(n["ai"]["t"]) > CharAI._interval(c2, n) * 4.0:
+			starved += 1   # منتظر نوبت فکرکردن مانده و نوبتش نمی‌رسد
+	check(starved == 0, "no character is starved of thinking by the budget")
+	for lv in ["economy", "balanced", "advanced"]:
+		c2.ai_settings["level"] = lv
+		check(CharAI.think_budget(c2) >= 2, "think budget exists for level " + lv)

@@ -50,6 +50,7 @@ func edit_units(ix: int, iz: int) -> int:
 
 ## مقدار جدید یک رأس را می‌گذارد (۰ = حذف تغییر). مقدار در بازهٔ مجاز مدیر بریده می‌شود (محدودیت بازیکن عادی در apply_terraform).
 func set_edit(ix: int, iz: int, units: int) -> void:
+	_edit_ver += 1
 	var u := clampi(units, FWConst.TERRAIN_ADMIN_MIN_UNITS, FWConst.TERRAIN_ADMIN_MAX_UNITS)
 	if u == 0:
 		edits.erase(edit_key(ix, iz))
@@ -165,7 +166,27 @@ func _h01(rx: int, rz: int, salt: int) -> float:
 
 ## گرهٔ منبع قابل برداشت (درخت، سنگ، خاک رس) در خانهٔ ۴×۴ متری (rx, rz). فقط بیرون از شهر.
 ## خروجی خالی = چیزی نیست. کاملاً قطعی؛ سرور و کلاینت یک نتیجه می‌گیرند.
+## کش نتیجهٔ منبع هر سلول (قطعی از Seed و ارتفاع). با هر تغییر زمین باطل می‌شود؛ جستجوی منبع شخصیت‌ها را چند ده برابر سریع‌تر می‌کند.
+var _res_cache: Dictionary = {}
+var _res_sig: int = -1
+var _edit_ver: int = 0
+const RES_CACHE_MAX := 30000
+
+
 func resource_in_cell(rx: int, rz: int) -> Dictionary:
+	var sig: int = _edit_ver * 1000003 + edits.size()
+	if sig != _res_sig or _res_cache.size() > RES_CACHE_MAX:
+		_res_cache.clear()
+		_res_sig = sig
+	var key := Vector2i(rx, rz)
+	if _res_cache.has(key):
+		return _res_cache[key]
+	var out: Dictionary = _resource_in_cell_raw(rx, rz)
+	_res_cache[key] = out
+	return out
+
+
+func _resource_in_cell_raw(rx: int, rz: int) -> Dictionary:
 	var cs := FWConst.RESOURCE_CELL
 	var x := (float(rx) + 0.15 + _h01(rx, rz, 1) * 0.7) * cs
 	var z := (float(rz) + 0.15 + _h01(rx, rz, 2) * 0.7) * cs

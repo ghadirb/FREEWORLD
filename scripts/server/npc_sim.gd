@@ -159,6 +159,7 @@ static func step(cs, dt: float) -> void:
 	var h := hour_of(cs)
 	var day := int(floor(cs.world_time / 86400.0))
 	var activity := activity_for_hour(h)
+	cs.ai_thinks_left = CharAI.think_budget(cs)   # سقف تصمیم‌های هر گام: جلوگیری از پرش وقتی چند شخصیت هم‌زمان فکر می‌کنند
 	CharSocial.tick(cs, dt)   # شخصیت‌های مستقل با هم تعامل می‌کنند (مرحلهٔ ۵)
 	CharWar.tick(cs, dt)      # جنگ، عقب‌نشینی و مذاکره بین شخصیت‌ها
 	for npc in cs.npcs:

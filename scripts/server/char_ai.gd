@@ -219,6 +219,16 @@ static func explore_plan(cs, npc: Dictionary) -> Array:
 
 # ---------------- زمان‌بندی ----------------
 
+## سقف تعداد تصمیم‌گیری در هر گام شبیه‌سازی بر پایهٔ سطح کیفیت (ظرفیت از نیاز واقعی بیشتر است، پس کسی گرسنه نمی‌ماند).
+static func think_budget(cs) -> int:
+	match str(cs.ai_settings["level"]):
+		"economy":
+			return 2
+		"advanced":
+			return 5
+	return 3
+
+
 static func _interval(cs, npc: Dictionary) -> float:
 	var base := 3.0
 	match str(cs.ai_settings["level"]):
@@ -243,6 +253,10 @@ static func step(cs, npc: Dictionary, dt: float, advance: Callable) -> void:
 	reveal(npc)
 	if (ai["plan"] as Array).is_empty():
 		if float(ai["t"]) >= _interval(cs, npc):
+			if cs.ai_thinks_left <= 0:
+				npc["state"] = "idle"   # نوبتش در گام بعد می‌رسد (زمان انتظارش حفظ می‌شود)
+				return
+			cs.ai_thinks_left -= 1
 			ai["t"] = 0.0
 			think(cs, npc)
 		else:
@@ -428,14 +442,14 @@ static func find_resource(cs, npc: Dictionary, from: Vector2, used: Dictionary, 
 		for dz in range(-R, R + 1):
 			var rx := cx0 + dx
 			var rz := cz0 + dz
+			var node: Dictionary = cs.world.resource_in_cell(rx, rz)   # ارزان‌ترین بررسی اول (کش‌شده)؛ اغلب سلول‌ها خالی‌اند
+			if node.is_empty():
+				continue
+			var kind := str(node["kind"])
+			if not (kind in kinds) or not has_seen(ai, float(node["x"]), float(node["z"])):
+				continue   # چیزی را که ندیده نمی‌شناسد
 			var key := "%d,%d" % [rx, rz]
 			if cs.depleted.has(key) or used.has(key) or int(ai["bad"].get(key, -99)) >= cs.day_count - BAD_RESOURCE_DAYS:
-				continue
-			var node: Dictionary = cs.world.resource_in_cell(rx, rz)
-			if node.is_empty() or not has_seen(ai, float(node["x"]), float(node["z"])):
-				continue   # چیزی را که ندیده نمی‌شناسد
-			var kind := str(node["kind"])
-			if not (kind in kinds):
 				continue
 			var def: Dictionary = FWConst.RESOURCES[kind]
 			var d: float = from.distance_to(Vector2(float(node["x"]), float(node["z"])))
