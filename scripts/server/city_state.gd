@@ -464,6 +464,7 @@ func remove_building(player_name: String, id: int) -> Dictionary:
 	if not is_owner:
 		# اقدام مدیر روی ملک دیگران حتماً در گزارش ثبت می‌شود.
 		_log(player_name, "admin_remove", {"id": id, "owner": owner_name, "type": b["type"]})
+		CharAI.on_demolished(self, owner_name, player_name)   # شخصیت مستقل این را به خاطر می‌سپارد
 	else:
 		_log(player_name, "remove", {"id": id, "type": b["type"]})
 	return {"ok": true, "id": id, "owner": owner_name, "refund": refund, "fired": fired}
@@ -1755,6 +1756,8 @@ func npc_interact(player_name: String, npc_id: int, item: String, pos: Vector2) 
 		return {"ok": false, "error": "no_npc"}
 	if pos.distance_to(Vector2(float(npc["x"]), float(npc["z"]))) > FWConst.NPC_TALK_RANGE:
 		return {"ok": false, "error": "too_far"}
+	if CharAI.is_ai(npc) and CharAI.refuses(self, npc, player_name):
+		return {"ok": false, "error": "ai_hostile"}   # دشمن با تو حرف نمی‌زند و هدیه‌ات را نمی‌گیرد
 	var acc: Dictionary = accounts[player_name]
 	if not (acc.get("friends") is Dictionary):
 		acc["friends"] = {}
@@ -1792,7 +1795,14 @@ func npc_interact(player_name: String, npc_id: int, item: String, pos: Vector2) 
 	var dlg: Dictionary = Book.dialogue(self, player_name, role, friend_level(np)) if kind == "talk" else {"line": "", "hint": "", "entry": ""}
 	if kind == "talk" and role == "villager" and FWConst.RESIDENT_JOBS.has(str(npc.get("job", ""))):
 		dlg["line"] = "dlg_job_%s_%d" % [str(npc["job"]), clampi(friend_level(np), 0, 2)]
-	return {"ok": true, "kind": kind, "npc": str(npc["name"]), "npc_id": npc_id, "points": np, "level": friend_level(np),
+	var stance := ""
+	if CharAI.is_ai(npc):
+		# شخصیت مستقل رفتار بازیکن را به خاطر می‌سپارد و در برخوردهای بعدی متفاوت واکنش نشان می‌دهد.
+		CharAI.remember(self, npc, kind, player_name, clampf(float(FWConst.ITEMS.get(item, 0)) / 15.0, 0.0, 1.0) if kind == "gift" else 0.0)
+		stance = CharAI.stance_toward(self, npc, player_name)
+		if kind == "talk":
+			dlg["line"] = CharAI.greeting(self, npc, player_name)
+	return {"ok": true, "kind": kind, "npc": str(npc["name"]), "npc_id": npc_id, "stance": stance, "points": np, "level": friend_level(np),
 		"reward": reward, "item": item, "money": int(acc["money"]),
 		"role": role, "line": dlg["line"], "hint": dlg["hint"], "entry": dlg["entry"]}
 
@@ -1813,6 +1823,8 @@ func npc_sell(player_name: String, npc_id: int, item: String, n: int, pos: Vecto
 		return {"ok": false, "error": "no_npc"}
 	if pos.distance_to(Vector2(float(npc["x"]), float(npc["z"]))) > FWConst.NPC_TALK_RANGE:
 		return {"ok": false, "error": "too_far"}
+	if CharAI.is_ai(npc):
+		return CharAI.player_trade(self, npc, player_name, item, n, true)   # معامله از کیف واقعی شخصیت، نه از هیچ
 	var acc: Dictionary = accounts[player_name]
 	if int(acc["inv"].get(item, 0)) < n:
 		return {"ok": false, "error": "no_items"}
@@ -1907,6 +1919,8 @@ func npc_buy(player_name: String, npc_id: int, item: String, n: int, pos: Vector
 		return {"ok": false, "error": "no_npc"}
 	if pos.distance_to(Vector2(float(npc["x"]), float(npc["z"]))) > FWConst.NPC_TALK_RANGE:
 		return {"ok": false, "error": "too_far"}
+	if CharAI.is_ai(npc):
+		return CharAI.player_trade(self, npc, player_name, item, n, false)   # معامله از کیف واقعی شخصیت، نه از هیچ
 	var left := _npc_stock_left(npc, item)
 	if str(npc.get("job", "")) == "miner" and (item == "stone" or item == "coal"):
 		left += FWConst.NPC_STOCK_PER_DAY * (FWConst.RESIDENT_MINER_STOCK - 1)

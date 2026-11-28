@@ -105,6 +105,7 @@ func _init() -> void:
 	test_residents()
 	test_attractions()
 	test_autonomous_characters()
+	test_character_memory()
 	test_cave()
 	test_batch_build()
 	test_blueprints()
@@ -5394,6 +5395,138 @@ func test_autonomous_characters() -> void:
 				texts_ok = false
 	Loc.lang = "fa"
 	check(texts_ok, "character texts exist in Persian and English")
+
+
+func _mem_pos(npc: Dictionary) -> Vector2:
+	return Vector2(float(npc["x"]), float(npc["z"]))
+
+
+func test_character_memory() -> void:
+	print("-- autonomous characters: stage 3 memory and relationships")
+	var CharAI = load("res://scripts/server/char_ai.gd")
+	var Mem = load("res://scripts/server/char_memory.gd")
+	var Pers = load("res://scripts/server/char_personality.gd")
+	var NpcSim = load("res://scripts/server/npc_sim.gd")
+	var cs = CityState.new(5151)
+	NpcSim.ensure_npcs(cs)
+	_login(cs, "p")
+	cs.provision_admin("boss", "secret")
+	var tr: Dictionary = CharAI.spawn(cs, "trader")["npc"]
+	var sc: Dictionary = CharAI.spawn(cs, "schemer")["npc"]
+	check(tr["ai"]["mem"] is Dictionary and (tr["ai"]["mem"]["rel"] as Dictionary).is_empty(), "a new character starts with an empty memory")
+	check(CharAI.stance_toward(cs, tr, "p") == "neutral", "a stranger is treated neutrally")
+	# همان رفتار، تأثیر متفاوت بر دو تیپ (اعتمادپذیری)
+	for i in 6:
+		cs.day_count += 1
+		cs.accounts["p"]["inv"]["gem"] = 3
+		check(bool(cs.npc_interact("p", int(tr["id"]), "gem", _mem_pos(tr))["ok"]) or i > 0, "gift accepted")
+		cs.npc_interact("p", int(sc["id"]), "gem", _mem_pos(sc))
+	var a_tr: float = Mem.attitude(tr["ai"], "p", cs.day_count)
+	var a_sc: float = Mem.attitude(sc["ai"], "p", cs.day_count)
+	check(a_tr > 0.2 and a_sc > 0.0, "repeated gifts earn trust (%.2f / %.2f)" % [a_tr, a_sc])
+	check(a_tr > a_sc, "the trusting trader warms up faster than the suspicious schemer")
+	check(CharAI.stance_toward(cs, tr, "p") in ["friend", "ally"], "after several gifts the trader is a friend")
+	check(Mem.remembers(tr["ai"], "p", "gift"), "the gift is stored as an important event")
+	# واکنش متفاوت در برخورد بعدی
+	cs.day_count += 1
+	var talk_friend: Dictionary = cs.npc_interact("p", int(tr["id"]), "", _mem_pos(tr))
+	check(bool(talk_friend["ok"]) and str(talk_friend["line"]) in ["dlg_ai_gift_mem", "dlg_ai_friend", "dlg_ai_ally"] and str(talk_friend["stance"]) in ["friend", "ally"], "a friend greets warmly (%s)" % str(talk_friend["line"]))
+	# معامله واقعی: از کیف خود شخصیت و نه از هیچ
+	cs.accounts["p"]["inv"]["wood"] = 10
+	var money_ai0: int = int(cs.accounts[str(tr["acct"])]["money"])
+	var money_p0: int = int(cs.accounts["p"]["money"])
+	var sold: Dictionary = cs.npc_sell("p", int(tr["id"]), "wood", 5, _mem_pos(tr))
+	check(bool(sold["ok"]) and int(sold["count"]) >= 1, "player can sell goods to a friendly character")
+	var pt: int = int(sold["total"])
+	check(int(cs.accounts[str(tr["acct"])]["money"]) == money_ai0 - pt and int(cs.accounts["p"]["money"]) == money_p0 + pt, "money moves between the two wallets and is never created")
+	check(int(cs.accounts[str(tr["acct"])]["inv"].get("wood", 0)) == int(sold["count"]), "the goods really end up in the character's bag")
+	var bought: Dictionary = cs.npc_buy("p", int(tr["id"]), "wood", 99, _mem_pos(tr))
+	check(not bool(bought["ok"]) or int(bought["count"]) <= int(sold["count"]), "a character cannot sell more than it has")
+	# خیانت: دوست بود، مدیر ملکش را خراب می‌کند
+	var home: Dictionary = cs.place_building(str(tr["acct"]), 0, "house", 6, 6) if false else {}
+	cs.buildings[9001] = {"id": 9001, "type": "house", "owner": str(tr["acct"]), "cx": 2, "cz": 2, "stock": 0.0, "level": 1}
+	cs.provision_admin("p", "x")
+	var rem: Dictionary = cs.remove_building("p", 9001)
+	check(bool(rem["ok"]), "an admin can remove the character's building")
+	check(Mem.remembers(tr["ai"], "p", "betray") and Mem.remembers(tr["ai"], "p", "demolish"), "the character remembers both the demolition and the betrayal")
+	check(int(tr["ai"]["mem"]["rel"]["p"]["betray"]) == 1, "betrayal count is recorded")
+	check(CharAI.stance_toward(cs, tr, "p") in ["wary", "enemy"], "a former friend turns hostile (%s)" % CharAI.stance_toward(cs, tr, "p"))
+	cs.day_count += 1
+	var after: Dictionary = cs.npc_interact("p", int(tr["id"]), "", _mem_pos(tr))
+	if bool(after["ok"]):
+		check(str(after["line"]) == "dlg_ai_betrayed", "it reacts differently and mentions the betrayal")
+	else:
+		check(str(after["error"]) == "ai_hostile", "a hostile character refuses to talk")
+	# دشمن کامل: معامله و صحبت را قطع می‌کند
+	for i in 3:
+		Mem.record(tr["ai"], "demolish", "p", 1.0, cs.day_count)
+	check(CharAI.refuses(cs, tr, "p"), "an enemy refuses contact")
+	check(str(cs.npc_sell("p", int(tr["id"]), "wood", 1, _mem_pos(tr))["error"]) == "ai_hostile", "an enemy refuses to trade")
+	check(str(cs.npc_interact("p", int(tr["id"]), "", _mem_pos(tr))["error"]) == "ai_hostile", "an enemy refuses to talk")
+	# فراموشی: دشمنی کم می‌شود ولی خیانت می‌ماند
+	var e0: float = float(tr["ai"]["mem"]["rel"]["p"]["enemy"])
+	Mem.attitude(tr["ai"], "p", cs.day_count + 40)
+	var e1: float = float(tr["ai"]["mem"]["rel"]["p"]["enemy"])
+	check(e1 < e0 and int(tr["ai"]["mem"]["rel"]["p"]["betray"]) == 1, "enmity fades with time but the betrayal stays")
+	# پرخاشگر کینهٔ ماندگارتر دارد
+	var w: Dictionary = CharAI.spawn(cs, "warlord")["npc"]
+	var m: Dictionary = CharAI.spawn(cs, "mystery")["npc"]
+	cs.day_count += 100
+	var day0: int = cs.day_count
+	Mem.record(w["ai"], "demolish", "q", 0.5, day0)
+	Mem.record(m["ai"], "demolish", "q", 0.5, day0)
+	Mem.attitude(w["ai"], "q", day0 + 30)
+	Mem.attitude(m["ai"], "q", day0 + 30)
+	check(float(w["ai"]["mem"]["rel"]["q"]["enemy"]) > float(m["ai"]["mem"]["rel"]["q"]["enemy"]), "the aggressive warlord holds a grudge longer than the mystery type")
+	# یادگیری محدود
+	var base: Dictionary = Pers.traits_for("rival", 77)
+	var lr: Dictionary = {"traits": base.duplicate()}
+	for i in 200:
+		Mem.learn(lr, false, base)
+	check(float(lr["traits"]["caution"]) > float(base["caution"]) and float(lr["traits"]["caution"]) <= minf(1.0, float(base["caution"]) + 0.25) + 0.001, "repeated failures make it more cautious, within a bounded range")
+	check(float(lr["traits"]["risk"]) < float(base["risk"]) and float(lr["traits"]["risk"]) >= maxf(0.0, float(base["risk"]) - 0.25) - 0.001, "and less risk-taking, within a bounded range")
+	# سقف حافظه
+	var cap: Dictionary = {"arch": "rival", "traits": Pers.traits_for("rival", 5), "mem": Mem.fresh()}
+	for i in 60:
+		Mem.record(cap, "gift", "who%d" % i, 1.0, i)
+	check((cap["mem"]["rel"] as Dictionary).size() <= Mem.REL_MAX and (cap["mem"]["events"] as Array).size() <= Mem.EVENTS_MAX, "memory stays bounded")
+	for i in 200:
+		Mem.record(cap, "talk", "who0", 0.0, 100)
+	check(int(cap["mem"]["tally"]["talk"]) == 200 and (cap["mem"]["events"] as Array).size() <= Mem.EVENTS_MAX, "minor events are aggregated, not stored one by one")
+	Mem.record(cap, "betray", "who59", 1.0, 100)
+	for i in 40:
+		Mem.record(cap, "gift", "z%d" % i, 1.0, 101)
+	check(Mem.remembers(cap, "who59", "betray"), "a betrayal is never pushed out by newer minor events")
+	# ذخیره و بارگذاری
+	var back = CityState.from_dict(cs.to_dict())
+	var btr: Dictionary = CharAI.find(back, int(tr["id"]))
+	check(not btr.is_empty() and Mem.remembers(btr["ai"], "p", "betray") and int(btr["ai"]["mem"]["rel"]["p"]["betray"]) == 1, "memory and betrayal survive save and load")
+	check(abs(float(btr["ai"]["mem"]["rel"]["p"]["enemy"]) - float(tr["ai"]["mem"]["rel"]["p"]["enemy"])) < 0.01, "relationship values survive save and load")
+	# فایل ذخیرهٔ خراب یا قدیمی
+	var bad: Dictionary = (tr["ai"] as Dictionary).duplicate(true)
+	bad["mem"] = {"rel": {"p": {"trust": 99, "friend": "x", "enemy": -5, "betray": -3}, "bad": 7}, "events": [5, {"k": "nonsense"}], "tally": {"talk": -4}}
+	var fixed: Variant = CharAI.load_ai(bad, int(tr["id"]))
+	var fr: Dictionary = fixed["mem"]["rel"]["p"]
+	check(fixed != null and float(fr["trust"]) <= 1.0 and float(fr["enemy"]) >= 0.0 and int(fr["betray"]) >= 0 and (fixed["mem"]["events"] as Array).is_empty(), "corrupted memory is sanitized when loading")
+	var old_ai: Dictionary = (tr["ai"] as Dictionary).duplicate(true)
+	old_ai.erase("mem")
+	var legacy_ai: Variant = CharAI.load_ai(old_ai, int(tr["id"]))
+	check(legacy_ai != null and (legacy_ai["mem"]["rel"] as Dictionary).is_empty(), "stage-1 saves without memory still load")
+	# بازیکن ناشناس / NPC معمولی دست نخورده
+	var plain: Dictionary = {}
+	for n in cs.npcs:
+		if not CharAI.is_ai(n):
+			plain = n
+			break
+	check(CharAI.remember(cs, plain, "gift", "p", 1.0).is_empty() and CharAI.stance_toward(cs, plain, "p") == "neutral", "regular NPCs are unaffected by the memory system")
+	var texts_ok := true
+	for lang in ["fa", "en"]:
+		Loc.lang = lang
+		for k in ["err_ai_hostile", "dlg_ai_ally", "dlg_ai_friend", "dlg_ai_neutral", "dlg_ai_wary", "dlg_ai_enemy", "dlg_ai_betrayed", "dlg_ai_grudge", "dlg_ai_gift_mem"]:
+			if Loc.t(k) == k:
+				texts_ok = false
+	Loc.lang = "fa"
+	check(texts_ok, "memory reaction texts exist in Persian and English")
 
 
 func Family_check(cs, npc: Dictionary) -> String:

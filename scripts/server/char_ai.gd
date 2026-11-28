@@ -10,6 +10,7 @@ extends RefCounted
 const FWConst = preload("res://scripts/core/const.gd")
 const NpcNav = preload("res://scripts/server/npc_nav.gd")
 const Personality = preload("res://scripts/server/char_personality.gd")
+const Memory = preload("res://scripts/server/char_memory.gd")
 const Placement = preload("res://scripts/shared/placement.gd")
 
 const BUILD_TYPES := ["house", "farm", "coop", "shop", "well"]
@@ -80,6 +81,7 @@ static func _fresh_ai(arch: String, nid: int) -> Dictionary:
 		"life": str(Personality.ARCHETYPES[arch]["life"]),
 		"goals": [], "plan": [], "active": {}, "t": 0.0, "w": 0.0,
 		"fails": {}, "bad": {}, "log": [],
+		"mem": Memory.fresh(), "learned": 0,
 		"stats": {"gathered": 0, "sold": 0, "built": 0, "failed": 0, "thoughts": 0},
 	}
 
@@ -107,6 +109,8 @@ static func load_ai(raw: Variant, nid: int) -> Variant:
 			if g is Dictionary and (BUILD_TYPES.has(str(g.get("type", ""))) or str(g.get("kind", "")) == "income"):
 				goals.append({"kind": str(g.get("kind", "build")), "type": str(g.get("type", "")), "prio": clampf(float(g.get("prio", 0.0)), 0.0, 2.0), "h": str(g.get("h", "short"))})
 	ai["goals"] = goals.slice(0, 6)
+	ai["mem"] = Memory.load_mem(raw.get("mem", null), ai)
+	ai["learned"] = clampi(int(raw.get("learned", 0)), 0, 1000000)
 	var rf: Variant = raw.get("fails", {})
 	if rf is Dictionary:
 		for k in rf:
@@ -379,6 +383,7 @@ static func _fail_step(cs, npc: Dictionary, st: Dictionary, err: String) -> void
 		var k := _fail_key(g)
 		ai["fails"][k] = int(ai["fails"].get(k, 0)) + 1
 	_log(ai, "fail:%s:%s" % [st["t"], err], cs)
+	Memory.learn(ai, false, Personality.traits_for(str(ai["arch"]), int(npc["id"])))
 	ai["plan"] = []
 	ai["w"] = 0.0
 
@@ -443,8 +448,109 @@ static func _exec(cs, npc: Dictionary, dt: float, advance: Callable) -> void:
 				ai["fails"].erase("build:" + str(st["type"]))
 				cs.ai_events.append({"kind": "built", "id": int(res2["building"]["id"])})
 				_log(ai, "built:" + str(st["type"]), cs)
+				Memory.learn(ai, true, Personality.traits_for(str(ai["arch"]), int(npc["id"])))
 				plan.pop_front()
 			else:
 				_fail_step(cs, npc, st, str(res2["error"]))
 		_:
 			plan.pop_front()
+
+
+# ---------------- حافظه و تعامل با بازیکن (مرحلهٔ ۳) ----------------
+
+static func find(cs, npc_id: int) -> Dictionary:
+	for n in cs.npcs:
+		if int(n["id"]) == npc_id:
+			return n
+	return {}
+
+
+## ثبت یک رویداد در حافظهٔ شخصیت دربارهٔ یک بازیکن (یا شخصیت دیگر).
+static func remember(cs, npc: Dictionary, kind: String, who: String, strength: float) -> Dictionary:
+	if not is_ai(npc):
+		return {}
+	return Memory.record(npc["ai"], kind, who, strength, cs.day_count)
+
+
+static func stance_toward(cs, npc: Dictionary, who: String) -> String:
+	return Memory.stance(npc["ai"], who, cs.day_count) if is_ai(npc) else "neutral"
+
+
+## دشمن با او حرف نمی‌زند و معامله نمی‌کند (دوستی به معنی اطاعت نیست؛ دشمنی هم فقط قطع همکاری است نه حمله).
+static func refuses(cs, npc: Dictionary, who: String) -> bool:
+	return stance_toward(cs, npc, who) == "enemy"
+
+
+## گفتهٔ شخصیت هنگام صحبت، بر پایهٔ آنچه دربارهٔ این بازیکن به خاطر دارد.
+static func greeting(cs, npc: Dictionary, who: String) -> String:
+	var ai: Dictionary = npc["ai"]
+	var st := Memory.stance(ai, who, cs.day_count)
+	if Memory.remembers(ai, who, "betray"):
+		return "dlg_ai_betrayed"
+	if Memory.remembers(ai, who, "demolish") and st != "enemy":
+		return "dlg_ai_grudge"
+	if Memory.remembers(ai, who, "gift") and (st == "friend" or st == "ally"):
+		return "dlg_ai_gift_mem"
+	return "dlg_ai_" + st
+
+
+## معامله با بازیکن از کیف خود شخصیت (نه از هیچ): فروش بازیکن به شخصیت از پول حساب سایه کم می‌شود،
+## خرید بازیکن فقط از کالایی است که شخصیت واقعاً دارد. قیمت به رابطه بستگی دارد.
+static func player_trade(cs, npc: Dictionary, player: String, item: String, n: int, player_sells: bool) -> Dictionary:
+	var ai: Dictionary = npc["ai"]
+	var acct: String = str(npc["acct"])
+	if not cs.accounts.has(acct) or not cs.accounts.has(player):
+		return {"ok": false, "error": "no_account"}
+	if refuses(cs, npc, player):
+		return {"ok": false, "error": "ai_hostile"}
+	var factor := Memory.price_factor(ai, player, cs.day_count)
+	var base: int = cs.sell_price(item)
+	var me: Dictionary = cs.accounts[acct]
+	var you: Dictionary = cs.accounts[player]
+	if player_sells:
+		if int(you["inv"].get(item, 0)) < n:
+			return {"ok": false, "error": "no_items"}
+		var unit := maxi(1, int(floor(float(base) * minf(factor, 1.1))))
+		var count: int = n if cs.creative else mini(n, int(me["money"]) / unit)
+		if count < 1:
+			return {"ok": false, "error": "npc_broke"}
+		var total: int = 0 if cs.creative else unit * count
+		you["inv"][item] = int(you["inv"][item]) - count
+		cs._inv_add(me, item, count)
+		if total > 0:
+			me["money"] = int(me["money"]) - total
+			cs._gain(you, total)
+		remember(cs, npc, "trade", player, minf(1.0, float(total) / 100.0))
+		return {"ok": true, "npc": str(npc["name"]), "item": item, "count": count, "total": total, "money": int(you["money"])}
+	var have: int = int(me["inv"].get(item, 0))
+	if have < 1:
+		return {"ok": false, "error": "npc_out_of_stock"}
+	var unit2 := maxi(1, int(ceil(float(base) * 1.15 * (2.0 - clampf(factor, 0.7, 1.3)))))   # دوست ارزان‌تر می‌فروشد
+	var count2: int = mini(n, have)
+	if not cs.creative:
+		count2 = mini(count2, int(you["money"]) / unit2)
+	if count2 < 1:
+		return {"ok": false, "error": "no_money"}
+	if int(you["inv"].get(item, 0)) + count2 > FWConst.ITEM_CAP:
+		return {"ok": false, "error": "inv_full"}
+	var total2: int = 0 if cs.creative else unit2 * count2
+	me["inv"][item] = have - count2
+	cs._inv_add(you, item, count2)
+	if total2 > 0:
+		cs._pay(you, total2)
+		cs._gain(me, total2)
+	remember(cs, npc, "trade", player, minf(1.0, float(total2) / 100.0))
+	return {"ok": true, "npc": str(npc["name"]), "item": item, "count": count2, "total": total2, "money": int(you["money"])}
+
+
+## یک ساختمان شخصیت را شخص دیگری برداشت (فقط مدیر می‌تواند). اگر قبلاً دوست بود، این خیانت است.
+static func on_demolished(cs, owner_acct: String, actor: String) -> void:
+	if not owner_acct.begins_with("ai:") or actor == owner_acct:
+		return
+	for n in cs.npcs:
+		if is_ai(n) and str(n.get("acct", "")) == owner_acct:
+			var was := stance_toward(cs, n, actor)
+			remember(cs, n, "demolish", actor, 0.7)
+			if was == "friend" or was == "ally":
+				remember(cs, n, "betray", actor, 1.0)
+			return
