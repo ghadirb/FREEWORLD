@@ -610,7 +610,7 @@ static func _exec(cs, npc: Dictionary, dt: float, advance: Callable) -> void:
 			if bool(res2["ok"]):
 				ai["stats"]["built"] = int(ai["stats"]["built"]) + 1
 				ai["fails"].erase("build:" + str(st["type"]))
-				cs.ai_events.append({"kind": "built", "id": int(res2["building"]["id"])})
+				cs.ai_events.append({"kind": "built", "id": int(res2["building"]["id"]), "name": str(npc["name"]), "type": str(st["type"])})
 				_log(ai, "built:" + str(st["type"]), cs)
 				Memory.learn(ai, true, Personality.base_of(ai, int(npc["id"])))
 				plan.pop_front()

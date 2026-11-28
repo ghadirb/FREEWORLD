@@ -245,6 +245,9 @@ func _process(delta: float) -> void:
 		for aev in cs.ai_events:
 			if aev["kind"] == "built" and cs.buildings.has(int(aev["id"])):
 				_broadcast("s2c_building_added", cs.building_public(cs.buildings[int(aev["id"])]))
+				for wpid in _auth_peers():   # فقط ناظران (مدیر/جهان خلاقانه) از ساخت‌وسازهای شخصیت‌ها باخبر می‌شوند
+					if CharAI.can_spawn(cs, str(peers[wpid]["name"])):
+						_notice(wpid, "ai_act", {"kind": "built", "a": str(aev.get("name", "")), "type": str(aev.get("type", ""))})
 			elif aev["kind"] == "block":
 				_broadcast("s2c_block", PackedInt32Array([int(aev["x"]), int(aev["y"]), int(aev["z"]), FWConst.BLOCK_ORDER.find(str(aev["type"])), int(aev["color"])]))
 			elif aev["kind"] in ["alliance", "betrayal", "war", "retreat", "peace"]:

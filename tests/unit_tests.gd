@@ -6545,6 +6545,7 @@ func test_character_watch() -> void:
 	var dw: Dictionary = Watch.detail(cs, a, "boss")
 	check(bool(dw["war"]) and (dw["foes"] as Array).has(str(foe["name"])), "war foes appear by name in the detail")
 	check(JSON.stringify(dw).length() < 6000, "detail stays small enough for a mobile connection")
+	a["ai"]["war"]["foes"].erase(str(foe["acct"]))   # جنگ ساختگی آزمایش پاک شود تا شبیه‌سازی بعدی خراب نشود
 	# ارتباط و متن‌ها
 	check(load("res://scripts/server/game_server.gd").LOCAL_METHODS.has("c2s_ai_watch"), "the watch message is allowed in the offline local server")
 	check(FWConst.PROTOCOL_VERSION >= 56, "protocol bumped for watching characters")
@@ -6567,3 +6568,48 @@ func test_character_watch() -> void:
 				print("   missing text: ", lang, " ", k)
 	Loc.lang = "fa"
 	check(ok, "watch texts exist in Persian and English")
+	# --- لایهٔ ۴: نشانگر و رویداد ---
+	var NpcSim2 = load("res://scripts/server/npc_sim.gd")
+	var rows: Array = NpcSim2.public_list_near(cs, 0.0, 0.0, 100000.0)
+	var ai_rows := 0
+	var plain_rows := 0
+	var row_ok := true
+	for r in rows:
+		if (r[6] as String).begins_with("c:"):
+			ai_rows += 1
+			row_ok = row_ok and r.size() == 8 and str(r[7]) != ""
+		else:
+			plain_rows += 1
+			row_ok = row_ok and r.size() == 7
+	check(ai_rows == 6 and plain_rows > 0 and row_ok, "AI rows carry an activity marker; ordinary NPC rows are unchanged")
+	var GV = load("res://scripts/client/game_view.gd")
+	Loc.lang = "en"
+	check(GV.ai_marker_text("build:house").contains("Building") and GV.ai_marker_text("explore").contains("Exploring"), "marker text shows the activity and building type")
+	check(GV.ai_marker_text("zzz") != "", "an unknown activity still gives a marker")
+	Loc.lang = "fa"
+	var cs3 = CityState.new(2828)
+	cs3.creative = true
+	NpcSim.ensure_npcs(cs3)
+	cs3.ai_settings["max"] = 12
+	for i in 3:
+		CharAI.spawn(cs3, Pers.ORDER[i])
+	var site_built := false
+	for i in 900:
+		cs3.tick(0.5)
+		NpcSim.step(cs3, 0.5)
+		for ev in cs3.ai_events:
+			if str(ev["kind"]) == "built":
+				site_built = site_built or (str(ev.get("name", "")) != "" and str(ev.get("type", "")) != "")
+		cs3.ai_events.clear()
+		if site_built:
+			break
+	check(site_built, "a build event carries the character's name and the building type")
+	var ok2 := true
+	for lang in ["fa", "en"]:
+		Loc.lang = lang
+		for k in ["ai_on", "ai_off", "ai_markers", "ai_toasts", "ai_feed_title", "ai_feed_none", "msg_ai_act_built"]:
+			if Loc.t(k) == k:
+				ok2 = false
+				print("   missing text: ", lang, " ", k)
+	Loc.lang = "fa"
+	check(ok2, "marker and feed texts exist in Persian and English")

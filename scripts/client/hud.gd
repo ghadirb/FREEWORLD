@@ -73,6 +73,7 @@ var _inv_panel: PanelContainer
 var _inv_rows: Dictionary = {}
 var _god_panel: PanelContainer
 # سازندهٔ شخصیت (پروتکل ۵۵)
+const Settings = preload("res://scripts/client/settings.gd")
 const CharPersonality = preload("res://scripts/server/char_personality.gd")
 var _ai_panel: PanelContainer
 # مشاهدهٔ شخصیت‌های مستقل (پروتکل ۵۶)
@@ -84,6 +85,13 @@ var _aw_follow_btn: Button
 var _aw_roster: Array = []
 var _aw_sel: int = -1
 var _aw_timer: Timer
+var _aw_feed: Array = []          # آخرین رویدادهای شخصیت‌ها (جدیدترین اول)
+var _aw_feed_label: Label
+var _aw_feed_box: VBoxContainer
+var _aw_marker_btn: Button
+var _aw_toast_btn: Button
+var _aw_toasts: bool = true
+const AW_FEED_MAX := 20
 var _ai_name: LineEdit
 var _ai_sliders: Dictionary = {}
 var _ai_pick: Dictionary = {"arch": "rival", "life": "best_city", "style": "balanced", "rel": "neutral"}
@@ -1023,6 +1031,33 @@ func _build_ai_watch_panel() -> void:
 	_aw_list = VBoxContainer.new()
 	_aw_list.add_theme_constant_override("separation", 6)
 	v.add_child(_aw_list)
+	_aw_feed_box = VBoxContainer.new()
+	_aw_feed_box.add_theme_constant_override("separation", 6)
+	v.add_child(_aw_feed_box)
+	var trow := HBoxContainer.new()
+	trow.add_theme_constant_override("separation", 6)
+	_aw_feed_box.add_child(trow)
+	_aw_marker_btn = UiTheme.button("", Vector2(0, 52))
+	_aw_marker_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_aw_marker_btn.pressed.connect(func():
+		view.ai_markers = not view.ai_markers
+		Settings.set_value("ai_markers", view.ai_markers)
+		_aw_refresh_toggles())
+	trow.add_child(_aw_marker_btn)
+	_aw_toast_btn = UiTheme.button("", Vector2(0, 52))
+	_aw_toast_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_aw_toast_btn.pressed.connect(func():
+		_aw_toasts = not _aw_toasts
+		Settings.set_value("ai_toasts", _aw_toasts)
+		_aw_refresh_toggles())
+	trow.add_child(_aw_toast_btn)
+	_aw_feed_box.add_child(_label(Loc.t("ai_feed_title"), 20, Color("d6e4ff")))
+	_aw_feed_label = _label("", 16, Color("e6eefc"))
+	_aw_feed_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_aw_feed_label.custom_minimum_size = Vector2(540, 0)
+	_aw_feed_box.add_child(_aw_feed_label)
+	_aw_toasts = bool(Settings.get_value("ai_toasts", true))
+	_aw_refresh_toggles()   # نشانگرها را _refresh_role برای ناظر روشن می‌کند
 	_aw_detail = VBoxContainer.new()
 	_aw_detail.add_theme_constant_override("separation", 8)
 	_aw_detail.visible = false
@@ -1055,6 +1090,7 @@ func _build_ai_watch_panel() -> void:
 		_aw_sel = -1
 		_aw_detail.visible = false
 		_aw_list.visible = true
+		_aw_feed_box.visible = true
 		client.ai_watch("roster"))
 	brow2.add_child(back)
 	_aw_timer = Timer.new()
@@ -1071,7 +1107,26 @@ func _toggle_ai_watch() -> void:
 		_aw_sel = -1
 		_aw_detail.visible = false
 		_aw_list.visible = true
+		_aw_feed_box.visible = true
+		_aw_refresh_toggles()
 		client.ai_watch("roster")
+
+
+func _aw_refresh_toggles() -> void:
+	_aw_marker_btn.text = "%s: %s" % [Loc.t("ai_markers"), Loc.t("ai_on") if view.ai_markers else Loc.t("ai_off")]
+	_aw_toast_btn.text = "%s: %s" % [Loc.t("ai_toasts"), Loc.t("ai_on") if _aw_toasts else Loc.t("ai_off")]
+	var lines: Array = []
+	for e in _aw_feed:
+		lines.append("• " + str(e))
+	_aw_feed_label.text = "\n".join(PackedStringArray(lines)) if not lines.is_empty() else Loc.t("ai_feed_none")
+
+
+func _aw_add_feed(text: String) -> void:
+	_aw_feed.push_front("%s %s: %s" % [Loc.t("ai_day"), Loc.digits(str(int(client.world_time / 86400.0) + 1)), text])
+	while _aw_feed.size() > AW_FEED_MAX:
+		_aw_feed.pop_back()
+	if _aw_panel != null and _aw_panel.visible:
+		_aw_refresh_toggles()
 
 
 func _aw_poll() -> void:
@@ -1116,6 +1171,7 @@ func _aw_refresh_roster() -> void:
 		b.pressed.connect(func():
 			_aw_sel = rid
 			_aw_list.visible = false
+			_aw_feed_box.visible = false
 			_aw_detail.visible = true
 			_aw_text.text = "…"
 			_aw_refresh_follow_btn()
@@ -2696,7 +2752,14 @@ func _on_notice(code: String, args: Dictionary) -> void:
 			toast(Loc.fmt("msg_ai_edited", [str(args.get("name", ""))]), Color("c8f08a"))
 		"ai_social":
 			Sfx.play(self, "notify")
-			toast(Loc.fmt("msg_ai_" + str(args.get("kind", "alliance")), [str(args.get("a", "")), str(args.get("b", ""))]), Color("e8c87a"))
+			var soc_text: String = Loc.fmt("msg_ai_" + str(args.get("kind", "alliance")), [str(args.get("a", "")), str(args.get("b", ""))])
+			_aw_add_feed(soc_text)
+			toast(soc_text, Color("e8c87a"))
+		"ai_act":
+			var act_text: String = Loc.fmt("msg_ai_act_built", [str(args.get("a", "")), Loc.t("type_" + str(args.get("type", "")))])
+			_aw_add_feed(act_text)
+			if _aw_toasts:
+				toast(act_text, Color("b9d8ff"))
 		"ride_upgraded":
 			Sfx.play(self, "coin")
 			var rb: int = int(args.get("id", 0))
@@ -2935,6 +2998,10 @@ func _refresh_role() -> void:
 	_admin_btn.visible = FWConst.is_admin(client.role)
 	_god_btn.visible = FWConst.is_admin(client.role) and view.mode == "world"
 	_ai_btn.visible = FWConst.is_admin(client.role)
+	if not _ai_btn.visible:
+		view.ai_markers = false
+	elif _aw_marker_btn != null and not view.ai_markers and bool(Settings.get_value("ai_markers", true)):
+		view.ai_markers = true
 	if not _god_btn.visible and _civ_panel.visible:
 		_civ_panel.visible = false
 	if not _ai_btn.visible and _ai_panel.visible:

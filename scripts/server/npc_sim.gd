@@ -7,6 +7,7 @@ const NpcNav = preload("res://scripts/server/npc_nav.gd")
 const Residents = preload("res://scripts/server/residents.gd")
 const Family = preload("res://scripts/server/family.gd")
 const CharAI = preload("res://scripts/server/char_ai.gd")
+const CharWatch = preload("res://scripts/server/char_watch.gd")
 const CharSocial = preload("res://scripts/server/char_social.gd")
 const CharWar = preload("res://scripts/server/char_war.gd")
 
@@ -233,7 +234,10 @@ static func public_list_near(cs, x: float, z: float, radius: float = FWConst.NPC
 		var dx: float = float(n["x"]) - x
 		var dz: float = float(n["z"]) - z
 		if dx * dx + dz * dz <= r2:
-			out.append([n["id"], snappedf(n["x"], 0.1), snappedf(n["z"], 0.1), n["state"], n["name"], Residents.is_inside(n), _tag(n)])
+			var row: Array = [n["id"], snappedf(n["x"], 0.1), snappedf(n["z"], 0.1), n["state"], n["name"], Residents.is_inside(n), _tag(n)]
+			if CharAI.is_ai(n):
+				row.append(CharWatch.activity_short(cs, n))   # نشانگر کار فعلی بالای سر شخصیت مستقل
+			out.append(row)
 	return out
 
 

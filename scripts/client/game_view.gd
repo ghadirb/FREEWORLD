@@ -77,6 +77,7 @@ var _god_mat: StandardMaterial3D
 var building_nodes: Dictionary = {}
 var mode: String = "life"
 var my_pos: Vector3 = Vector3.ZERO
+var ai_markers: bool = false   # نشانگر کار فعلی بالای سر شخصیت‌های مستقل (HUD برای ناظر روشن می‌کند)
 var follow_npc_id: int = -1   # دوربین دنبال این شخصیت مستقل است (-1 = خاموش)؛ با حرکت بازیکن لغو می‌شود
 var my_yaw: float = 0.0
 var joy: Vector2 = Vector2.ZERO
@@ -2175,7 +2176,21 @@ func _sync_remote(_dt: float) -> void:
 			nv.target_yaw = atan2(npos.x - old.x, npos.z - old.z)
 		nv.target = npos
 		nv.visible = n.size() < 6 or int(n[5]) == 0   # ساکن خوابیده «داخل خانه» است
-		nv.sub_label.text = Loc.t("state_" + str(n[3]))
+		if ai_markers and n.size() > 7:
+			nv.sub_label.text = ai_marker_text(str(n[7]))
+		else:
+			nv.sub_label.text = Loc.t("state_" + str(n[3]))
+
+
+## متن نشانگر بالای سر شخصیت مستقل: آیکن + کار فعلی (کد «کد» یا «کد:نوع ساختمان»).
+static func ai_marker_text(act: String) -> String:
+	var parts := act.split(":")
+	var code: String = parts[0]
+	var icon: String = {"build": "🔨", "gather": "⛏", "collect": "📦", "sell_all": "💰", "explore": "🧭", "wait": "💤", "think": "💭", "march": "⚔", "retreat": "🏳", "off": "⏸"}.get(code, "•")
+	var t: String = Loc.t("ai_act_" + code)
+	if code == "build" and parts.size() > 1 and Loc.t("type_" + parts[1]) != "type_" + parts[1]:
+		t += " " + Loc.t("type_" + parts[1])
+	return icon + " " + t
 
 
 ## شفافیت نام NPC بر حسب فاصله: ۱ تا ۶۰٪ فاصلهٔ مجاز، سپس خطی تا ۰ در فاصلهٔ مجاز.

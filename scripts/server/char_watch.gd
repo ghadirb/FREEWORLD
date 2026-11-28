@@ -93,3 +93,9 @@ static func detail(cs, npc: Dictionary, viewer: String) -> Dictionary:
 		allies.append(_name_of_acct(cs, str(a)))
 	d["allies"] = allies
 	return d
+
+
+## متن کوتاه فعالیت برای نشانگر بالای سر شخصیت: «کد» یا «کد:نوع ساختمان». به ردیف NPC هر بازیکن اضافه می‌شود.
+static func activity_short(cs, npc: Dictionary) -> String:
+	var a: Dictionary = activity(cs, npc)
+	return str(a["code"]) + (":" + str(a["type"]) if str(a["type"]) != "" else "")
