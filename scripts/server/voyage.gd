@@ -78,7 +78,7 @@ static func depart(cs, actor: String, dest: String) -> Dictionary:
 				pack["inv"][str(k)] = n
 		acc["money"] = int(acc["money"]) - int(pack["money"])
 		acc["inv"] = {}
-	var g := cs.gear_of(acc)
+	var g: Dictionary = cs.gear_of(acc)
 	pack["gear"] = {"weapon": int(g["weapon"]), "armor": int(g["armor"])}
 	cs._log(actor, "voyage_depart", {"dest": dest})
 	return {"ok": true, "dest": dest, "pack": pack}
