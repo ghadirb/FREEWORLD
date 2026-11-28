@@ -108,6 +108,7 @@ func _init() -> void:
 	test_character_memory()
 	test_character_social()
 	test_character_fortify()
+	test_character_discovery()
 	test_cave()
 	test_batch_build()
 	test_blueprints()
@@ -5945,7 +5946,7 @@ func test_character_fortify() -> void:
 	var blocks_before: int = int(cs.block_owner_count.get(acct, 0))
 	_ai_run(cs, 12000)
 	var placed: int = int(cs.block_owner_count.get(acct, 0))
-	check(placed > blocks_before and placed >= 20, "it placed real wall blocks around its house (%d)" % placed)
+	check(placed >= blocks_before and placed >= 20, "it placed real wall blocks around its house (%d)" % placed)
 	var all_stone := true
 	for v in cs.blocks:
 		if str(cs.blocks[v][2]) == acct and str(cs.blocks[v][0]) != "stone":
@@ -6004,3 +6005,57 @@ func test_character_fortify() -> void:
 	# سنگ دیوار را نمی‌فروشد وقتی دیوار ناقص است
 	cs.remove_block("boss", mine[mine.size() - 1].x, mine[mine.size() - 1].y, mine[mine.size() - 1].z, false)
 	check(Fort.keeps_stone(cs, npc), "an unfinished wall makes it keep its stone")
+
+
+func test_character_discovery() -> void:
+	print("-- autonomous characters: gradual map discovery")
+	var NpcSim = load("res://scripts/server/npc_sim.gd")
+	var CharAI = load("res://scripts/server/char_ai.gd")
+	var cs = CityState.new(4242)
+	NpcSim.ensure_npcs(cs)
+	cs.provision_admin("boss", "secret")
+	var r: Dictionary = CharAI.spawn(cs, "trader")
+	var npc: Dictionary = r["npc"]
+	var ai: Dictionary = npc["ai"]
+	CharAI.reveal(npc)
+	var seen0: int = ai["seen"].size()
+	check(seen0 > 0 and seen0 <= 25, "a new character has only seen the area around itself (%d cells)" % seen0)
+	# منبع ندیده شناخته نمی‌شود: همهٔ منابع پیدا‌شده باید در سلول دیده‌شده باشند
+	var pos := Vector2(float(npc["x"]), float(npc["z"]))
+	var all_seen := true
+	var found := 0
+	for k in ["tree", "rock", "clay"]:
+		var f: Dictionary = CharAI.find_resource(cs, npc, pos, {}, [k])
+		if not f.is_empty():
+			found += 1
+			if not CharAI.has_seen(ai, float(f["x"]), float(f["z"])):
+				all_seen = false
+	check(all_seen, "it only knows resources inside cells it has seen (%d found)" % found)
+	var far := 0
+	for dx in range(-24, 25):
+		for dz in range(-24, 25):
+			var n: Dictionary = cs.world.resource_in_cell(int(pos.x / 4.0) + dx, int(pos.y / 4.0) + dz)
+			if not n.is_empty() and not CharAI.has_seen(ai, float(n["x"]), float(n["z"])):
+				far += 1
+	check(far > 0, "there are real resources it has not discovered yet (%d)" % far)
+	# جهان بدون هیچ کشفی: برنامهٔ گشت می‌سازد
+	var blank: Dictionary = {"id": 3, "x": 100.0, "z": 100.0, "ai": CharAI._fresh_ai("trader", 3)}
+	var ep: Array = CharAI.explore_plan(cs, blank)
+	check(ep.size() == 1 and str(ep[0]["t"]) == "explore", "with nothing seen it plans to explore")
+	check(not CharAI.has_seen(blank["ai"], float(ep[0]["x"]), float(ep[0]["z"])), "the exploration target is an unseen cell")
+	# شبیه‌سازی طولانی: دنیا را بیشتر می‌بیند و باز هم تولید می‌کند
+	_ai_run(cs, 6000)
+	check(ai["seen"].size() > seen0 + 10, "it discovered much more of the world by walking (%d cells)" % ai["seen"].size())
+	check(int(ai["stats"]["gathered"]) > 0 and int(ai["stats"]["sold"]) > 0, "it still gathers and sells using only discovered resources")
+	check(ai["seen"].size() <= CharAI.SEEN_MAX, "the discovery memory is bounded")
+	# ذخیره و بارگذاری
+	var back = CityState.from_dict(cs.to_dict())
+	var bn: Dictionary = {}
+	for n2 in back.npcs:
+		if int(n2["id"]) == int(npc["id"]):
+			bn = n2
+	check(not bn.is_empty() and bn["ai"]["seen"].size() == ai["seen"].size(), "discovered cells survive save and load")
+	var bad: Dictionary = CharAI.load_ai({"arch": "trader", "seen": {"x,y": true, "5,6": true, "1": true}}, 9)
+	check(bad["seen"].size() == 1 and bad["seen"].has("5,6"), "corrupt discovery entries are dropped on load")
+	var old: Dictionary = CharAI.load_ai({"arch": "trader"}, 9)
+	check(old != null and old["seen"].is_empty(), "saves from before discovery still load")

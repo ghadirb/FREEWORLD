@@ -23,6 +23,10 @@ const BUILD_SECONDS := 2.5
 const LOG_MAX := 12
 const BAD_RESOURCE_DAYS := 1
 const SAVINGS_TARGET := 400
+const DISC_CELL := 16.0        # اندازهٔ سلول کشف (واحد جهان)
+const DISC_RADIUS := 2         # شعاع دیدن به سلول
+const SEEN_MAX := 400
+const EXPLORE_TIMEOUT := 40.0
 
 
 static func is_ai(npc: Dictionary) -> bool:
@@ -82,9 +86,9 @@ static func _fresh_ai(arch: String, nid: int) -> Dictionary:
 		"arch": arch, "traits": Personality.traits_for(arch, nid),
 		"life": str(Personality.ARCHETYPES[arch]["life"]),
 		"goals": [], "plan": [], "active": {}, "t": 0.0, "w": 0.0,
-		"fails": {}, "bad": {}, "log": [],
+		"fails": {}, "bad": {}, "log": [], "seen": {}, "disc": "",
 		"mem": Memory.fresh(), "learned": 0, "allies": {}, "meet": {}, "bought": {},
-		"stats": {"gathered": 0, "sold": 0, "built": 0, "failed": 0, "thoughts": 0, "met": 0, "traded": 0, "allied": 0, "betrayed": 0},
+		"stats": {"gathered": 0, "sold": 0, "built": 0, "failed": 0, "thoughts": 0, "met": 0, "traded": 0, "allied": 0, "betrayed": 0, "explored": 0},
 	}
 
 
@@ -126,11 +130,77 @@ static func load_ai(raw: Variant, nid: int) -> Variant:
 	if rl is Array:
 		for e in rl.slice(0, LOG_MAX):
 			ai["log"].append(str(e).substr(0, 60))
+	var rseen: Variant = raw.get("seen", {})
+	if rseen is Dictionary:
+		for k in rseen:
+			if ai["seen"].size() >= SEEN_MAX:
+				break
+			var parts: PackedStringArray = str(k).split(",")
+			if parts.size() == 2 and parts[0].is_valid_int() and parts[1].is_valid_int():
+				ai["seen"][str(k)] = true
 	var rs: Variant = raw.get("stats", {})
 	if rs is Dictionary:
 		for k in ai["stats"]:
 			ai["stats"][k] = maxi(0, int(rs.get(k, 0)))
 	return ai
+
+
+# ---------------- کشف تدریجی نقشه ----------------
+
+static func _dcell(v: float) -> int:
+	return int(floor(v / DISC_CELL))
+
+
+## هر چه شخصیت از نزدیک ببیند یا دور بزند، در «دیده‌شده‌ها» می‌ماند؛ فقط همان‌ها را می‌شناسد.
+static func reveal(npc: Dictionary) -> void:
+	var ai: Dictionary = npc["ai"]
+	var cx: int = _dcell(float(npc["x"]))
+	var cz: int = _dcell(float(npc["z"]))
+	var here := "%d,%d" % [cx, cz]
+	if str(ai["disc"]) == here:
+		return
+	ai["disc"] = here
+	for dx in range(-DISC_RADIUS, DISC_RADIUS + 1):
+		for dz in range(-DISC_RADIUS, DISC_RADIUS + 1):
+			var key := "%d,%d" % [cx + dx, cz + dz]
+			if not ai["seen"].has(key):
+				if ai["seen"].size() >= SEEN_MAX:
+					ai["seen"].erase(ai["seen"].keys()[0])   # قدیمی‌ترین دیده‌شده کم‌کم فراموش می‌شود
+				ai["seen"][key] = true
+				ai["stats"]["explored"] = int(ai["stats"].get("explored", 0)) + 1
+
+
+static func has_seen(ai: Dictionary, x: float, z: float) -> bool:
+	return ai["seen"].has("%d,%d" % [_dcell(x), _dcell(z)])
+
+
+## نزدیک‌ترین سلول ندیده که روی خشکی و درون مرز جهان است (جهت شروع از شناسه، قطعی).
+static func explore_plan(cs, npc: Dictionary) -> Array:
+	var ai: Dictionary = npc["ai"]
+	var cx: int = _dcell(float(npc["x"]))
+	var cz: int = _dcell(float(npc["z"]))
+	var lim: float = FWConst.CITY_SIZE + FWConst.WORLD_LIMIT - 2.0
+	var turn: int = int(npc["id"]) % 8
+	for r in range(DISC_RADIUS + 1, 14):
+		var ring: Array = []
+		for dx in range(-r, r + 1):
+			for dz in range(-r, r + 1):
+				if absi(dx) == r or absi(dz) == r:
+					ring.append(Vector2i(dx, dz))
+		ring.sort_custom(func(a, b): return atan2(float(a.y), float(a.x)) < atan2(float(b.y), float(b.x)))
+		for i in ring.size():
+			var d: Vector2i = ring[(i + turn * ring.size() / 8) % ring.size()]
+			var key := "%d,%d" % [cx + d.x, cz + d.y]
+			if ai["seen"].has(key):
+				continue
+			var tx: float = (float(cx + d.x) + 0.5) * DISC_CELL
+			var tz: float = (float(cz + d.y) + 0.5) * DISC_CELL
+			if tx < -lim or tz < -lim or tx > lim or tz > lim:
+				continue
+			if cs.world.height_at(tx, tz) < 0.2:
+				continue
+			return [{"t": "explore", "x": tx, "z": tz, "k": key}]
+	return []
 
 
 # ---------------- زمان‌بندی ----------------
@@ -156,6 +226,7 @@ static func step(cs, npc: Dictionary, dt: float, advance: Callable) -> void:
 		npc["state"] = "idle"
 		return
 	ai["t"] = float(ai["t"]) + dt
+	reveal(npc)
 	if (ai["plan"] as Array).is_empty():
 		if float(ai["t"]) >= _interval(cs, npc):
 			ai["t"] = 0.0
@@ -255,6 +326,8 @@ static func think(cs, npc: Dictionary) -> void:
 		elif g["kind"] == "fortify":
 			var fplan: Array = Fortify.plan(cs, npc, func(c, n, p, u): return find_resource(c, n, p, u, ["rock"]))
 			if fplan.is_empty():
+				fplan = explore_plan(cs, npc)
+			if fplan.is_empty():
 				_note_fail(ai, g, "no_resource")
 				continue
 			ai["plan"] = fplan
@@ -316,7 +389,7 @@ static func earn_plan(cs, npc: Dictionary, deficit: int) -> Array:
 		steps.append({"t": "gather", "rx": r["rx"], "rz": r["rz"], "x": r["x"], "z": r["z"], "tool": r["tool"], "key": r["key"]})
 		pos = Vector2(r["x"], r["z"])
 	if steps.is_empty():
-		return []
+		return explore_plan(cs, npc)   # منبعی نمی‌شناسد ← می‌رود دنیا را ببیند
 	var p := plaza()
 	steps.append({"t": "sell_all", "x": p.x, "z": p.y})
 	return steps
@@ -339,8 +412,8 @@ static func find_resource(cs, npc: Dictionary, from: Vector2, used: Dictionary, 
 			if cs.depleted.has(key) or used.has(key) or int(ai["bad"].get(key, -99)) >= cs.day_count - BAD_RESOURCE_DAYS:
 				continue
 			var node: Dictionary = cs.world.resource_in_cell(rx, rz)
-			if node.is_empty():
-				continue
+			if node.is_empty() or not has_seen(ai, float(node["x"]), float(node["z"])):
+				continue   # چیزی را که ندیده نمی‌شناسد
 			var kind := str(node["kind"])
 			if not (kind in kinds):
 				continue
@@ -465,6 +538,15 @@ static func _exec(cs, npc: Dictionary, dt: float, advance: Callable) -> void:
 			if bool(r2["ok"]):
 				ai["stats"]["sold"] = int(ai["stats"]["sold"]) + int(r2["earned"])
 			plan.pop_front()
+		"explore":
+			ai["w"] = float(ai["w"]) + dt
+			var arrived: bool = _move(cs, npc, Vector2(float(st["x"]), float(st["z"])), 3.0, dt, advance)
+			if arrived or float(ai["w"]) >= EXPLORE_TIMEOUT:
+				if not arrived:
+					ai["seen"][str(st["k"])] = true   # نرسید (مانع/آب): آن سلول را بی‌فایده فرض کن
+				ai["w"] = 0.0
+				_log(ai, "explored", cs)
+				plan.pop_front()
 		"wall":
 			var wr: Dictionary = Fortify.build_step(cs, npc, dt, func(target: Vector2, reach: float) -> bool: return _move(cs, npc, target, reach, dt, advance))
 			if int(wr["placed"]) > 0:
