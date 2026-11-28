@@ -1194,6 +1194,8 @@ func wild_step(dt: float, exposed: Dictionary, in_mine: Dictionary = {}) -> Dict
 		_hurt_t[name] = float(_hurt_t[name]) + dt
 	for h in res["hurt"]:
 		var n: String = h["name"]
+		if out["died"].has(n):
+			continue   # بعد از مرگ و بازگشت در همین گام، ضربه‌های باقی‌مانده نادیده گرفته می‌شوند
 		var acc: Dictionary = accounts[n]
 		acc["hp"] = float(acc.get("hp", FWConst.PLAYER_HP_MAX)) - float(h["amount"])
 		_hurt_t[n] = 0.0
