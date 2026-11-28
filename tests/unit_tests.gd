@@ -110,6 +110,7 @@ func _init() -> void:
 	test_character_war()
 	test_character_creator()
 	test_character_performance()
+	test_character_watch()
 	test_character_fortify()
 	test_character_discovery()
 	test_cave()
@@ -6477,3 +6478,92 @@ func test_character_performance() -> void:
 	for lv in ["economy", "balanced", "advanced"]:
 		c2.ai_settings["level"] = lv
 		check(CharAI.think_budget(c2) >= 2, "think budget exists for level " + lv)
+
+
+func test_character_watch() -> void:
+	print("-- autonomous characters: watching and finding characters")
+	var CharAI = load("res://scripts/server/char_ai.gd")
+	var Watch = load("res://scripts/server/char_watch.gd")
+	var Creator = load("res://scripts/server/char_creator.gd")
+	var NpcSim = load("res://scripts/server/npc_sim.gd")
+	var Pers = load("res://scripts/server/char_personality.gd")
+	var cs = CityState.new(3131)
+	NpcSim.ensure_npcs(cs)
+	cs.ai_settings["max"] = 12
+	check(Watch.roster(cs).is_empty(), "the roster is empty when there are no characters")
+	for i in 5:
+		CharAI.spawn(cs, Pers.ORDER[i])
+	var custom: Dictionary = Creator.create(cs, {"name": "Dara", "arch": "trader", "rel": "friend"}, "boss")["npc"]
+	var codes := {}
+	for i in 240:
+		cs.tick(0.5)
+		NpcSim.step(cs, 0.5)
+		for r in Watch.roster(cs):
+			codes[str(r["act"])] = true
+	var ro: Array = Watch.roster(cs)
+	check(ro.size() == 6, "the roster lists every autonomous character (and no ordinary NPC)")
+	var shape_ok := true
+	for r in ro:
+		for k in ["id", "name", "arch", "custom", "x", "z", "act", "type", "money", "built", "war", "hp"]:
+			if not r.has(k):
+				shape_ok = false
+	check(shape_ok, "every roster row has all fields")
+	var known := ["think", "wait", "build", "collect", "explore", "gather", "sell_all", "march", "retreat", "off"]
+	var all_known := true
+	for c in codes:
+		if not known.has(c):
+			all_known = false
+			print("   unknown activity code: ", c)
+	check(all_known and codes.size() >= 2, "activity codes are known and vary over time (%s)" % str(codes.keys()))
+	cs.ai_settings["on"] = false
+	check(str(Watch.roster(cs)[0]["act"]) == "off", "a switched-off world shows characters as off")
+	cs.ai_settings["on"] = true
+	# جزئیات
+	var d: Dictionary = Watch.detail(cs, custom, "boss")
+	check(str(d["name"]) == "Dara" and bool(d["custom"]) and d["traits"].size() == Pers.TRAIT_KEYS.size(), "detail carries name, custom flag and traits")
+	check(d["log"].size() <= Watch.LOG_SHOWN and d["plan"].size() <= 5 and d["goals"].size() <= 4, "detail lists are bounded")
+	var me_seen := false
+	for r in d["rels"]:
+		if bool(r["me"]):
+			me_seen = true
+	check(me_seen, "the viewer is marked in the character's relations")
+	check(Watch.find(cs, int(custom["id"])) == custom, "a character is found by id")
+	var human_id := -1
+	for hn in cs.npcs:
+		if not CharAI.is_ai(hn):
+			human_id = int(hn["id"])
+			break
+	check(Watch.find(cs, human_id).is_empty() and Watch.find(cs, 99999).is_empty(), "ordinary NPCs and unknown ids are not watchable")
+	# رویداد جنگ در جزئیات
+	var a: Dictionary = CharAI.find(cs, int(custom["id"]))
+	var foe: Dictionary = {}
+	for n in cs.npcs:
+		if CharAI.is_ai(n) and int(n["id"]) != int(custom["id"]):
+			foe = n
+			break
+	a["ai"]["war"]["foes"][str(foe["acct"])] = 1
+	var dw: Dictionary = Watch.detail(cs, a, "boss")
+	check(bool(dw["war"]) and (dw["foes"] as Array).has(str(foe["name"])), "war foes appear by name in the detail")
+	check(JSON.stringify(dw).length() < 6000, "detail stays small enough for a mobile connection")
+	# ارتباط و متن‌ها
+	check(load("res://scripts/server/game_server.gd").LOCAL_METHODS.has("c2s_ai_watch"), "the watch message is allowed in the offline local server")
+	check(FWConst.PROTOCOL_VERSION >= 56, "protocol bumped for watching characters")
+	var ok := true
+	for lang in ["fa", "en"]:
+		Loc.lang = lang
+		var keys: Array = ["ai_chars_btn", "ai_watch_title", "ai_watch_none", "ai_meter", "ai_goto", "ai_follow", "ai_unfollow", "ai_back", "ai_now", "ai_goals", "ai_plan",
+			"ai_rels", "ai_allies", "ai_war", "ai_you", "ai_day", "ai_log_title", "ai_s_money", "ai_s_built", "ai_s_gathered", "ai_s_failed"]
+		for c in known:
+			keys.append("ai_act_" + c)
+		for k in ["build", "fortify", "income"]:
+			keys.append("ai_goal_" + k)
+		for k in ["ally", "friend", "neutral", "wary", "enemy"]:
+			keys.append("ai_st_" + k)
+		for k in ["build", "built", "fortify", "fail", "wall", "explored", "income", "march", "sold"]:
+			keys.append("ai_log_" + k)
+		for k in keys:
+			if Loc.t(k) == k:
+				ok = false
+				print("   missing text: ", lang, " ", k)
+	Loc.lang = "fa"
+	check(ok, "watch texts exist in Persian and English")

@@ -660,6 +660,11 @@ func ai_creator(op: String, spec: Dictionary = {}) -> void:
 		_tx("c2s_ai_creator", [op, spec])
 
 
+func ai_watch(op: String, npc_id: int = -1) -> void:
+	if is_logged_in:
+		_tx("c2s_ai_watch", [op, npc_id])
+
+
 func ride_upgrade(building_id: int) -> void:
 	if is_logged_in:
 		_tx("c2s_ride_upgrade", [building_id])

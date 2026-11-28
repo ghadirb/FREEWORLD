@@ -77,6 +77,7 @@ var _god_mat: StandardMaterial3D
 var building_nodes: Dictionary = {}
 var mode: String = "life"
 var my_pos: Vector3 = Vector3.ZERO
+var follow_npc_id: int = -1   # دوربین دنبال این شخصیت مستقل است (-1 = خاموش)؛ با حرکت بازیکن لغو می‌شود
 var my_yaw: float = 0.0
 var joy: Vector2 = Vector2.ZERO
 # پرواز خلاقانه: my_alt ارتفاع بالای زمین است؛ my_pos همیشه روی زمین می‌ماند.
@@ -358,6 +359,20 @@ func set_mode(m: String) -> void:
 	else:
 		cam.focus = Vector3(my_pos.x, my_pos.y, my_pos.z)
 	mode_changed.emit(m)
+
+
+## دوربین را روی شخصیت مستقلِ دنبال‌شده می‌برد. اگر از محدودهٔ همگام‌سازی بیرون برود، دنبال‌کردن خاموش می‌شود
+## (کلاینت فقط شخصیت‌های نزدیک را می‌شناسد؛ با «برو پیشش» می‌شود دوباره نزدیک شد).
+func _follow_npc_camera() -> void:
+	for n in client.npcs:
+		if int(n[0]) == follow_npc_id:
+			var p := Vector3(float(n[1]), world.height_at(float(n[1]), float(n[2])), float(n[2]))
+			if mode == "life":
+				cam.set_life_focus(p)
+			else:
+				cam.focus = p + Vector3(0, 1.0, 0)
+			return
+	follow_npc_id = -1
 
 
 func focus_on_player() -> void:
@@ -1245,6 +1260,8 @@ func _process(delta: float) -> void:
 			cam.yaw -= dt * 1.8
 	_update_fly(dt)
 	_update_hop(dt)
+	if follow_npc_id >= 0 and (joy + kb).length() > 0.05:
+		follow_npc_id = -1   # بازیکن خودش حرکت کرد
 	if mode == "life":
 		_move_player(dt, joy + kb)
 		cam.set_life_focus(my_pos + Vector3(0.0, my_alt, 0.0))
@@ -1252,6 +1269,8 @@ func _process(delta: float) -> void:
 		if kb.length() > 0.0:
 			var speed: float = cam.world_distance * 0.9 * dt
 			cam.pan(kb.x * speed, -kb.y * speed)
+	if follow_npc_id >= 0:
+		_follow_npc_camera()
 	var underground: bool = client.mine_id != ""
 	if inside_id == 0 and not underground:
 		streamer.update_focus(cam.focus)

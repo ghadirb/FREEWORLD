@@ -13,6 +13,7 @@ const Family = preload("res://scripts/server/family.gd")
 const Attractions = preload("res://scripts/server/attractions.gd")
 const CharAI = preload("res://scripts/server/char_ai.gd")
 const CharCreator = preload("res://scripts/server/char_creator.gd")
+const CharWatch = preload("res://scripts/server/char_watch.gd")
 const Book = preload("res://scripts/server/book.gd")
 const Arenas = preload("res://scripts/server/arenas.gd")
 const ScenarioApply = preload("res://scripts/server/scenario_apply.gd")
@@ -33,7 +34,7 @@ const LOCAL_PID := 1
 const LOCAL_METHODS := [
 	"c2s_login", "c2s_move", "c2s_place", "c2s_remove", "c2s_collect",
 	"c2s_chat", "c2s_set_role", "c2s_get_audit", "c2s_job", "c2s_set_world", "c2s_enter", "c2s_leave",
-	"c2s_place_block", "c2s_remove_block", "c2s_paint_block", "c2s_build_region", "c2s_paste", "c2s_bp_save", "c2s_bp_op", "c2s_arena_create", "c2s_arena_edit", "c2s_arena_import", "c2s_arena_op", "c2s_civ", "c2s_undo", "c2s_gather", "c2s_dig", "c2s_fill", "c2s_craft", "c2s_trade", "c2s_offer", "c2s_offer_answer", "c2s_npc", "c2s_npc_sell", "c2s_npc_family", "c2s_ride_upgrade", "c2s_ai_spawn", "c2s_ai_creator", "c2s_npc_buy", "c2s_furn_place", "c2s_furn_remove", "c2s_minigame_start", "c2s_race_start", "c2s_grace", "c2s_boat", "c2s_horse", "c2s_car", "c2s_fish", "c2s_disaster", "c2s_god",
+	"c2s_place_block", "c2s_remove_block", "c2s_paint_block", "c2s_build_region", "c2s_paste", "c2s_bp_save", "c2s_bp_op", "c2s_arena_create", "c2s_arena_edit", "c2s_arena_import", "c2s_arena_op", "c2s_civ", "c2s_undo", "c2s_gather", "c2s_dig", "c2s_fill", "c2s_craft", "c2s_trade", "c2s_offer", "c2s_offer_answer", "c2s_npc", "c2s_npc_sell", "c2s_npc_family", "c2s_ride_upgrade", "c2s_ai_spawn", "c2s_ai_creator", "c2s_ai_watch", "c2s_npc_buy", "c2s_furn_place", "c2s_furn_remove", "c2s_minigame_start", "c2s_race_start", "c2s_grace", "c2s_boat", "c2s_horse", "c2s_car", "c2s_fish", "c2s_disaster", "c2s_god",
 	"c2s_mine_enter", "c2s_mine_leave", "c2s_mine_gather", "c2s_book", "c2s_quest",
 ]
 
@@ -1261,6 +1262,42 @@ func on_ai_creator(pid: int, op: String, spec: Dictionary) -> void:
 		_notice(pid, str(res["error"]))
 	_notice(pid, "ai_templates", {"list": cs.ai_templates.duplicate(true)})
 	_dirty = true
+
+
+## مشاهدهٔ شخصیت‌های مستقل (پروتکل ۵۶): roster، detail و goto (انتقال مدیر کنار شخصیت). فقط مدیر یا جهان خلاقانه.
+func on_ai_watch(pid: int, op: String, npc_id: int) -> void:
+	var p := _player_of(pid)
+	if p.is_empty():
+		return
+	if not _allow_action(p):
+		_notice(pid, "rate_limited")
+		return
+	if not CharAI.can_spawn(cs, p["name"]):
+		_notice(pid, "forbidden")
+		return
+	match op:
+		"roster":
+			_notice(pid, "ai_roster", {"list": CharWatch.roster(cs)})
+		"detail":
+			var n: Dictionary = CharWatch.find(cs, npc_id)
+			if n.is_empty():
+				_notice(pid, "bad_request")
+				return
+			_notice(pid, "ai_detail", {"d": CharWatch.detail(cs, n, str(p["name"]))})
+		"goto":
+			var n2: Dictionary = CharWatch.find(cs, npc_id)
+			if n2.is_empty():
+				_notice(pid, "bad_request")
+				return
+			var x: float = float(n2["x"]) + 2.5
+			var z: float = float(n2["z"])
+			if not cs.is_walkable(x, z, float(p["pos"].y)):
+				x = float(n2["x"])
+			p["pos"] = Vector3(x, cs.ground_height(x, z, float(p["pos"].y)), z)
+			p["last_move"] = Time.get_ticks_msec()
+			_send(pid, "s2c_teleport", x, z)
+		_:
+			_notice(pid, "bad_request")
 
 
 func on_chat(pid: int, text: String) -> void:

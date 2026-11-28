@@ -75,6 +75,15 @@ var _god_panel: PanelContainer
 # سازندهٔ شخصیت (پروتکل ۵۵)
 const CharPersonality = preload("res://scripts/server/char_personality.gd")
 var _ai_panel: PanelContainer
+# مشاهدهٔ شخصیت‌های مستقل (پروتکل ۵۶)
+var _aw_panel: PanelContainer
+var _aw_list: VBoxContainer
+var _aw_detail: VBoxContainer
+var _aw_text: Label
+var _aw_follow_btn: Button
+var _aw_roster: Array = []
+var _aw_sel: int = -1
+var _aw_timer: Timer
 var _ai_name: LineEdit
 var _ai_sliders: Dictionary = {}
 var _ai_pick: Dictionary = {"arch": "rival", "life": "best_city", "style": "balanced", "rel": "neutral"}
@@ -204,6 +213,7 @@ func setup(game_client, game_view) -> void:
 	_build_god_panel()
 	_build_civ_panel()
 	_build_ai_creator_panel()
+	_build_ai_watch_panel()
 	_build_minigame()
 	_build_race()
 	_build_leave_button()
@@ -211,7 +221,7 @@ func setup(game_client, game_view) -> void:
 	_build_chat()
 	_build_admin_panel()
 	_build_menu_panel()
-	for dp in [_palette, _tools_panel, _inv_panel, _offer_panel, _npc_panel, _furn_panel, _bp_panel, _book_panel, _arena_panel, _god_panel, _civ_panel, _ai_panel, _mg_panel, _race_panel, _admin_panel, _menu_panel]:
+	for dp in [_palette, _tools_panel, _inv_panel, _offer_panel, _npc_panel, _furn_panel, _bp_panel, _book_panel, _arena_panel, _god_panel, _civ_panel, _ai_panel, _aw_panel, _mg_panel, _race_panel, _admin_panel, _menu_panel]:
 		_dock(dp)
 	view.is_over_ui = Callable(self, "is_over_ui")
 	view.building_tapped.connect(_on_building_tapped)
@@ -420,7 +430,7 @@ func _build_side_buttons() -> void:
 	_god_btn = UiTheme.button(Loc.t("god_tools"), SIDE_BTN)
 	_god_btn.pressed.connect(_toggle_god)
 	_ai_btn = UiTheme.button(Loc.t("ai_chars_btn"), SIDE_BTN)
-	_ai_btn.pressed.connect(func(): _open_ai_creator(-1))
+	_ai_btn.pressed.connect(_toggle_ai_watch)
 	_mg_btn = UiTheme.button(Loc.t("minigame"), SIDE_BTN)
 	_mg_btn.pressed.connect(func(): Sfx.play(self, "click"); _mg_panel.visible = not _mg_panel.visible; _refresh_minigame())
 	_arena_btn = UiTheme.button(Loc.t("arenas"), SIDE_BTN)
@@ -989,6 +999,187 @@ func _build_god_panel() -> void:
 	var ai_open := UiTheme.button(Loc.t("ai_creator_open"), Vector2(0, 60))
 	ai_open.pressed.connect(func(): _open_ai_creator(-1))
 	v.add_child(ai_open)
+
+
+# ---------------- مشاهدهٔ شخصیت‌های مستقل (پروتکل ۵۶) ----------------
+func _build_ai_watch_panel() -> void:
+	_aw_panel = _panel(0.5, 1.0)
+	_aw_panel.visible = false
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 8)
+	_aw_panel.add_child(v)
+	v.add_child(_label(Loc.t("ai_watch_title"), 26, Color("ffd36a")))
+	var top := HBoxContainer.new()
+	top.add_theme_constant_override("separation", 8)
+	v.add_child(top)
+	var mk := UiTheme.button(Loc.t("ai_creator_open"), Vector2(0, 56))
+	mk.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	mk.pressed.connect(func(): _aw_panel.visible = false; _open_ai_creator(-1))
+	top.add_child(mk)
+	var cl := UiTheme.button(Loc.t("civ_close"), Vector2(0, 56))
+	cl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	cl.pressed.connect(func(): _aw_panel.visible = false; view.follow_npc_id = -1)
+	top.add_child(cl)
+	_aw_list = VBoxContainer.new()
+	_aw_list.add_theme_constant_override("separation", 6)
+	v.add_child(_aw_list)
+	_aw_detail = VBoxContainer.new()
+	_aw_detail.add_theme_constant_override("separation", 8)
+	_aw_detail.visible = false
+	v.add_child(_aw_detail)
+	_aw_text = _label("", 17, Color("e6eefc"))
+	_aw_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_aw_text.custom_minimum_size = Vector2(540, 0)
+	_aw_detail.add_child(_aw_text)
+	var brow := HBoxContainer.new()
+	brow.add_theme_constant_override("separation", 6)
+	_aw_detail.add_child(brow)
+	var go := UiTheme.button(Loc.t("ai_goto"), Vector2(0, 56))
+	go.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	go.pressed.connect(func(): client.ai_watch("goto", _aw_sel))
+	brow.add_child(go)
+	_aw_follow_btn = UiTheme.button(Loc.t("ai_follow"), Vector2(0, 56))
+	_aw_follow_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_aw_follow_btn.pressed.connect(_aw_toggle_follow)
+	brow.add_child(_aw_follow_btn)
+	var brow2 := HBoxContainer.new()
+	brow2.add_theme_constant_override("separation", 6)
+	_aw_detail.add_child(brow2)
+	var ed := UiTheme.button(Loc.t("ai_edit_open"), Vector2(0, 56))
+	ed.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	ed.pressed.connect(func(): _aw_panel.visible = false; _open_ai_creator(_aw_sel))
+	brow2.add_child(ed)
+	var back := UiTheme.button(Loc.t("ai_back"), Vector2(0, 56))
+	back.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	back.pressed.connect(func():
+		_aw_sel = -1
+		_aw_detail.visible = false
+		_aw_list.visible = true
+		client.ai_watch("roster"))
+	brow2.add_child(back)
+	_aw_timer = Timer.new()
+	_aw_timer.wait_time = 1.5
+	_aw_timer.timeout.connect(_aw_poll)
+	add_child(_aw_timer)
+	_aw_timer.start()
+
+
+func _toggle_ai_watch() -> void:
+	Sfx.play(self, "click")
+	_aw_panel.visible = not _aw_panel.visible
+	if _aw_panel.visible:
+		_aw_sel = -1
+		_aw_detail.visible = false
+		_aw_list.visible = true
+		client.ai_watch("roster")
+
+
+func _aw_poll() -> void:
+	if not _aw_panel.visible:
+		return
+	if _aw_sel >= 0:
+		client.ai_watch("detail", _aw_sel)
+	else:
+		client.ai_watch("roster")
+
+
+func _aw_toggle_follow() -> void:
+	view.follow_npc_id = -1 if view.follow_npc_id == _aw_sel else _aw_sel
+	_aw_refresh_follow_btn()
+
+
+func _aw_refresh_follow_btn() -> void:
+	if _aw_follow_btn != null:
+		_aw_follow_btn.text = Loc.t("ai_unfollow") if view.follow_npc_id == _aw_sel and _aw_sel >= 0 else Loc.t("ai_follow")
+
+
+func _aw_act_text(act: String, type: String) -> String:
+	var t := Loc.t("ai_act_" + act)
+	if act == "build" and type != "":
+		t += " " + Loc.t("type_" + type)
+	return t
+
+
+func _aw_refresh_roster() -> void:
+	for c in _aw_list.get_children():
+		c.queue_free()
+	if _aw_roster.is_empty():
+		_aw_list.add_child(_label(Loc.t("ai_watch_none"), 18, Color("d6e4ff")))
+	for r in _aw_roster:
+		var dist: float = Vector2(float(r["x"]), float(r["z"])).distance_to(Vector2(view.my_pos.x, view.my_pos.z))
+		var txt := "%s (%s)\n%s · %s%s" % [str(r["name"]), Loc.t("ai_arch_" + str(r["arch"])), _aw_act_text(str(r["act"]), str(r["type"])), Loc.digits(str(int(dist))), Loc.t("ai_meter")]
+		if bool(r["war"]):
+			txt += " ⚔"
+		var b := UiTheme.button(txt, Vector2(0, 68))
+		b.add_theme_font_size_override("font_size", 18)
+		var rid: int = int(r["id"])
+		b.pressed.connect(func():
+			_aw_sel = rid
+			_aw_list.visible = false
+			_aw_detail.visible = true
+			_aw_text.text = "…"
+			_aw_refresh_follow_btn()
+			client.ai_watch("detail", rid))
+		_aw_list.add_child(b)
+
+
+func _ai_log_line(e: String) -> String:
+	var sp := e.find(" ")
+	var day := e.substr(1, sp - 1) if sp > 0 and e.begins_with("d") else ""
+	var rest := e.substr(sp + 1) if sp > 0 else e
+	var parts := rest.split(":")
+	var head := parts[0]
+	var out := ""
+	match head:
+		"build", "built", "fortify":
+			var ty: String = parts[1] if parts.size() > 1 else ""
+			out = Loc.t("ai_log_" + head) + ((" " + Loc.t("type_" + ty)) if ty != "" and Loc.t("type_" + ty) != "type_" + ty else "")
+		"fail":
+			out = Loc.t("ai_log_fail") + " " + (Loc.t("ai_act_" + parts[1]) if parts.size() > 1 else "")
+		"wall":
+			out = Loc.t("ai_log_wall") + " " + (Loc.digits(parts[1]) if parts.size() > 1 else "")
+		_:
+			out = Loc.t("ai_log_" + head)
+			if out == "ai_log_" + head:
+				out = rest
+	return ("%s %s: %s" % [Loc.t("ai_day"), Loc.digits(day), out]) if day != "" else out
+
+
+func _aw_show_detail(d: Dictionary) -> void:
+	if int(d.get("id", -1)) != _aw_sel:
+		return
+	var L: Array = []
+	L.append("%s — %s%s" % [str(d["name"]), Loc.t("ai_arch_" + str(d["arch"])), (" ★" if bool(d.get("custom", false)) else "")])
+	L.append("%s: %s" % [Loc.t("ai_now"), _aw_act_text(str(d["act"]), str(d["type"]))])
+	L.append("%s: %s" % [Loc.t("ai_pick_life"), Loc.t("ai_life_" + str(d["life"]))])
+	var st: Dictionary = d["stats"]
+	L.append("%s: %s | %s: %s | %s: %s | %s: %s" % [Loc.t("ai_s_money"), Loc.digits(str(d["money"])), Loc.t("ai_s_built"), Loc.digits(str(st["built"])), Loc.t("ai_s_gathered"), Loc.digits(str(st["gathered"])), Loc.t("ai_s_failed"), Loc.digits(str(st["failed"]))])
+	if bool(d["war"]):
+		L.append("⚔ %s: %s (%s%%)" % [Loc.t("ai_war"), ", ".join(PackedStringArray(d["foes"])), Loc.digits(str(int(float(d["hp"]) * 100.0)))])
+	var tr: Dictionary = d["traits"]
+	var tt: Array = []
+	for k in CharPersonality.TRAIT_KEYS:
+		tt.append("%s %s%%" % [Loc.t("ai_t_" + k), Loc.digits(str(int(round(float(tr[k]) * 100.0))))])
+	L.append(", ".join(PackedStringArray(tt)))
+	var gg: Array = []
+	for g in d["goals"]:
+		gg.append("%s%s (%s)" % [Loc.t("ai_goal_" + str(g["kind"])), (" " + Loc.t("type_" + str(g["type"]))) if str(g["type"]) != "" else "", Loc.digits(str(snappedf(float(g["prio"]), 0.1)))])
+	L.append("%s: %s" % [Loc.t("ai_goals"), (" ، ".join(PackedStringArray(gg)) if not gg.is_empty() else "-")])
+	var pp: Array = []
+	for step in d["plan"]:
+		pp.append(_aw_act_text(str(step["t"]), str(step["type"])))
+	L.append("%s: %s" % [Loc.t("ai_plan"), (" ← ".join(PackedStringArray(pp)) if not pp.is_empty() else "-")])
+	var rr: Array = []
+	for r in d["rels"]:
+		rr.append("%s: %s" % [(Loc.t("ai_you") if bool(r["me"]) else str(r["who"])), Loc.t("ai_st_" + str(r["stance"]))])
+	L.append("%s: %s" % [Loc.t("ai_rels"), (" ، ".join(PackedStringArray(rr)) if not rr.is_empty() else "-")])
+	if not (d["allies"] as Array).is_empty():
+		L.append("%s: %s" % [Loc.t("ai_allies"), ", ".join(PackedStringArray(d["allies"]))])
+	L.append(Loc.t("ai_log_title") + ":")
+	var lg: Array = d["log"]
+	for i in range(lg.size() - 1, -1, -1):
+		L.append("• " + _ai_log_line(str(lg[i])))
+	_aw_text.text = "\n".join(PackedStringArray(L))
 
 
 # ---------------- سازندهٔ شخصیت (پروتکل ۵۵) ----------------
@@ -2484,6 +2675,15 @@ func _on_notice(code: String, args: Dictionary) -> void:
 		"ai_spawned":
 			Sfx.play(self, "notify")
 			toast(Loc.fmt("msg_ai_spawned", [args.get("name", ""), Loc.t("ai_arch_" + str(args.get("arch", "")))]), Color("c8f08a"))
+		"ai_roster":
+			var rl: Variant = args.get("list", [])
+			_aw_roster = rl if rl is Array else []
+			if _aw_sel < 0:
+				_aw_refresh_roster()
+		"ai_detail":
+			var dd: Variant = args.get("d", {})
+			if dd is Dictionary:
+				_aw_show_detail(dd)
 		"ai_templates":
 			var tl: Variant = args.get("list", [])
 			_ai_templates = tl if tl is Array else []
@@ -2739,6 +2939,9 @@ func _refresh_role() -> void:
 		_civ_panel.visible = false
 	if not _ai_btn.visible and _ai_panel.visible:
 		_ai_panel.visible = false
+	if not _ai_btn.visible and _aw_panel.visible:
+		_aw_panel.visible = false
+		view.follow_npc_id = -1
 	if not _god_btn.visible and _god_panel.visible:
 		_toggle_god()
 
