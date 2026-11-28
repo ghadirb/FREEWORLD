@@ -326,7 +326,7 @@ func _run() -> void:
 	# کلاینت موقعیتش را مدام می‌فرستد؛ پس موقعیت سرور را در هر بررسی دوباره در زمین باز می‌گذاریم.
 	ok(await wait_until(func():
 		server.peers[1]["pos"] = field_pos
-		return not c.wild.is_empty(), 15.0), "a night enemy appears and reaches the client")
+		return not c.wild.is_empty(), 60.0), "a night enemy appears and reaches the client")   # ظهور تصادفی است؛ روی CI کند زمان بیشتری لازم است
 	server.cs.world_time = 12.0 * 3600.0
 	ok(await wait_until(func(): return c.wild.is_empty(), 4.0), "enemies leave at daytime on the client")
 	server.cs.accounts[c.my_name]["inv"]["wood"] = 5
