@@ -10,6 +10,7 @@ const Persistence = preload("res://scripts/server/persistence.gd")
 const NpcSim = preload("res://scripts/server/npc_sim.gd")
 const Residents = preload("res://scripts/server/residents.gd")
 const Family = preload("res://scripts/server/family.gd")
+const Attractions = preload("res://scripts/server/attractions.gd")
 const Book = preload("res://scripts/server/book.gd")
 const Arenas = preload("res://scripts/server/arenas.gd")
 const ScenarioApply = preload("res://scripts/server/scenario_apply.gd")
@@ -30,7 +31,7 @@ const LOCAL_PID := 1
 const LOCAL_METHODS := [
 	"c2s_login", "c2s_move", "c2s_place", "c2s_remove", "c2s_collect",
 	"c2s_chat", "c2s_set_role", "c2s_get_audit", "c2s_job", "c2s_set_world", "c2s_enter", "c2s_leave",
-	"c2s_place_block", "c2s_remove_block", "c2s_paint_block", "c2s_build_region", "c2s_paste", "c2s_bp_save", "c2s_bp_op", "c2s_arena_create", "c2s_arena_edit", "c2s_arena_import", "c2s_arena_op", "c2s_civ", "c2s_undo", "c2s_gather", "c2s_dig", "c2s_fill", "c2s_craft", "c2s_trade", "c2s_offer", "c2s_offer_answer", "c2s_npc", "c2s_npc_sell", "c2s_npc_family", "c2s_npc_buy", "c2s_furn_place", "c2s_furn_remove", "c2s_minigame_start", "c2s_race_start", "c2s_grace", "c2s_boat", "c2s_horse", "c2s_car", "c2s_fish", "c2s_disaster", "c2s_god",
+	"c2s_place_block", "c2s_remove_block", "c2s_paint_block", "c2s_build_region", "c2s_paste", "c2s_bp_save", "c2s_bp_op", "c2s_arena_create", "c2s_arena_edit", "c2s_arena_import", "c2s_arena_op", "c2s_civ", "c2s_undo", "c2s_gather", "c2s_dig", "c2s_fill", "c2s_craft", "c2s_trade", "c2s_offer", "c2s_offer_answer", "c2s_npc", "c2s_npc_sell", "c2s_npc_family", "c2s_ride_upgrade", "c2s_npc_buy", "c2s_furn_place", "c2s_furn_remove", "c2s_minigame_start", "c2s_race_start", "c2s_grace", "c2s_boat", "c2s_horse", "c2s_car", "c2s_fish", "c2s_disaster", "c2s_god",
 	"c2s_mine_enter", "c2s_mine_leave", "c2s_mine_gather", "c2s_book", "c2s_quest",
 ]
 
@@ -1157,6 +1158,30 @@ func on_collect(pid: int, id: int) -> void:
 		return
 	_send(pid, "s2c_money", int(res["money"]))
 	_notice(pid, "collected", {"good": res["good"], "count": res["count"], "earned": res["earned"]})
+	_dirty = true
+
+
+## ارتقای شهربازی: یک وسیلهٔ بازی بیشتر (فقط صاحب، نزدیک در ساختمان).
+func on_ride_upgrade(pid: int, id: int) -> void:
+	var p := _player_of(pid)
+	if p.is_empty():
+		return
+	if not _allow_action(p):
+		_notice(pid, "rate_limited")
+		return
+	if not cs.buildings.has(id):
+		_notice(pid, "no_building")
+		return
+	var pos: Vector3 = p["pos"]
+	if Vector2(pos.x, pos.z).distance_to(cs.door_point(cs.buildings[id])) > FWConst.INTERACT_RANGE:
+		_notice(pid, "too_far")
+		return
+	var res: Dictionary = Attractions.upgrade(cs, p["name"], id)
+	if not res["ok"]:
+		_notice(pid, str(res["error"]))
+		return
+	_send(pid, "s2c_money", int(res["money"]))
+	_notice(pid, "ride_upgraded", {"id": id, "rides": int(res["rides"])})
 	_dirty = true
 
 

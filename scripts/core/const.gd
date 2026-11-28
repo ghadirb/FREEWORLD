@@ -1,7 +1,7 @@
 extends RefCounted
 ## ثابت‌های مشترک بین سرور و کلاینت.
 
-const PROTOCOL_VERSION := 52
+const PROTOCOL_VERSION := 53
 # ترافیک شبکه با DTLS رمز می‌شود (نسخهٔ ۴ به بعد). فقط برای عیب‌یابی خاموش شود.
 const USE_DTLS := true
 const DEFAULT_PORT := 7777
@@ -39,6 +39,8 @@ const BUILDING_TYPES := {
 	"barn": {"cost": 350, "size": [3, 2]},
 	"mill": {"cost": 450, "size": [2, 2]},
 	"dairy": {"cost": 550, "size": [2, 2]},
+	"zoo": {"cost": 700, "size": [3, 3]},
+	"park": {"cost": 900, "size": [3, 3]},
 }
 
 # دامداری: مرغداری تخم‌مرغ و گاوداری شیر تولید می‌کند (مثل مزرعه، با موجودی و قیمت بازار).
@@ -53,7 +55,25 @@ const PROCESSORS := {
 	"dairy": {"input": "milk", "output": "cheese", "amount": 2, "seconds": 24.0, "max": 8.0, "base": 34.0, "min": 14.0, "drop": 0.7, "recover": 0.06},
 }
 # ساختمان‌هایی که محصولشان را می‌توان برداشت و در بازار فروخت.
-const PRODUCERS := ["farm", "bakery", "coop", "barn", "mill", "dairy"]
+const PRODUCERS := ["farm", "bakery", "coop", "barn", "mill", "dairy", "zoo", "park"]
+# مدیریت مجموعه (پروتکل ۵۳، docs/COLLECTIONS.md): باغ‌وحش و شهربازی «بلیط» می‌فروشند (سکه مستقیم در موجودی ساختمان؛ بدون بازار).
+const ATTRACTIONS := ["zoo", "park"]
+const ATTR_SECONDS := 20.0        # فاصلهٔ دو دورهٔ فروش بلیط
+const ZOO_RADIUS := 14.0          # حیواناتی که در این فاصله از در باغ‌وحش باشند «در مجموعه» حساب می‌شوند
+const ZOO_BASE := 2               # بلیط پایه در هر دوره
+const ZOO_PER_SPECIES := 5        # به‌ازای هر گونهٔ متفاوت
+const ZOO_HYBRID_BONUS := 8       # پاداش اضافه برای هر گونهٔ ترکیبی (کمیاب)
+const ZOO_ANIMAL_CAP := 12        # حداکثر حیواناتی که تعدادشان بلیط می‌آورد (هر کدام ۱ سکه)
+const ZOO_MAX := 400.0            # سقف انبارِ بلیط
+const PARK_BASE := 3
+const PARK_PER_RIDE := 6          # به‌ازای هر وسیلهٔ بازی
+const PARK_RIDES_START := 1
+const PARK_RIDES_MAX := 4
+const PARK_RIDE_COST := 250       # هزینهٔ وسیلهٔ بعدی = این مقدار × تعداد وسیله‌های فعلی
+const PARK_VISITOR_RADIUS := 18.0 # NPCهای بزرگسال نزدیک، مشتری حساب می‌شوند
+const PARK_VISITOR_CAP := 6
+const PARK_PER_VISITOR := 2
+const PARK_MAX := 500.0
 
 const FARM_SECONDS_PER_WHEAT := 10.0
 const FARM_MAX_STOCK := 10.0

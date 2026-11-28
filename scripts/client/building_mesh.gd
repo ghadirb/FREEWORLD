@@ -96,6 +96,25 @@ static func _make(type: String) -> ArrayMesh:
 			mb.add_cylinder(Vector3(-0.9, 0.8, 1.4), 0.45, 0.45, 1.0, 10, Color("e8ecec"))
 			mb.add_cylinder(Vector3(0.9, 0.8, 1.4), 0.45, 0.45, 1.0, 10, Color("e8ecec"))
 			mb.add_box(Vector3(0, 0.9, 1.72), Vector3(0.9, 1.8, 0.08), WOOD)
+		"zoo":
+			_foundation(mb, fp, 0.1)
+			mb.add_box(Vector3(0, 0.15, 0), Vector3(fp.x - 0.6, 0.3, fp.y - 0.6), Color("7fae5a"))
+			for sx in [-1.0, 1.0]:
+				for sz in [-1.0, 1.0]:
+					mb.add_box(Vector3(sx * (fp.x * 0.5 - 0.35), 0.8, sz * (fp.y * 0.5 - 0.35)), Vector3(0.2, 1.4, 0.2), WOOD)
+			mb.add_box(Vector3(0, 1.2, fp.y * 0.5 - 0.35), Vector3(fp.x - 0.7, 0.15, 0.12), WOOD)
+			mb.add_box(Vector3(0, 1.2, -fp.y * 0.5 + 0.35), Vector3(fp.x - 0.7, 0.15, 0.12), WOOD)
+			mb.add_box(Vector3(fp.x * 0.5 - 0.35, 1.2, 0), Vector3(0.12, 0.15, fp.y - 0.7), WOOD)
+			mb.add_box(Vector3(-fp.x * 0.5 + 0.35, 1.2, 0), Vector3(0.12, 0.15, fp.y - 0.7), WOOD)
+			mb.add_box(Vector3(0, 2.0, fp.y * 0.5 - 0.3), Vector3(2.4, 0.5, 0.15), Color("e8b04a"))
+		"park":
+			_foundation(mb, fp, 0.1)
+			mb.add_box(Vector3(0, 0.1, 0), Vector3(fp.x - 0.4, 0.2, fp.y - 0.4), Color("c9b98a"))
+			mb.add_cylinder(Vector3(0, 0.2, 0), 0.25, 0.25, 4.6, 8, Color("c9c9c9"))
+			mb.add_cylinder(Vector3(0, 4.4, 0), 1.9, 1.9, 0.18, 16, Color("d94f4f"))
+			for a in [0.0, PI * 0.5, PI, PI * 1.5]:
+				mb.add_box(Vector3(1.7, 3.9, 0).rotated(Vector3.UP, a), Vector3(0.5, 0.5, 0.5), Color("4f83d9"))
+			mb.add_cylinder(Vector3(0, 4.6, 0), 1.9, 0.0, 0.9, 16, Color("e8b04a"))
 		"road":
 			mb.add_box(Vector3(0, -0.8, 0), Vector3(fp.x, 1.6, fp.y), Color("5f5f5f"))
 			mb.add_box(Vector3(0, 0.05, 0), Vector3(fp.x, 0.1, fp.y), Color("707070"))

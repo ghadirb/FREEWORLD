@@ -103,6 +103,7 @@ func _init() -> void:
 	test_hunger()
 	test_god_human()
 	test_residents()
+	test_attractions()
 	test_cave()
 	test_batch_build()
 	test_blueprints()
@@ -5153,6 +5154,107 @@ func test_god_human() -> void:
 				texts_ok = false
 	Loc.lang = "fa"
 	check(texts_ok, "human tool texts exist in Persian and English")
+
+
+func test_attractions() -> void:
+	print("-- collections: zoo and amusement park")
+	var cs = CityState.new(6301)
+	_login(cs, "owner")
+	_login(cs, "other")
+	cs.accounts["owner"]["money"] = 5000
+	var spot := Vector2i(0, 0)
+	var zid := -1
+	var pid := -1
+	var found := 0
+	for cx in range(8, 90, 4):
+		for cz in range(8, 90, 4):
+			if found == 0:
+				var r: Dictionary = cs.place_building("owner", 0, "zoo", cx, cz)
+				if bool(r["ok"]):
+					zid = int(r["building"]["id"])
+					found = 1
+			elif found == 1:
+				var r2: Dictionary = cs.place_building("owner", 0, "park", cx, cz)
+				if bool(r2["ok"]):
+					pid = int(r2["building"]["id"])
+					found = 2
+	check(zid > 0 and pid > 0, "zoo and park can be built")
+	if zid < 0 or pid < 0:
+		return
+	var zoo: Dictionary = cs.buildings[zid]
+	var park: Dictionary = cs.buildings[pid]
+	check(int(park["rides"]) == FWConst.PARK_RIDES_START, "a new park starts with one ride")
+	# باغ‌وحش خالی بلیط نمی‌فروشد
+	for i in 3:
+		cs.tick(FWConst.ATTR_SECONDS)
+	check(float(zoo["stock"]) == 0.0, "an empty zoo sells no tickets")
+	check(float(park["stock"]) > 0.0, "the park sells tickets")
+	# حیوان‌ها
+	var door: Vector2 = cs.door_point(zoo)
+	cs.god[9001] = {"id": 9001, "kind": "sheep", "x": door.x + 2.0, "z": door.y, "tx": door.x, "tz": door.y, "wait": 99.0}
+	cs.god[9002] = {"id": 9002, "kind": "deer", "x": door.x - 2.0, "z": door.y, "tx": door.x, "tz": door.y, "wait": 99.0}
+	cs.god[9003] = {"id": 9003, "kind": "sheep", "x": door.x + 200.0, "z": door.y, "tx": door.x, "tz": door.y, "wait": 99.0}
+	var Att = load("res://scripts/server/attractions.gd")
+	var st: Dictionary = Att.zoo_stats(cs, zoo)
+	check(int(st["species"]) == 2 and int(st["animals"]) == 2 and int(st["hybrids"]) == 0, "zoo counts nearby species, not far animals")
+	var base_inc: int = Att.income_per_period(cs, zoo)
+	cs.god[9004] = {"id": 9004, "kind": "jackalope", "x": door.x, "z": door.y + 2.0, "tx": door.x, "tz": door.y, "wait": 99.0}
+	check(Att.income_per_period(cs, zoo) > base_inc + FWConst.ZOO_HYBRID_BONUS, "a hybrid species earns the rarity bonus")
+	cs.god[9005] = {"id": 9005, "kind": "rabbit", "x": door.x, "z": door.y - 2.0, "tx": door.x, "tz": door.y, "wait": 99.0, "young": 30.0}
+	check(int(Att.zoo_stats(cs, zoo)["animals"]) == 3, "young animals are not counted")
+	zoo["stock"] = 0.0
+	cs.tick(FWConst.ATTR_SECONDS + 0.1)
+	check(float(zoo["stock"]) >= float(Att.income_per_period(cs, zoo)) - 0.5, "a zoo with animals earns tickets per period")
+	# سقف
+	for i in 200:
+		cs.tick(FWConst.ATTR_SECONDS)
+	check(float(zoo["stock"]) <= FWConst.ZOO_MAX and float(park["stock"]) <= FWConst.PARK_MAX, "ticket stock is capped")
+	# برداشت
+	var money0: int = int(cs.accounts["owner"]["money"])
+	var stock0: int = int(floor(float(zoo["stock"])))
+	var c: Dictionary = cs.collect("owner", zid)
+	check(bool(c["ok"]) and int(c["earned"]) == stock0 and int(cs.accounts["owner"]["money"]) == money0 + stock0, "collecting tickets pays coins one-to-one")
+	check(float(zoo["stock"]) < 1.0, "collecting empties the stock")
+	check(str(cs.collect("other", pid)["error"]) == "forbidden", "only the owner collects tickets")
+	check(str(cs.collect("owner", zid)["error"]) == "nothing", "nothing to collect right after collecting")
+	# ارتقا
+	var inc1: int = Att.income_per_period(cs, park)
+	var u: Dictionary = Att.upgrade(cs, "owner", pid)
+	check(bool(u["ok"]) and int(park["rides"]) == 2, "upgrade adds a ride")
+	check(Att.income_per_period(cs, park) == inc1 + FWConst.PARK_PER_RIDE, "each ride raises park income")
+	check(int(cs.accounts["owner"]["money"]) == int(u["money"]), "upgrade returns the new balance")
+	check(str(Att.upgrade(cs, "other", pid)["error"]) == "forbidden", "only the owner upgrades")
+	check(str(Att.upgrade(cs, "owner", zid)["error"]) == "not_park", "zoo cannot be upgraded as a park")
+	Att.upgrade(cs, "owner", pid)
+	Att.upgrade(cs, "owner", pid)
+	check(str(Att.upgrade(cs, "owner", pid)["error"]) == "rides_max", "rides are capped")
+	cs.accounts["owner"]["money"] = 0
+	# ذخیره و بارگذاری
+	var back = CityState.from_dict(cs.to_dict())
+	check(back != null and int(back.buildings[pid]["rides"]) == FWConst.PARK_RIDES_MAX, "rides survive save and load")
+	check(int(cs.building_public(park)["rides"]) == FWConst.PARK_RIDES_MAX, "public park info carries the ride count")
+	# بدون پول
+	var cs2 = CityState.new(6303)
+	_login(cs2, "poor")
+	cs2.accounts["poor"]["money"] = 5000
+	var pk: Dictionary = {}
+	for cx in range(8, 60, 4):
+		if pk.is_empty():
+			var rr: Dictionary = cs2.place_building("poor", 0, "park", cx, 8)
+			if bool(rr["ok"]):
+				pk = rr["building"]
+	cs2.accounts["poor"]["money"] = 10
+	check(str(Att.upgrade(cs2, "poor", int(pk["id"]))["error"]) == "no_money", "upgrade needs money")
+	cs2.creative = true
+	check(bool(Att.upgrade(cs2, "poor", int(pk["id"]))["ok"]), "upgrade is free in creative worlds")
+	var texts_ok := true
+	for lang in ["fa", "en"]:
+		Loc.lang = lang
+		for k in ["type_zoo", "type_park", "msg_collected_tickets", "rides_label", "ride_upgrade_btn", "msg_ride_upgraded", "err_not_park", "err_rides_max"]:
+			if Loc.t(k) == k:
+				texts_ok = false
+	Loc.lang = "fa"
+	check(texts_ok, "collection texts exist in Persian and English")
 
 
 func test_residents() -> void:

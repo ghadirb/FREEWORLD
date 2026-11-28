@@ -19,6 +19,7 @@ const RailNetwork = preload("res://scripts/shared/rail_network.gd")
 const Scenarios = preload("res://scripts/shared/scenarios.gd")
 const Story = preload("res://scripts/shared/story.gd")
 const Family = preload("res://scripts/server/family.gd")
+const Attractions = preload("res://scripts/server/attractions.gd")
 const Book = preload("res://scripts/server/book.gd")
 
 const SAVE_VERSION := 1
@@ -337,6 +338,8 @@ func apply_add(b: Dictionary) -> void:
 		"id": int(b["id"]), "type": str(b["type"]), "owner": str(b["owner"]),
 		"cx": int(b["cx"]), "cz": int(b["cz"]), "stock": float(b.get("stock", 0)),
 	}
+	if b.has("rides"):
+		nb["rides"] = int(b["rides"])
 	buildings[nb["id"]] = nb
 	for c in Placement.footprint(nb["type"], nb["cx"], nb["cz"]):
 		occupied[Placement.cell_key(c.x, c.y)] = nb["id"]
@@ -426,6 +429,8 @@ func place_building(player_name: String, req_id: int, type: String, cx: int, cz:
 		"stock": 0.0,
 		"prog": 0.0,
 	}
+	if type == "park":
+		b["rides"] = FWConst.PARK_RIDES_START
 	next_building_id += 1
 	buildings[b["id"]] = b
 	for c in Placement.footprint(type, cx, cz):
@@ -477,11 +482,19 @@ func collect(player_name: String, id: int) -> Dictionary:
 			good = str(FWConst.LIVESTOCK[str(b["type"])]["good"])
 		"mill", "dairy":
 			good = str(FWConst.PROCESSORS[str(b["type"])]["output"])
+		"zoo", "park":
+			good = "tickets"
 		_:
 			return {"ok": false, "error": "not_producer"}
 	var n := int(floor(float(b["stock"])))
 	if n < 1:
 		return {"ok": false, "error": "nothing"}
+	if Attractions.is_attraction(str(b["type"])):
+		# بلیط خودش سکه است: بدون بازار و بدون افت قیمت.
+		b["stock"] = float(b["stock"]) - n
+		_gain(accounts[player_name], n)
+		_log(player_name, "collect", {"id": id, "good": "tickets", "count": n, "earned": n})
+		return {"ok": true, "good": "tickets", "count": n, "earned": n, "money": accounts[player_name]["money"], "building": b}
 	var earned := 0
 	for i in range(n):
 		if good == "wheat":
@@ -2676,6 +2689,8 @@ func tick(delta: float) -> void:
 			"coop", "barn":
 				var lv: Dictionary = FWConst.LIVESTOCK[str(b["type"])]
 				b["stock"] = minf(float(lv["max"]), float(b["stock"]) + delta / float(lv["seconds"]))
+			"zoo", "park":
+				Attractions.tick(self, b, delta)
 	for t in FWConst.LIVESTOCK:
 		var lv: Dictionary = FWConst.LIVESTOCK[t]
 		var g: String = lv["good"]
@@ -2758,10 +2773,13 @@ func _price_for(good: String) -> float:
 
 
 func building_public(b: Dictionary) -> Dictionary:
-	return {
+	var out := {
 		"id": b["id"], "type": b["type"], "owner": b["owner"],
 		"cx": b["cx"], "cz": b["cz"], "stock": int(floor(float(b["stock"]))),
 	}
+	if str(b["type"]) == "park":
+		out["rides"] = Attractions.rides_of(b)
+	return out
 
 
 func all_buildings_public() -> Array:
@@ -3024,6 +3042,8 @@ static func from_dict(d: Dictionary):
 			"prog": float(b.get("prog", 0.0)),
 			"furn": _load_furn(b.get("furn", null)) if str(b["type"]) == "house" else [],
 		}
+		if str(b["type"]) == "park":
+			nb["rides"] = clampi(int(b.get("rides", FWConst.PARK_RIDES_START)), FWConst.PARK_RIDES_START, FWConst.PARK_RIDES_MAX)
 		cs.buildings[nb["id"]] = nb
 		for c in Placement.footprint(nb["type"], nb["cx"], nb["cz"]):
 			cs.occupied[Placement.cell_key(c.x, c.y)] = nb["id"]

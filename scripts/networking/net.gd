@@ -237,6 +237,12 @@ func c2s_npc_family(npc_id: int, op: String) -> void:
 
 
 @rpc("any_peer", "call_remote", "reliable")
+func c2s_ride_upgrade(building_id: int) -> void:
+	if server:
+		server.on_ride_upgrade(multiplayer.get_remote_sender_id(), building_id)
+
+
+@rpc("any_peer", "call_remote", "reliable")
 func c2s_npc_buy(npc_id: int, item: String, n: int) -> void:
 	if server:
 		server.on_npc_buy(multiplayer.get_remote_sender_id(), npc_id, item, n)

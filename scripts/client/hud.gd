@@ -16,7 +16,7 @@ signal disconnect_requested
 signal quality_changed(q: int)
 signal language_changed
 
-const TYPES := ["house", "shop", "farm", "coop", "barn", "mill", "dairy", "bakery", "road", "well"]
+const TYPES := ["house", "shop", "farm", "coop", "barn", "mill", "dairy", "bakery", "zoo", "park", "road", "well"]
 
 var client
 var view
@@ -41,6 +41,7 @@ var _info: PanelContainer
 var _info_title: Label
 var _info_body: Label
 var _info_collect: Button
+var _info_upgrade: Button
 var _info_enter: Button
 var _leave_btn: Button
 var _mine_btn: Button
@@ -930,6 +931,9 @@ func _build_info_panel() -> void:
 	_info_job = UiTheme.button(Loc.t("job_take"), Vector2(0, 64))
 	_info_job.pressed.connect(func(): client.set_job(0 if client.job_id == _info_id else _info_id))
 	v.add_child(_info_job)
+	_info_upgrade = UiTheme.button("", Vector2(0, 64))
+	_info_upgrade.pressed.connect(func(): client.ride_upgrade(_info_id))
+	v.add_child(_info_upgrade)
 
 
 func _build_god_panel() -> void:
@@ -2298,6 +2302,14 @@ func _on_notice(code: String, args: Dictionary) -> void:
 			var good_name := str(args.get("good", "wheat"))
 			var msg_key := "msg_collected" if good_name == "wheat" else "msg_collected_" + good_name
 			toast(Loc.fmt(msg_key, [Loc.digits(str(args["count"])), Loc.digits(str(args["earned"]))]), Color("c8f08a"))
+		"ride_upgraded":
+			Sfx.play(self, "coin")
+			var rb: int = int(args.get("id", 0))
+			if client.mirror.buildings.has(rb):
+				client.mirror.buildings[rb]["rides"] = int(args["rides"])
+				if _info.visible and _info_id == rb:
+					_fill_info(rb)
+			toast(Loc.fmt("msg_ride_upgraded", [Loc.digits(str(args["rides"]))]), Color("c8f08a"))
 		"job_taken":
 			Sfx.play(self, "notify")
 			toast(Loc.fmt("msg_job_taken", [args["employer"]]), Color("c8f08a"))
@@ -2649,8 +2661,13 @@ func _fill_info(id: int) -> void:
 		body += "\n%s: %s" % [Loc.t("stock"), Loc.digits(str(int(b["stock"])))]
 	if b["type"] == "bakery":
 		body += "\n%s: %s" % [Loc.t("market_wheat"), Loc.digits(str(int(client.market_stock["wheat"])))]
+	if b["type"] == "park":
+		body += "\n%s: %s" % [Loc.t("rides_label"), Loc.digits(str(int(b.get("rides", FWConst.PARK_RIDES_START))))]
 	_info_body.text = body
 	var mine: bool = b["owner"] == client.my_name
+	var rides: int = int(b.get("rides", FWConst.PARK_RIDES_START))
+	_info_upgrade.visible = mine and b["type"] == "park" and rides < FWConst.PARK_RIDES_MAX
+	_info_upgrade.text = Loc.fmt("ride_upgrade_btn", [FWConst.PARK_RIDE_COST * rides])
 	_info_collect.visible = mine and FWConst.PRODUCERS.has(str(b["type"]))
 	_info_enter.visible = FWConst.ENTERABLE.has(str(b["type"])) and (mine or str(b["type"]) != "house")
 	var employed_here: bool = client.job_id == id
