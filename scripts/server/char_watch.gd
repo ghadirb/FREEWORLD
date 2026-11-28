@@ -95,6 +95,38 @@ static func detail(cs, npc: Dictionary, viewer: String) -> Dictionary:
 	return d
 
 
+## بازیکن عادی فقط شخصیتی را می‌بیند که با او برخورد داشته (در حافظهٔ رابطهٔ شخصیت، نام بازیکن ثبت شده)؛
+## کارت عمومی او نیز هدف‌ها، برنامه، دارایی، سابقه و ویژگی‌های پنهان را نشان نمی‌دهد.
+static func known_by(npc: Dictionary, viewer: String) -> bool:
+	return (npc["ai"]["mem"]["rel"] as Dictionary).has(viewer)
+
+
+static func roster_for(cs, viewer: String, full: bool) -> Array:
+	if full:
+		return roster(cs)
+	var out: Array = []
+	for n in cs.npcs:
+		if CharAI.is_ai(n) and known_by(n, viewer):
+			var row: Dictionary = _row(cs, n)
+			row["money"] = 0
+			row["built"] = 0
+			out.append(row)
+			if out.size() >= ROSTER_MAX:
+				break
+	return out
+
+
+static func public_detail(cs, npc: Dictionary, viewer: String) -> Dictionary:
+	var ai: Dictionary = npc["ai"]
+	var d: Dictionary = _row(cs, npc)
+	d["pub"] = true
+	d["money"] = 0
+	d["built"] = 0
+	d["life"] = str(ai["life"])
+	d["rels"] = [{"who": viewer, "stance": Memory.stance(ai, viewer, cs.day_count), "me": true}]
+	return d
+
+
 ## متن کوتاه فعالیت برای نشانگر بالای سر شخصیت: «کد» یا «کد:نوع ساختمان». به ردیف NPC هر بازیکن اضافه می‌شود.
 static func activity_short(cs, npc: Dictionary) -> String:
 	var a: Dictionary = activity(cs, npc)

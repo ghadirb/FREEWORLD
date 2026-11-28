@@ -1275,18 +1275,24 @@ func on_ai_watch(pid: int, op: String, npc_id: int) -> void:
 	if not _allow_action(p):
 		_notice(pid, "rate_limited")
 		return
-	if not CharAI.can_spawn(cs, p["name"]):
-		_notice(pid, "forbidden")
+	var full: bool = CharAI.can_spawn(cs, p["name"])
+	if not full and op != "roster" and op != "detail":
+		_notice(pid, "forbidden")   # برو پیشش فقط برای مدیر یا جهان خلاقانه
 		return
 	match op:
 		"roster":
-			_notice(pid, "ai_roster", {"list": CharWatch.roster(cs)})
+			_notice(pid, "ai_roster", {"list": CharWatch.roster_for(cs, str(p["name"]), full)})
 		"detail":
 			var n: Dictionary = CharWatch.find(cs, npc_id)
 			if n.is_empty():
 				_notice(pid, "bad_request")
 				return
-			_notice(pid, "ai_detail", {"d": CharWatch.detail(cs, n, str(p["name"]))})
+			if full:
+				_notice(pid, "ai_detail", {"d": CharWatch.detail(cs, n, str(p["name"]))})
+			elif CharWatch.known_by(n, str(p["name"])):
+				_notice(pid, "ai_detail", {"d": CharWatch.public_detail(cs, n, str(p["name"]))})
+			else:
+				_notice(pid, "forbidden")
 		"goto":
 			var n2: Dictionary = CharWatch.find(cs, npc_id)
 			if n2.is_empty():

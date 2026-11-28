@@ -6546,6 +6546,18 @@ func test_character_watch() -> void:
 	check(bool(dw["war"]) and (dw["foes"] as Array).has(str(foe["name"])), "war foes appear by name in the detail")
 	check(JSON.stringify(dw).length() < 6000, "detail stays small enough for a mobile connection")
 	a["ai"]["war"]["foes"].erase(str(foe["acct"]))   # جنگ ساختگی آزمایش پاک شود تا شبیه‌سازی بعدی خراب نشود
+	# بازیکن عادی: فقط شخصیت‌های آشنا، با کارت عمومی
+	var stranger_list: Array = Watch.roster_for(cs, "stranger_x", false)
+	check(stranger_list.is_empty(), "a stranger sees no characters in the roster")
+	check(not Watch.known_by(a, "stranger_x"), "an unmet character is not known")
+	load("res://scripts/server/char_memory.gd").record(a["ai"], "help", "stranger_x", 1.0, cs.day_count)
+	check(Watch.known_by(a, "stranger_x"), "a character who dealt with the player becomes known")
+	var met_list: Array = Watch.roster_for(cs, "stranger_x", false)
+	check(met_list.size() == 1 and int(met_list[0]["id"]) == int(a["id"]) and int(met_list[0]["money"]) == 0, "the met roster lists only that character and hides wealth")
+	var pd: Dictionary = Watch.public_detail(cs, a, "stranger_x")
+	check(bool(pd["pub"]) and not pd.has("goals") and not pd.has("plan") and not pd.has("log") and not pd.has("traits") and not pd.has("foes"), "the public card hides goals, plan, log, traits and foes")
+	check((pd["rels"] as Array).size() == 1 and bool(pd["rels"][0]["me"]), "the public card shows only the stance toward the viewer")
+	check(Watch.roster_for(cs, "stranger_x", true).size() >= 1, "admins still see the full roster")
 	# ارتباط و متن‌ها
 	check(load("res://scripts/server/game_server.gd").LOCAL_METHODS.has("c2s_ai_watch"), "the watch message is allowed in the offline local server")
 	check(FWConst.PROTOCOL_VERSION >= 56, "protocol bumped for watching characters")

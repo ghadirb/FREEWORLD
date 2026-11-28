@@ -89,6 +89,8 @@ var _aw_feed: Array = []          # آخرین رویدادهای شخصیت‌�
 var _aw_feed_label: Label
 var _aw_feed_box: VBoxContainer
 var _aw_marker_btn: Button
+var _aw_make_btn: Button
+var _aw_go_btn: Button
 var _aw_toast_btn: Button
 var _aw_toasts: bool = true
 const AW_FEED_MAX := 20
@@ -1021,6 +1023,7 @@ func _build_ai_watch_panel() -> void:
 	top.add_theme_constant_override("separation", 8)
 	v.add_child(top)
 	var mk := UiTheme.button(Loc.t("ai_creator_open"), Vector2(0, 56))
+	_aw_make_btn = mk
 	mk.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	mk.pressed.connect(func(): _aw_panel.visible = false; _open_ai_creator(-1))
 	top.add_child(mk)
@@ -1071,6 +1074,7 @@ func _build_ai_watch_panel() -> void:
 	_aw_detail.add_child(brow)
 	var go := UiTheme.button(Loc.t("ai_goto"), Vector2(0, 56))
 	go.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_aw_go_btn = go
 	go.pressed.connect(func(): client.ai_watch("goto", _aw_sel))
 	brow.add_child(go)
 	_aw_follow_btn = UiTheme.button(Loc.t("ai_follow"), Vector2(0, 56))
@@ -1208,6 +1212,14 @@ func _aw_show_detail(d: Dictionary) -> void:
 	L.append("%s — %s%s" % [str(d["name"]), Loc.t("ai_arch_" + str(d["arch"])), (" ★" if bool(d.get("custom", false)) else "")])
 	L.append("%s: %s" % [Loc.t("ai_now"), _aw_act_text(str(d["act"]), str(d["type"]))])
 	L.append("%s: %s" % [Loc.t("ai_pick_life"), Loc.t("ai_life_" + str(d["life"]))])
+	if bool(d.get("pub", false)):
+		if bool(d["war"]):
+			L.append("⚔ %s (%s%%)" % [Loc.t("ai_war"), Loc.digits(str(int(float(d["hp"]) * 100.0)))])
+		for r0 in d["rels"]:
+			L.append("%s: %s" % [Loc.t("ai_you"), Loc.t("ai_st_" + str(r0["stance"]))])
+		L.append(Loc.t("ai_met_note"))
+		_aw_text.text = "\n".join(PackedStringArray(L))
+		return
 	var st: Dictionary = d["stats"]
 	L.append("%s: %s | %s: %s | %s: %s | %s: %s" % [Loc.t("ai_s_money"), Loc.digits(str(d["money"])), Loc.t("ai_s_built"), Loc.digits(str(st["built"])), Loc.t("ai_s_gathered"), Loc.digits(str(st["gathered"])), Loc.t("ai_s_failed"), Loc.digits(str(st["failed"]))])
 	if bool(d["war"]):
@@ -2997,10 +3009,15 @@ func _refresh_role() -> void:
 	_role.text = Loc.role_name(client.role)
 	_admin_btn.visible = FWConst.is_admin(client.role)
 	_god_btn.visible = FWConst.is_admin(client.role) and view.mode == "world"
-	_ai_btn.visible = FWConst.is_admin(client.role)
-	if not _ai_btn.visible:
+	var ai_full: bool = FWConst.is_admin(client.role) or client.creative
+	_ai_btn.visible = client.role != ""   # بازیکن عادی هم می‌تواند شخصیت‌های آشنای خود را ببیند
+	if _aw_make_btn != null:
+		_aw_make_btn.visible = ai_full
+		_aw_go_btn.visible = ai_full
+		_aw_follow_btn.visible = ai_full
+	if not ai_full:
 		view.ai_markers = false
-	elif _aw_marker_btn != null and not view.ai_markers and bool(Settings.get_value("ai_markers", true)):
+	elif ai_full and _aw_marker_btn != null and not view.ai_markers and bool(Settings.get_value("ai_markers", true)):
 		view.ai_markers = true
 	if not _god_btn.visible and _civ_panel.visible:
 		_civ_panel.visible = false
