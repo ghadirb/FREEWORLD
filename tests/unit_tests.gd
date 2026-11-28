@@ -107,6 +107,7 @@ func _init() -> void:
 	test_autonomous_characters()
 	test_character_memory()
 	test_character_social()
+	test_character_war()
 	test_character_fortify()
 	test_character_discovery()
 	test_cave()
@@ -6059,3 +6060,207 @@ func test_character_discovery() -> void:
 	check(bad["seen"].size() == 1 and bad["seen"].has("5,6"), "corrupt discovery entries are dropped on load")
 	var old: Dictionary = CharAI.load_ai({"arch": "trader"}, 9)
 	check(old != null and old["seen"].is_empty(), "saves from before discovery still load")
+
+
+func test_character_war() -> void:
+	print("-- autonomous characters: war, retreat and negotiation")
+	var CharAI = load("res://scripts/server/char_ai.gd")
+	var War = load("res://scripts/server/char_war.gd")
+	var Soc = load("res://scripts/server/char_social.gd")
+	var Mem = load("res://scripts/server/char_memory.gd")
+	var Fort = load("res://scripts/server/char_fortify.gd")
+	var NpcSim = load("res://scripts/server/npc_sim.gd")
+	var cs = CityState.new(7171)
+	NpcSim.ensure_npcs(cs)
+	cs.provision_admin("boss", "secret")
+	cs.ai_settings["max"] = 12
+	# --- اعلام جنگ: فقط دشمنِ پرخاشگر و شجاع ---
+	var p: Array = _soc_pair(cs, "warlord", "schemer")
+	var wl: Dictionary = p[0]
+	var sc: Dictionary = p[1]
+	var kwl := str(wl["acct"])
+	var ksc := str(sc["acct"])
+	check(not War.can_declare(cs, wl, sc), "no war between characters who are not enemies")
+	for i in 6:
+		Mem.record(wl["ai"], "quarrel", ksc, 1.0, cs.day_count)
+		Mem.record(sc["ai"], "quarrel", kwl, 1.0, cs.day_count)
+	check(Mem.stance(wl["ai"], ksc, cs.day_count) == "enemy", "repeated quarrels make them enemies")
+	var tp: Array = _soc_pair(cs, "trader", "rival")
+	for i in 6:
+		Mem.record(tp[0]["ai"], "quarrel", str(tp[1]["acct"]), 1.0, cs.day_count)
+	check(not War.can_declare(cs, tp[0], tp[1]), "a gentle trader is never aggressive enough to declare war")
+	var ally_a: Array = _soc_pair(cs, "warlord", "schemer")
+	for i in 6:
+		Mem.record(ally_a[0]["ai"], "quarrel", str(ally_a[1]["acct"]), 1.0, cs.day_count)
+	ally_a[0]["ai"]["allies"][str(ally_a[1]["acct"])] = cs.day_count
+	check(not War.can_declare(cs, ally_a[0], ally_a[1]), "allies do not declare war on each other")
+	var n_ev0: int = cs.ai_events.size()
+	check(War.try_declare(cs, wl, sc) and War.at_war(wl, sc) and War.at_war(sc, wl), "the aggressive enemy declares war")
+	check(bool(wl["ai"]["war"]["foes"][ksc]["agg"]) and not bool(sc["ai"]["war"]["foes"][kwl]["agg"]), "the declarer is recorded as the aggressor")
+	check(cs.ai_events.size() == n_ev0 + 1 and str(cs.ai_events[cs.ai_events.size() - 1]["kind"]) == "war", "the war is announced to players")
+	check(Mem.remembers(sc["ai"], kwl, "war") and int(wl["ai"]["stats"]["wars"]) == 1, "both remember the war")
+	check(not War.try_declare(cs, wl, sc), "a war that is already on is not declared twice")
+	check(not Soc.meet(cs, wl, sc), "characters at war do not hold friendly meetings")
+	# --- لشکرکشی ---
+	sc["x"] = float(wl["x"]) + 60.0
+	var mp: Array = War.march_plan(cs, wl)
+	check(mp.size() == 1 and str(mp[0]["t"]) == "march", "the aggressor marches toward a distant enemy")
+	check(War.march_plan(cs, sc).is_empty(), "the defender does not march")
+	sc["x"] = float(wl["x"]) + 400.0
+	check(War.march_plan(cs, wl).is_empty(), "nobody marches across the whole world")
+	sc["x"] = float(wl["x"]) + 3.0
+	check(War.march_plan(cs, wl).is_empty(), "no marching when already at the enemy")
+	# --- درگیری ---
+	var hp0: float = float(wl["ai"]["war"]["hp"])
+	War.tick(cs, 5.0)
+	check(float(wl["ai"]["war"]["hp"]) < hp0 and float(sc["ai"]["war"]["hp"]) < hp0, "both sides lose war-health in a clash")
+	check(float(wl["ai"]["war"]["hp"]) > float(sc["ai"]["war"]["hp"]), "the braver warlord wins the exchange against the schemer")
+	check(float(cs.accounts[kwl]["hp"]) == FWConst.PLAYER_HP_MAX, "war never touches the character's account health")
+	# --- دیوار واقعاً کمک می‌کند ---
+	var host: Dictionary = CharAI.spawn(cs, "warlord")["npc"]
+	var khost := str(host["acct"])
+	cs.accounts[khost]["money"] = 100000
+	var site: Dictionary = CharAI.find_site(cs, host, "house")
+	cs.place_building(khost, 1, "house", int(site["cx"]), int(site["cz"]))
+	var house: Dictionary = Fort.house_of(cs, khost)
+	check(not house.is_empty(), "test setup: the defender has a house")
+	if not house.is_empty():
+		var hp_pos: Vector2 = War.home_of(cs, host)
+		host["x"] = hp_pos.x
+		host["z"] = hp_pos.y
+		var open_f: float = War.damage_taken_factor(cs, host)
+		check(is_equal_approx(open_f, 1.0) and War.wall_intact(cs, host) == 0.0, "without a wall nothing softens the blows")
+		for v in Fort.target_cells(cs, house, Fort.wants_towers(host["ai"])):
+			cs.blocks[v] = ["stone", 0, khost]
+		var walled_f: float = War.damage_taken_factor(cs, host)
+		check(War.wall_intact(cs, host) >= 0.99 and walled_f < 0.7, "a complete real wall cuts the damage taken (%.2f)" % walled_f)
+		host["x"] = hp_pos.x + 60.0
+		check(is_equal_approx(War.damage_taken_factor(cs, host), 1.0), "the wall only helps near its own house")
+		for v in Fort.target_cells(cs, house, Fort.wants_towers(host["ai"])):
+			cs.blocks.erase(v)
+	# --- عقب‌نشینی ---
+	var retreated := false
+	var guard := 0
+	while guard < 60 and not War.retreating(wl) and not War.retreating(sc):
+		War.tick(cs, 5.0)
+		guard += 1
+		if not War.at_war(wl, sc):
+			break
+	retreated = War.retreating(wl) or War.retreating(sc)
+	var loser_first: Dictionary = sc if War.retreating(sc) else wl
+	check(retreated or not War.at_war(wl, sc), "a hurt character retreats or the war ends")
+	if retreated:
+		check(float(loser_first["ai"]["war"]["hp"]) <= War.retreat_threshold(loser_first) + 0.001 or float(loser_first["ai"]["war"]["away"]) > 0.0, "it retreats at its own threshold")
+		check(str(loser_first["ai"]["plan"][0]["t"]) == "retreat" if not (loser_first["ai"]["plan"] as Array).is_empty() else true, "retreat makes it walk home")
+		var hp_r: float = float(sc["ai"]["war"]["hp"]) + float(wl["ai"]["war"]["hp"])
+		var rec: bool = false
+		for e in cs.ai_events:
+			if str(e["kind"]) == "retreat":
+				rec = true
+		check(rec, "the retreat is announced to players")
+		check(War.retreat_threshold(sc) > War.retreat_threshold(wl), "the cautious schemer retreats earlier than the brave warlord")
+	# --- مذاکره و صلح ---
+	var money0: int = int(cs.accounts[kwl]["money"]) + int(cs.accounts[ksc]["money"])
+	var g2 := 0
+	while War.at_war(wl, sc) and g2 < 400:
+		War.tick(cs, 5.0)
+		g2 += 1
+	check(not War.at_war(wl, sc) and not War.at_war(sc, wl), "the war ends by negotiation within a bounded time (%d ticks)" % g2)
+	var money1: int = int(cs.accounts[kwl]["money"]) + int(cs.accounts[ksc]["money"])
+	check(money0 == money1, "tribute only moves money between the two wallets")
+	check(int(cs.accounts[kwl]["money"]) >= 0 and int(cs.accounts[ksc]["money"]) >= 0, "nobody ends up in debt")
+	check(Mem.remembers(wl["ai"], ksc, "peace") and Mem.remembers(sc["ai"], kwl, "peace"), "both remember the peace")
+	check(Mem.remembers(wl["ai"], ksc, "war_win") or Mem.remembers(sc["ai"], kwl, "war_win") or absf(War.hp_frac(wl) - War.hp_frac(sc)) < 0.15, "a clear winner remembers the victory")
+	var pe := false
+	for e in cs.ai_events:
+		if str(e["kind"]) == "peace":
+			pe = true
+	check(pe, "the peace is announced to players")
+	for i in 6:
+		Mem.record(wl["ai"], "quarrel", ksc, 1.0, cs.day_count)
+	check(not War.can_declare(cs, wl, sc), "a truce prevents an immediate new war")
+	cs.day_count += War.TRUCE_DAYS + 1
+	check(float(wl["ai"]["war"]["truce"][ksc]) <= cs.day_count, "the truce is time-limited")
+	# --- آتش‌بس اجباری برای جنگ بی‌نتیجه ---
+	var q: Array = _soc_pair(cs, "warlord", "warlord")
+	q[1]["x"] = float(q[0]["x"]) + 300.0
+	for i in 6:
+		Mem.record(q[0]["ai"], "quarrel", str(q[1]["acct"]), 1.0, cs.day_count)
+	if War.try_declare(cs, q[0], q[1]):
+		cs.day_count += War.MAX_WAR_DAYS
+		War.tick(cs, 5.0)
+		check(not War.at_war(q[0], q[1]), "a pointless distant war is ended by force after a few days")
+	# --- تنظیمات ---
+	var r1: Array = _soc_pair(cs, "warlord", "schemer")
+	for i in 6:
+		Mem.record(r1[0]["ai"], "quarrel", str(r1[1]["acct"]), 1.0, cs.day_count)
+	cs.ai_settings["war"] = false
+	check(not War.can_declare(cs, r1[0], r1[1]), "war can be switched off in the settings")
+	cs.ai_settings["war"] = true
+	check(War.try_declare(cs, r1[0], r1[1]), "and switched on again")
+	cs.ai_settings["war"] = false
+	War.tick(cs, 5.0)
+	check(not War.in_war(r1[0]) and not War.in_war(r1[1]), "switching war off ends running wars")
+	cs.ai_settings["war"] = true
+	# --- ذخیره و بارگذاری ---
+	var cs3 = CityState.new(7373)
+	NpcSim.ensure_npcs(cs3)
+	cs3.provision_admin("boss", "secret")
+	cs3.ai_settings["max"] = 12
+	var s1: Array = _soc_pair(cs3, "warlord", "schemer")
+	for i in 6:
+		Mem.record(s1[0]["ai"], "quarrel", str(s1[1]["acct"]), 1.0, cs3.day_count)
+	War.try_declare(cs3, s1[0], s1[1])
+	s1[0]["ai"]["war"]["hp"] = 42.0
+	var back = CityState.from_dict(cs3.to_dict())
+	var bw: Dictionary = {}
+	for n2 in back.npcs:
+		if int(n2["id"]) == int(s1[0]["id"]):
+			bw = n2
+	check(not bw.is_empty() and (bw["ai"]["war"]["foes"] as Dictionary).has(str(s1[1]["acct"])) and is_equal_approx(float(bw["ai"]["war"]["hp"]), 42.0), "a running war and war-health survive save and load")
+	check(bool(back.ai_settings["war"]), "the war setting survives save and load")
+	var bad: Dictionary = War.load_war({"hp": 900, "away": -5, "foes": {"p": {"since": 1}, "ai:3": {"since": -4, "ticks": "x"}, "ai:4": 7}, "truce": {"zz": 3, "ai:9": 5}})
+	check(float(bad["hp"]) <= War.HP_MAX and float(bad["away"]) >= 0.0 and (bad["foes"] as Dictionary).size() == 1 and (bad["foes"] as Dictionary).has("ai:3") and (bad["truce"] as Dictionary).size() == 1, "corrupted war data is sanitized when loading")
+	var old: Dictionary = CharAI.load_ai({"arch": "trader"}, 9)
+	check(old != null and (old["war"]["foes"] as Dictionary).is_empty() and float(old["war"]["hp"]) == War.HP_MAX, "saves from before war still load")
+	# --- جهان بدون بازیکن: بدون خطا و بدون پول منفی ---
+	var w2 = CityState.new(7272)
+	NpcSim.ensure_npcs(w2)
+	w2.provision_admin("boss", "secret")
+	w2.ai_settings["max"] = 8
+	for arch in ["schemer", "rival", "mystery", "trader", "warlord", "warlord", "schemer"]:
+		if Personality_valid(arch):
+			CharAI.spawn(w2, arch)
+	_ai_run(w2, 9000)
+	var wars := 0
+	var peaces := 0
+	var ok_state := true
+	for n3 in w2.npcs:
+		if n3.get("ai", null) is Dictionary:
+			wars += int(n3["ai"]["stats"]["wars"])
+			peaces += 1 if Mem_has_peace(n3) else 0
+			var hp3: float = float(n3["ai"]["war"]["hp"])
+			if hp3 < 0.0 or hp3 > War.HP_MAX or int(w2.accounts[str(n3["acct"])]["money"]) < 0:
+				ok_state = false
+			for fk in n3["ai"]["war"]["foes"]:
+				if not w2.accounts.has(str(fk)):
+					ok_state = false
+	print("   unattended war world: wars=%d characters_with_peace_memory=%d" % [wars, peaces])
+	check(ok_state, "after a long unattended run all war-health and money values are valid")
+	var texts_ok := true
+	for lang in ["fa", "en"]:
+		Loc.lang = lang
+		for k in ["msg_ai_war", "msg_ai_retreat", "msg_ai_peace"]:
+			if Loc.t(k) == k:
+				texts_ok = false
+	Loc.lang = "fa"
+	check(texts_ok, "war, retreat and peace texts exist in Persian and English")
+
+
+func Personality_valid(arch: String) -> bool:
+	return load("res://scripts/server/char_personality.gd").valid(arch)
+
+
+func Mem_has_peace(n: Dictionary) -> bool:
+	return int(n["ai"]["mem"]["tally"].get("peace", 0)) > 0
+

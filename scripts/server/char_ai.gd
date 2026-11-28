@@ -14,6 +14,7 @@ const Memory = preload("res://scripts/server/char_memory.gd")
 const Social = preload("res://scripts/server/char_social.gd")
 const Placement = preload("res://scripts/shared/placement.gd")
 const Fortify = preload("res://scripts/server/char_fortify.gd")
+const War = preload("res://scripts/server/char_war.gd")
 
 const BUILD_TYPES := ["house", "farm", "coop", "shop", "well"]
 const MULTI_OK := ["farm", "coop"]          # از این‌ها چند تا هم می‌شود ساخت
@@ -87,8 +88,8 @@ static func _fresh_ai(arch: String, nid: int) -> Dictionary:
 		"life": str(Personality.ARCHETYPES[arch]["life"]),
 		"goals": [], "plan": [], "active": {}, "t": 0.0, "w": 0.0,
 		"fails": {}, "bad": {}, "log": [], "seen": {}, "disc": "",
-		"mem": Memory.fresh(), "learned": 0, "allies": {}, "meet": {}, "bought": {},
-		"stats": {"gathered": 0, "sold": 0, "built": 0, "failed": 0, "thoughts": 0, "met": 0, "traded": 0, "allied": 0, "betrayed": 0, "explored": 0},
+		"mem": Memory.fresh(), "war": War.fresh(), "learned": 0, "allies": {}, "meet": {}, "bought": {},
+		"stats": {"gathered": 0, "sold": 0, "built": 0, "failed": 0, "thoughts": 0, "met": 0, "traded": 0, "allied": 0, "betrayed": 0, "explored": 0, "wars": 0, "won": 0, "lost": 0, "retreats": 0},
 	}
 
 
@@ -116,6 +117,7 @@ static func load_ai(raw: Variant, nid: int) -> Variant:
 				goals.append({"kind": str(g.get("kind", "build")), "type": str(g.get("type", "")), "prio": clampf(float(g.get("prio", 0.0)), 0.0, 2.0), "h": str(g.get("h", "short"))})
 	ai["goals"] = goals.slice(0, 6)
 	ai["mem"] = Memory.load_mem(raw.get("mem", null), ai)
+	ai["war"] = War.load_war(raw.get("war", null))
 	ai["learned"] = clampi(int(raw.get("learned", 0)), 0, 1000000)
 	var ra: Variant = raw.get("allies", {})
 	if ra is Dictionary:
@@ -300,6 +302,12 @@ static func think(cs, npc: Dictionary) -> void:
 	if int(ai["stats"]["thoughts"]) % 10 == 0:
 		for fk in ai["fails"].keys():   # شکست‌های قدیمی کم‌کم فراموش می‌شوند تا شخصیت دوباره امتحان کند
 			ai["fails"][fk] = maxi(0, int(ai["fails"][fk]) - 1)
+	var march: Array = War.march_plan(cs, npc)    # اعلام‌کنندهٔ جنگ به سوی دشمن نزدیکش می‌رود
+	if not march.is_empty():
+		ai["plan"] = march
+		ai["active"] = {}
+		_log(ai, "march", cs)
+		return
 	var goals: Array = rank_goals(cs, npc)
 	ai["goals"] = goals
 	var money: int = _money(cs, acct)
@@ -492,6 +500,13 @@ static func _exec(cs, npc: Dictionary, dt: float, advance: Callable) -> void:
 			npc["state"] = "idle"
 			ai["w"] = float(ai["w"]) + dt
 			if float(ai["w"]) >= float(st["s"]):
+				ai["w"] = 0.0
+				plan.pop_front()
+		"march", "retreat":
+			# لشکرکشی به سوی دشمن یا عقب‌نشینی به خانه؛ با مهلت تا گیر نکند
+			ai["w"] = float(ai["w"]) + dt
+			var reach: float = War.FIGHT_RANGE * 0.5 if str(st["t"]) == "march" else 4.0
+			if _move(cs, npc, Vector2(float(st["x"]), float(st["z"])), reach, dt, advance) or float(ai["w"]) >= (60.0 if str(st["t"]) == "march" else 90.0):
 				ai["w"] = 0.0
 				plan.pop_front()
 		"gather":

@@ -13,7 +13,7 @@ const REL_KEYS := ["trust", "friend", "enemy", "respect", "fear"]
 const EVENTS_MAX := 16
 const REL_MAX := 12             # حداکثر تعداد طرف‌های ثبت‌شده در حافظهٔ هر شخصیت
 const IMPORTANT := 0.35         # رویداد با اهمیت بیشتر از این در فهرست رویدادها می‌ماند
-const KINDS := ["talk", "gift", "trade", "demolish", "betray", "help", "chat", "quarrel", "alliance"]
+const KINDS := ["talk", "gift", "trade", "demolish", "betray", "help", "chat", "quarrel", "alliance", "war", "war_win", "war_loss", "peace"]
 
 const STANCES := ["ally", "friend", "neutral", "wary", "enemy"]
 
@@ -154,6 +154,24 @@ static func record(ai: Dictionary, kind: String, who: String, strength: float, d
 			# ترس از طرف مقابل: شجاع کمتر می‌ترسد
 			_bump(r, "fear", 0.15 * (1.0 - float(t["bravery"])))
 			importance = 0.6 + 0.3 * s
+		"war":
+			_bump(r, "enemy", 0.1 * grudge)
+			_bump(r, "trust", -0.1)
+			importance = 0.5
+		"war_win":
+			_bump(r, "respect", 0.05)
+			_bump(r, "fear", -0.1)
+			importance = 0.45 + 0.2 * s
+		"war_loss":
+			_bump(r, "enemy", 0.2 * grudge)
+			_bump(r, "fear", 0.25 * (1.0 - float(t["bravery"])))
+			importance = 0.55 + 0.2 * s
+		"peace":
+			# صلح کینه را کم می‌کند؛ همکارجو بیشتر می‌بخشد. خیانت و بدهی پاک نمی‌شود.
+			_bump(r, "enemy", -0.3 * (0.7 + 0.6 * float(t["cooperation"])))
+			_bump(r, "trust", 0.05)
+			_bump(r, "respect", 0.05)
+			importance = 0.5
 		"betray":
 			r["betray"] = int(r["betray"]) + 1
 			_bump(r, "enemy", (0.5 + 0.3 * s) * grudge)

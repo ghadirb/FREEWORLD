@@ -71,9 +71,10 @@ var market: Dictionary = {"wheat": 0.0, "flour": 0.0, "bread": 0.0, "egg": 0.0, 
 ## قیمت کالاهای دامی (تخم‌مرغ و شیر).
 var prices: Dictionary = {"egg": 6.0, "milk": 14.0, "flour": 16.0, "bread": 20.0, "cheese": 34.0}
 var npcs: Array = []
-var ai_settings: Dictionary = {"on": true, "max": FWConst.AI_MAX_DEFAULT, "level": "balanced", "build": true}
+var ai_settings: Dictionary = {"on": true, "max": FWConst.AI_MAX_DEFAULT, "level": "balanced", "build": true, "war": true}
 var ai_events: Array = []       # {kind: built, id}؛ سرور بعد از هر گام به همه اعلام می‌کند
-var social_t: float = 0.0          # زمان‌سنج تعامل شخصیت‌ها با هم
+var social_t: float = 0.0
+var war_t: float = 0.0             # زمان‌سنج جنگ و مذاکرهٔ شخصیت‌ها          # زمان‌سنج تعامل شخصیت‌ها با هم
 var ai_positions: Dictionary = {}   # {نام بازیکن آنلاین: Vector2} برای کم‌دقت‌کردن شخصیت‌های دور
 var family_events: Array = []   # {kind, player, npc}؛ سرور بعد از هر گام اعلام می‌کند
 var family_day: int = -1
@@ -3097,6 +3098,7 @@ static func from_dict(d: Dictionary):
 		cs.ai_settings["on"] = bool(ais.get("on", true))
 		cs.ai_settings["max"] = clampi(int(ais.get("max", FWConst.AI_MAX_DEFAULT)), 0, FWConst.NPC_MAX)
 		cs.ai_settings["build"] = bool(ais.get("build", true))
+		cs.ai_settings["war"] = bool(ais.get("war", true))
 		cs.ai_settings["level"] = str(ais.get("level", "balanced")) if FWConst.AI_LEVELS.has(str(ais.get("level", ""))) else "balanced"
 	var bl = d.get("blocks", [])
 	cs.track_nav = false

@@ -8,6 +8,7 @@ const Residents = preload("res://scripts/server/residents.gd")
 const Family = preload("res://scripts/server/family.gd")
 const CharAI = preload("res://scripts/server/char_ai.gd")
 const CharSocial = preload("res://scripts/server/char_social.gd")
+const CharWar = preload("res://scripts/server/char_war.gd")
 
 
 static func hour_of(cs) -> float:
@@ -159,6 +160,7 @@ static func step(cs, dt: float) -> void:
 	var day := int(floor(cs.world_time / 86400.0))
 	var activity := activity_for_hour(h)
 	CharSocial.tick(cs, dt)   # شخصیت‌های مستقل با هم تعامل می‌کنند (مرحلهٔ ۵)
+	CharWar.tick(cs, dt)      # جنگ، عقب‌نشینی و مذاکره بین شخصیت‌ها
 	for npc in cs.npcs:
 		if CharAI.is_ai(npc):
 			CharAI.step(cs, npc, dt, _advance)   # شخصیت هوشمند: برنامهٔ روزانه ندارد، خودش تصمیم می‌گیرد

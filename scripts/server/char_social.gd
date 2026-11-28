@@ -5,6 +5,7 @@ extends RefCounted
 ## همه‌چیز از همان حافظهٔ مرحلهٔ ۳ (`char_memory.gd`) می‌گذرد؛ پول و کالا فقط بین دو کیف جابه‌جا می‌شود.
 
 const Memory = preload("res://scripts/server/char_memory.gd")
+const War = preload("res://scripts/server/char_war.gd")
 
 const MEET_RANGE := 10.0
 const TICK_SECONDS := 5.0
@@ -70,6 +71,8 @@ static func tick(cs, dt: float) -> void:
 static func meet(cs, a: Dictionary, b: Dictionary) -> bool:
 	var ka := str(b["acct"])
 	var kb := str(a["acct"])
+	if War.at_war(a, b):
+		return false     # در جنگ‌اند؛ برخورد دوستانه نیست (درگیری و مذاکره با چرخهٔ جنگ است)
 	var last: float = float(_ai(a)["meet"].get(ka, -1.0e9))
 	if float(cs.world_time) - last < MEET_COOLDOWN:
 		return false
@@ -97,6 +100,7 @@ static func meet(cs, a: Dictionary, b: Dictionary) -> bool:
 		Memory.record(_ai(b), "quarrel", kb, 0.5, cs.day_count)
 		_note(cs, a, "quarrel:" + str(b["name"]))
 		_note(cs, b, "quarrel:" + str(a["name"]))
+		War.try_declare(cs, a, b)     # مشاجرهٔ شدید بین دشمنان پرخاشگر می‌تواند به جنگ برسد
 		return true
 	Memory.record(_ai(a), "chat", ka, 0.5, cs.day_count)
 	Memory.record(_ai(b), "chat", kb, 0.5, cs.day_count)
@@ -147,7 +151,7 @@ static func find_buyer(cs, seller: Dictionary, item: String, n: int) -> Dictiona
 		var d: float = _pos(seller).distance_to(_pos(other))
 		if d > TRADE_RANGE or d >= bd:
 			continue
-		if _stance(cs, seller, other) == "enemy" or _stance(cs, other, seller) == "enemy":
+		if _stance(cs, seller, other) == "enemy" or _stance(cs, other, seller) == "enemy" or War.at_war(seller, other):
 			continue
 		var t: Dictionary = _ai(other)["traits"]
 		if str(_ai(other)["arch"]) != "trader" and float(t["cooperation"]) < 0.45:

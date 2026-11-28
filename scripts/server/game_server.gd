@@ -245,7 +245,7 @@ func _process(delta: float) -> void:
 				_broadcast("s2c_building_added", cs.building_public(cs.buildings[int(aev["id"])]))
 			elif aev["kind"] == "block":
 				_broadcast("s2c_block", PackedInt32Array([int(aev["x"]), int(aev["y"]), int(aev["z"]), FWConst.BLOCK_ORDER.find(str(aev["type"])), int(aev["color"])]))
-			elif aev["kind"] == "alliance" or aev["kind"] == "betrayal":
+			elif aev["kind"] in ["alliance", "betrayal", "war", "retreat", "peace"]:
 				for apid2 in _auth_peers():
 					_notice(apid2, "ai_social", {"kind": str(aev["kind"]), "a": str(aev["a"]), "b": str(aev["b"])})   # بازیکن‌ها از اتحاد و خیانت شخصیت‌ها باخبر می‌شوند
 		cs.ai_events.clear()
