@@ -18,6 +18,7 @@ signal building_removed(id: int)
 signal stocks_changed
 signal market_changed
 signal world_changed
+signal voyage_ready(dest: String, pack: Dictionary)
 signal inside_changed(building_id: int)
 signal furn_changed
 signal energy_changed
@@ -425,6 +426,20 @@ func request_book() -> void:
 
 ## کتابچهٔ گونه‌ها (پروتکل ۵۷): rows = [[گونه، روز دیدن، تعداد وعده، ترکیبی]]، done، total، zoo = [حیوان، سیر]
 var species_book: Dictionary = {"rows": [], "done": 0, "total": 0, "zoo": [0, 0]}
+
+
+func request_voyage(dest: String) -> void:
+	if is_logged_in:
+		_tx("c2s_voyage", [dest])
+
+
+func send_voyage_arrive(pack: Dictionary) -> void:
+	if is_logged_in:
+		_tx("c2s_voyage_arrive", [pack])
+
+
+func on_voyage_ready(state: Dictionary) -> void:
+	voyage_ready.emit(str(state.get("dest", "")), state.get("pack", {}))
 
 
 func request_species_book() -> void:

@@ -74,6 +74,7 @@ var _inv_rows: Dictionary = {}
 var _god_panel: PanelContainer
 # سازندهٔ شخصیت (پروتکل ۵۵)
 const Settings = preload("res://scripts/client/settings.gd")
+const WorldSlots = preload("res://scripts/client/world_slots.gd")
 const CharPersonality = preload("res://scripts/server/char_personality.gd")
 var _ai_panel: PanelContainer
 # مشاهدهٔ شخصیت‌های مستقل (پروتکل ۵۶)
@@ -2765,6 +2766,17 @@ func _build_admin_panel() -> void:
 			_cap_btns[k].button_pressed = (int(k) == client.cap_scale)
 	client.world_changed.connect(_sync_caps)
 	_sync_caps.call()
+	if client.local_server != null and host_info == "":
+		v.add_child(_label(Loc.t("voyage_title"), 22, Color("c8f08a")))
+		v.add_child(_label(Loc.t("voyage_hint"), 18, Color("e8c870")))
+		var vrow := HBoxContainer.new()
+		vrow.add_theme_constant_override("separation", 8)
+		v.add_child(vrow)
+		for dest in FWConst.VOYAGE_ORDER:
+			var vb := UiTheme.button("🚀 " + Loc.t("planet_" + str(dest)), Vector2(0, 56))
+			vb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			vb.pressed.connect(func(): _request_voyage(str(dest)))
+			vrow.add_child(vb)
 	v.add_child(_label(Loc.t("disasters"), 22, Color("c8f08a")))
 	var drow := HBoxContainer.new()
 	drow.add_theme_constant_override("separation", 8)
@@ -2824,6 +2836,16 @@ func _build_menu_panel() -> void:
 
 
 # ---------------- رفتار ----------------
+
+## سفر سیاره‌ای: پیش از پرداخت هزینه، وجود/ساخت‌پذیری جهان مقصد بررسی می‌شود تا بار مسافر گم نشود.
+func _request_voyage(dest: String) -> void:
+	var err := WorldSlots.voyage_target_error(WorldSlots.load_worlds(), str(FWConst.VOYAGE_DESTS.get(dest, "")))
+	if err != "":
+		Sfx.play(self, "error")
+		toast(Loc.err(err), Color("ff9a8a"))
+		return
+	client.request_voyage(dest)
+
 
 func toast(text: String, color: Color = Color.WHITE) -> void:
 	var p := PanelContainer.new()
@@ -3016,6 +3038,9 @@ func _on_notice(code: String, args: Dictionary) -> void:
 		"wild_died":
 			Sfx.play(self, "error")
 			toast(Loc.t("msg_wild_died"), Color("ff9a8a"))
+		"voyage_arrived":
+			Sfx.play(self, "coin")
+			toast(Loc.t("msg_voyage_arrived"), Color("8fd8ff"))
 		"rested":
 			Sfx.play(self, "coin")
 			toast(Loc.t("msg_rested"), Color("c8f08a"))

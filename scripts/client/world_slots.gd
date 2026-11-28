@@ -46,6 +46,19 @@ static func add_world(worlds: Array, raw_name: String, seed_value: int, creative
 	return {"ok": true, "id": id}
 
 
+## سفر سیاره‌ای: آیا جهان مقصد (جهان آمادهٔ آن سیاره) وجود دارد یا می‌شود ساخت؟ خالی = بله.
+static func voyage_target_error(worlds: Array, scenario: String) -> String:
+	if not Scenarios.has(scenario):
+		return "bad_request"
+	if not Entitlements.is_unlocked(scenario):
+		return "locked_world"
+	if not find_scenario_world(worlds, scenario).is_empty():
+		return ""
+	if worlds.size() >= MAX_WORLDS:
+		return "too_many_worlds"
+	return ""
+
+
 static func _new_id(worlds: Array) -> String:
 	var i := 1
 	while true:

@@ -108,6 +108,7 @@ func _make_client() -> void:
 	add_child(client)
 	client.setup(net)
 	client.logged_in.connect(_on_logged_in)
+	client.voyage_ready.connect(_on_voyage_ready)
 	client.login_failed.connect(func(e):
 		_show_menu(Loc.err(e), true))
 	client.connection_failed.connect(func():
@@ -224,6 +225,42 @@ func _host_info_text() -> String:
 	return "\n".join(lines)
 
 
+## سفر سیاره‌ای: بستهٔ مسافر ذخیره می‌شود، جهان مقصد (در صورت نبودن ساخته می‌شود) باز می‌شود و پس از ورود تحویل می‌گردد.
+func _on_voyage_ready(dest: String, pack: Dictionary) -> void:
+	if not _local or _hosting or not FWConst.VOYAGE_DESTS.has(dest):
+		return
+	var sid := str(FWConst.VOYAGE_DESTS[dest])
+	var worlds := WorldSlots.load_worlds()
+	var w: Dictionary = WorldSlots.find_scenario_world(worlds, sid)
+	if w.is_empty():
+		var r: Dictionary = WorldSlots.add_world(worlds, WorldSlots.unique_name(worlds, Loc.t("planet_" + dest)), 0, false, sid)
+		if not r["ok"]:
+			_show_menu(Loc.err(str(r["error"])), true)
+			return
+		w = WorldSlots.find(worlds, str(r["id"]))
+		WorldSlots.save_worlds(worlds)
+	Settings.set_value("voyage", {"pack": pack, "world": str(w["id"]), "dest": dest})
+	WorldSlots.set_current(str(w["id"]))
+	_start_local(_name, false)
+
+
+func _apply_pending_voyage() -> void:
+	var v: Variant = Settings.get_value("voyage", {})
+	if not (v is Dictionary) or (v as Dictionary).is_empty() or not _local or _hosting:
+		return
+	var worlds := WorldSlots.load_worlds()
+	if str(v.get("world", "")) != WorldSlots.current_id(worlds):
+		return
+	var pack: Variant = v.get("pack", null)
+	if not (pack is Dictionary):
+		Settings.set_value("voyage", {})
+		return
+	client.notice.connect(func(code, _args):
+		if code == "voyage_arrived" or code == "voyage_duplicate" or code == "bad_request":
+			Settings.set_value("voyage", {}))
+	client.send_voyage_arrive(pack)
+
+
 func _on_logged_in() -> void:
 	if client.token != "" and _secret == "" and not _local:
 		Settings.save_token(_host, _port, _name, client.token)
@@ -231,6 +268,7 @@ func _on_logged_in() -> void:
 	if menu != null:
 		menu.queue_free()
 		menu = null
+	_apply_pending_voyage()
 	var q := int(_args.get("quality", Settings.get_value("quality", Settings.default_quality())))
 	view = GameView.new()
 	view.name = "GameView"

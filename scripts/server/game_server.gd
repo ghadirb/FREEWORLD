@@ -12,6 +12,7 @@ const Residents = preload("res://scripts/server/residents.gd")
 const Family = preload("res://scripts/server/family.gd")
 const Attractions = preload("res://scripts/server/attractions.gd")
 const SpeciesBook = preload("res://scripts/server/species_book.gd")
+const Voyage = preload("res://scripts/server/voyage.gd")
 const CharAI = preload("res://scripts/server/char_ai.gd")
 const CharCreator = preload("res://scripts/server/char_creator.gd")
 const CharWatch = preload("res://scripts/server/char_watch.gd")
@@ -35,7 +36,7 @@ const LOCAL_PID := 1
 const LOCAL_METHODS := [
 	"c2s_login", "c2s_move", "c2s_place", "c2s_remove", "c2s_collect",
 	"c2s_chat", "c2s_set_role", "c2s_get_audit", "c2s_job", "c2s_set_world", "c2s_enter", "c2s_leave",
-	"c2s_place_block", "c2s_remove_block", "c2s_paint_block", "c2s_build_region", "c2s_paste", "c2s_bp_save", "c2s_bp_op", "c2s_arena_create", "c2s_arena_edit", "c2s_arena_import", "c2s_arena_op", "c2s_civ", "c2s_undo", "c2s_gather", "c2s_dig", "c2s_fill", "c2s_craft", "c2s_trade", "c2s_offer", "c2s_offer_answer", "c2s_npc", "c2s_npc_sell", "c2s_npc_family", "c2s_ride_upgrade", "c2s_feed_animal", "c2s_species_book", "c2s_ai_spawn", "c2s_ai_creator", "c2s_ai_watch", "c2s_npc_buy", "c2s_furn_place", "c2s_furn_remove", "c2s_minigame_start", "c2s_race_start", "c2s_grace", "c2s_boat", "c2s_horse", "c2s_car", "c2s_fish", "c2s_disaster", "c2s_god",
+	"c2s_place_block", "c2s_remove_block", "c2s_paint_block", "c2s_build_region", "c2s_paste", "c2s_bp_save", "c2s_bp_op", "c2s_arena_create", "c2s_arena_edit", "c2s_arena_import", "c2s_arena_op", "c2s_civ", "c2s_undo", "c2s_gather", "c2s_dig", "c2s_fill", "c2s_craft", "c2s_trade", "c2s_offer", "c2s_offer_answer", "c2s_npc", "c2s_npc_sell", "c2s_npc_family", "c2s_ride_upgrade", "c2s_feed_animal", "c2s_species_book", "c2s_voyage", "c2s_voyage_arrive", "c2s_ai_spawn", "c2s_ai_creator", "c2s_ai_watch", "c2s_npc_buy", "c2s_furn_place", "c2s_furn_remove", "c2s_minigame_start", "c2s_race_start", "c2s_grace", "c2s_boat", "c2s_horse", "c2s_car", "c2s_fish", "c2s_disaster", "c2s_god",
 	"c2s_mine_enter", "c2s_mine_leave", "c2s_mine_gather", "c2s_book", "c2s_quest",
 ]
 
@@ -2041,6 +2042,41 @@ func _announce_species(pid: int, player_name: String, seen: Array) -> void:
 		_notice(pid, "species_seen", {"kind": str(s["kind"]), "reward": int(s["reward"]), "complete": int(s["complete"])})
 	_send(pid, "s2c_money", cs.money_of(player_name))
 	_send(pid, "s2c_species_book", SpeciesBook.public_state(cs, player_name))
+	_dirty = true
+
+
+## سفر سیاره‌ای (پروتکل ۵۹): فقط مدیر؛ بسته را می‌سازد و برای کلاینت می‌فرستد (جابه‌جایی کالا از این جهان).
+func on_voyage(pid: int, dest: String) -> void:
+	var p := _player_of(pid)
+	if p.is_empty():
+		return
+	if not _allow_action(p):
+		_notice(pid, "rate_limited")
+		return
+	var res: Dictionary = Voyage.depart(cs, p["name"], dest)
+	if not res["ok"]:
+		_notice(pid, str(res["error"]))
+		return
+	_push_inv(pid, p["name"])
+	_dirty = true
+	_send(pid, "s2c_voyage_ready", {"dest": res["dest"], "pack": res["pack"]})
+
+
+## ورود به جهان مقصد: بستهٔ مسافر یک‌بار پذیرفته می‌شود.
+func on_voyage_arrive(pid: int, pack: Dictionary) -> void:
+	var p := _player_of(pid)
+	if p.is_empty():
+		return
+	if not _allow_action(p):
+		_notice(pid, "rate_limited")
+		return
+	var res: Dictionary = Voyage.arrive(cs, p["name"], pack)
+	if not res["ok"]:
+		_notice(pid, str(res["error"]))
+		return
+	_push_inv(pid, p["name"])
+	_send(pid, "s2c_vitals", cs.vitals_public(p["name"]))
+	_notice(pid, "voyage_arrived")
 	_dirty = true
 
 

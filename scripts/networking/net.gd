@@ -267,6 +267,24 @@ func c2s_feed_animal() -> void:
 
 
 @rpc("any_peer", "call_remote", "reliable")
+func c2s_voyage(dest: String) -> void:
+	if server:
+		server.on_voyage(multiplayer.get_remote_sender_id(), dest)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func c2s_voyage_arrive(pack: Dictionary) -> void:
+	if server:
+		server.on_voyage_arrive(multiplayer.get_remote_sender_id(), pack)
+
+
+@rpc("authority", "call_remote", "reliable")
+func s2c_voyage_ready(state: Dictionary) -> void:
+	if client:
+		client.on_voyage_ready(state)
+
+
+@rpc("any_peer", "call_remote", "reliable")
 func c2s_species_book() -> void:
 	if server:
 		server.on_species_book(multiplayer.get_remote_sender_id())
