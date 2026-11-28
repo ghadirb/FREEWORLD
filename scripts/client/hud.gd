@@ -87,6 +87,7 @@ var _ai_edit_btn: Button
 var _civ_panel: PanelContainer
 var _civ_list: VBoxContainer
 var _god_btn: Button
+var _ai_btn: Button   # ورود مستقیم به سازندهٔ شخصیت در هر دو حالت (برای مدیر)
 var _mg_btn: Button
 var _arena_btn: Button
 var _arena_panel: PanelContainer
@@ -418,6 +419,8 @@ func _build_side_buttons() -> void:
 	menu_btn.pressed.connect(func(): _menu_panel.visible = not _menu_panel.visible)
 	_god_btn = UiTheme.button(Loc.t("god_tools"), SIDE_BTN)
 	_god_btn.pressed.connect(_toggle_god)
+	_ai_btn = UiTheme.button(Loc.t("ai_chars_btn"), SIDE_BTN)
+	_ai_btn.pressed.connect(func(): _open_ai_creator(-1))
 	_mg_btn = UiTheme.button(Loc.t("minigame"), SIDE_BTN)
 	_mg_btn.pressed.connect(func(): Sfx.play(self, "click"); _mg_panel.visible = not _mg_panel.visible; _refresh_minigame())
 	_arena_btn = UiTheme.button(Loc.t("arenas"), SIDE_BTN)
@@ -456,7 +459,7 @@ func _build_side_buttons() -> void:
 	_fly_pad.add_theme_constant_override("separation", 12)
 	_fly_pad.visible = false
 	root.add_child(_fly_pad)
-	_place(_fly_pad, 1.0, 1.0, 12.0, 120.0)
+	_place(_fly_pad, 1.0, 1.0, SIDE_W + 28.0, 40.0)   # کنار ستون دکمه‌ها، نه روی آن
 	for dirn in [1.0, -1.0]:
 		var ab := UiTheme.button("▲" if dirn > 0.0 else "▼", Vector2(96, 96))
 		ab.button_down.connect(func(): view.fly_vert = dirn)
@@ -468,10 +471,10 @@ func _build_side_buttons() -> void:
 	_jump_btn.visible = false
 	_jump_btn.button_down.connect(func(): view.try_hop())
 	root.add_child(_jump_btn)
-	_place(_jump_btn, 1.0, 1.0, 12.0, 120.0)
+	_place(_jump_btn, 1.0, 1.0, SIDE_W + 28.0, 40.0)   # پرش روی دکمهٔ «پرواز» می‌افتاد؛ حالا کنار ستون است
 	_interactive.append(_jump_btn)
 	view.fly_changed.connect(func(on: bool): _fly_btn.text = Loc.t("land") if on else Loc.t("fly"); _fly_pad.visible = on)
-	for b in [_mode_btn, _view_btn, _build_btn, _tools_btn, _inv_btn, chat_btn, _admin_btn, _god_btn, _mg_btn, _arena_btn, _race_btn, _book_btn, _boat_btn, _horse_btn, _car_btn, _fish_btn, _fly_btn, menu_btn]:
+	for b in [_mode_btn, _view_btn, _build_btn, _tools_btn, _inv_btn, chat_btn, _admin_btn, _god_btn, _ai_btn, _mg_btn, _arena_btn, _race_btn, _book_btn, _boat_btn, _horse_btn, _car_btn, _fish_btn, _fly_btn, menu_btn]:
 		b.add_theme_font_size_override("font_size", 19)
 		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		v.add_child(b)
@@ -2731,9 +2734,10 @@ func _refresh_role() -> void:
 	_role.text = Loc.role_name(client.role)
 	_admin_btn.visible = FWConst.is_admin(client.role)
 	_god_btn.visible = FWConst.is_admin(client.role) and view.mode == "world"
+	_ai_btn.visible = FWConst.is_admin(client.role)
 	if not _god_btn.visible and _civ_panel.visible:
 		_civ_panel.visible = false
-	if not _god_btn.visible and _ai_panel.visible:
+	if not _ai_btn.visible and _ai_panel.visible:
 		_ai_panel.visible = false
 	if not _god_btn.visible and _god_panel.visible:
 		_toggle_god()
