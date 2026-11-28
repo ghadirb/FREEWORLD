@@ -111,6 +111,7 @@ func _init() -> void:
 	test_character_creator()
 	test_character_performance()
 	test_character_watch()
+	test_threat_pact()
 	test_character_fortify()
 	test_character_discovery()
 	test_cave()
@@ -6478,6 +6479,46 @@ func test_character_performance() -> void:
 	for lv in ["economy", "balanced", "advanced"]:
 		c2.ai_settings["level"] = lv
 		check(CharAI.think_budget(c2) >= 2, "think budget exists for level " + lv)
+
+
+func test_threat_pact() -> void:
+	print("-- autonomous characters: alliance from a common threat")
+	var CharAI = load("res://scripts/server/char_ai.gd")
+	var Soc = load("res://scripts/server/char_social.gd")
+	var War = load("res://scripts/server/char_war.gd")
+	var Mem = load("res://scripts/server/char_memory.gd")
+	var NpcSim = load("res://scripts/server/npc_sim.gd")
+	var cs = CityState.new(4242)
+	NpcSim.ensure_npcs(cs)
+	cs.ai_settings["max"] = 12
+	var a: Dictionary = CharAI.spawn(cs, "trader")["npc"]
+	var b: Dictionary = CharAI.spawn(cs, "rival")["npc"]
+	var f: Dictionary = CharAI.spawn(cs, "warlord")["npc"]
+	var ka := str(a["acct"])
+	var kb := str(b["acct"])
+	var kf := str(f["acct"])
+	check(not Soc.threat_pact(cs, a, b), "no pact without a shared foe")
+	a["ai"]["war"]["foes"][kf] = {"since": cs.day_count, "ticks": 0, "agg": false}
+	check(not Soc.threat_pact(cs, a, b), "no pact when only one is at war with the threat")
+	b["ai"]["war"]["foes"][kf] = {"since": cs.day_count, "ticks": 0, "agg": false}
+	var ev0: int = cs.ai_events.size()
+	check(Soc.threat_pact(cs, a, b), "two characters fighting the same foe ally")
+	check((a["ai"]["allies"] as Dictionary).has(kb) and (b["ai"]["allies"] as Dictionary).has(ka), "the alliance is mutual")
+	check(cs.ai_events.size() == ev0 + 1 and str(cs.ai_events[cs.ai_events.size() - 1]["kind"]) == "alliance", "the pact is announced to players")
+	check(not Soc.threat_pact(cs, a, b), "an existing alliance is not formed twice")
+	# دشمن شخصی یا خیانت‌دیده متحد نمی‌شود
+	var c: Dictionary = CharAI.spawn(cs, "schemer")["npc"]
+	var kc := str(c["acct"])
+	c["ai"]["war"]["foes"][kf] = {"since": cs.day_count, "ticks": 0, "agg": false}
+	for i in 6:
+		Mem.record(c["ai"], "quarrel", ka, 1.0, cs.day_count)
+	check(not Soc.threat_pact(cs, a, c), "a personal enemy does not ally even against a common foe")
+	# اتحادِ پر نمی‌شود از سقف بگذرد
+	var d: Dictionary = CharAI.spawn(cs, "trader")["npc"]
+	d["ai"]["war"]["foes"][kf] = {"since": cs.day_count, "ticks": 0, "agg": false}
+	check(not Soc.threat_pact(cs, a, d) or (a["ai"]["allies"] as Dictionary).size() <= 2, "the ally cap is respected")
+	Soc.threat_tick(cs)
+	check(true, "the threat tick runs without error")
 
 
 func test_character_watch() -> void:

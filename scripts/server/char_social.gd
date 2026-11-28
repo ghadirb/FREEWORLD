@@ -119,6 +119,52 @@ static func meet(cs, a: Dictionary, b: Dictionary) -> bool:
 	return true
 
 
+## اتحاد از تهدید مشترک: دو شخصیتی که با هم جنگ و دشمنی ندارند ولی هر دو با یک حریف در جنگ‌اند، متحد می‌شوند.
+## اتحاد معمولی است (قابل خیانت)؛ فقط ظرفیت متحد و نگرش دوطرفه بررسی می‌شود. true اگر اتحادی بسته شد.
+static func threat_pact(cs, a: Dictionary, b: Dictionary) -> bool:
+	if a == b or not (a.get("ai", null) is Dictionary) or not (b.get("ai", null) is Dictionary):
+		return false
+	var ka := str(a["acct"])
+	var kb := str(b["acct"])
+	if (_ai(a)["allies"] as Dictionary).has(kb) or War.at_war(a, b):
+		return false
+	if (_ai(a)["allies"] as Dictionary).size() >= ALLY_MAX or (_ai(b)["allies"] as Dictionary).size() >= ALLY_MAX:
+		return false
+	if Memory.stance(_ai(a), kb, cs.day_count) == "enemy" or Memory.stance(_ai(b), ka, cs.day_count) == "enemy":
+		return false
+	if Memory.remembers(_ai(a), kb, "betray") or Memory.remembers(_ai(b), ka, "betray"):
+		return false
+	var shared := false
+	for f in (_ai(a)["war"]["foes"] as Dictionary):
+		if (_ai(b)["war"]["foes"] as Dictionary).has(f) and str(f) != ka and str(f) != kb:
+			shared = true
+			break
+	if not shared:
+		return false
+	_ai(a)["allies"][kb] = cs.day_count
+	_ai(b)["allies"][ka] = cs.day_count
+	Memory.record(_ai(a), "alliance", kb, 0.8, cs.day_count)
+	Memory.record(_ai(b), "alliance", ka, 0.8, cs.day_count)
+	_ai(a)["stats"]["allied"] = int(_ai(a)["stats"]["allied"]) + 1
+	_ai(b)["stats"]["allied"] = int(_ai(b)["stats"]["allied"]) + 1
+	_note(cs, a, "ally:" + str(b["name"]))
+	_note(cs, b, "ally:" + str(a["name"]))
+	cs.ai_events.append({"kind": "alliance", "a": str(a["name"]), "b": str(b["name"])})
+	return true
+
+
+## هر گام جنگ فراخوانی می‌شود؛ حداکثر یک اتحاد تهدید مشترک در هر بار.
+static func threat_tick(cs) -> void:
+	var fighters: Array = []
+	for n in cs.npcs:
+		if n.get("ai", null) is Dictionary and (_ai(n).get("war", null) is Dictionary) and not (_ai(n)["war"]["foes"] as Dictionary).is_empty():
+			fighters.append(n)
+	for i in range(fighters.size()):
+		for j in range(i + 1, fighters.size()):
+			if threat_pact(cs, fighters[i], fighters[j]):
+				return
+
+
 static func _betray(cs, traitor: Dictionary, victim: Dictionary) -> void:
 	var kt := str(traitor["acct"])
 	var kv := str(victim["acct"])

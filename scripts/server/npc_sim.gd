@@ -163,6 +163,7 @@ static func step(cs, dt: float) -> void:
 	cs.ai_thinks_left = CharAI.think_budget(cs)   # سقف تصمیم‌های هر گام: جلوگیری از پرش وقتی چند شخصیت هم‌زمان فکر می‌کنند
 	CharSocial.tick(cs, dt)   # شخصیت‌های مستقل با هم تعامل می‌کنند (مرحلهٔ ۵)
 	CharWar.tick(cs, dt)      # جنگ، عقب‌نشینی و مذاکره بین شخصیت‌ها
+	CharSocial.threat_tick(cs)   # اتحاد از تهدید مشترک
 	for npc in cs.npcs:
 		if CharAI.is_ai(npc):
 			CharAI.step(cs, npc, dt, _advance)   # شخصیت هوشمند: برنامهٔ روزانه ندارد، خودش تصمیم می‌گیرد
